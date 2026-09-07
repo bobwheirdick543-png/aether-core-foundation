@@ -5,8 +5,10 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
+ * ═══════════════════════════════════════════════════════════════
  * AETHER DESIGN SYSTEM
- * Dark-first, technical, restrained. All colors are oklch semantic tokens.
+ * Premium · Dark-first · Technical · Refined
+ * ═══════════════════════════════════════════════════════════════
  */
 
 @theme inline {
@@ -61,90 +63,102 @@
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 
-  --background: oklch(0.15 0.015 250);
-  --foreground: oklch(0.96 0.005 250);
-  --surface: oklch(0.19 0.017 252);
-  --surface-foreground: oklch(0.96 0.005 250);
-  --elevated: oklch(0.23 0.018 252);
-  --card: oklch(0.19 0.017 252);
-  --card-foreground: oklch(0.96 0.005 250);
-  --popover: oklch(0.2 0.017 252);
-  --popover-foreground: oklch(0.96 0.005 250);
+  /* Deep, immersive dark foundation */
+  --background: oklch(0.13 0.014 255);
+  --foreground: oklch(0.96 0.006 250);
+  --surface: oklch(0.17 0.016 255);
+  --surface-foreground: oklch(0.96 0.006 250);
+  --elevated: oklch(0.21 0.018 255);
+  --card: oklch(0.17 0.016 255);
+  --card-foreground: oklch(0.96 0.006 250);
+  --popover: oklch(0.18 0.017 255);
+  --popover-foreground: oklch(0.96 0.006 250);
 
-  --primary: oklch(0.78 0.13 195);
-  --primary-foreground: oklch(0.16 0.02 250);
-  --secondary: oklch(0.26 0.018 252);
-  --secondary-foreground: oklch(0.94 0.005 250);
-  --muted: oklch(0.24 0.015 252);
-  --muted-foreground: oklch(0.68 0.014 252);
-  --accent: oklch(0.28 0.03 240);
-  --accent-foreground: oklch(0.96 0.005 250);
+  /* Aether cyan — distinctive but restrained */
+  --primary: oklch(0.78 0.14 195);
+  --primary-foreground: oklch(0.14 0.02 255);
+  --secondary: oklch(0.24 0.018 255);
+  --secondary-foreground: oklch(0.94 0.006 250);
+  --muted: oklch(0.22 0.015 255);
+  --muted-foreground: oklch(0.66 0.014 252);
+  --accent: oklch(0.26 0.03 240);
+  --accent-foreground: oklch(0.96 0.006 250);
 
-  --destructive: oklch(0.6 0.2 22);
+  --destructive: oklch(0.62 0.2 22);
   --destructive-foreground: oklch(0.97 0.005 250);
   --success: oklch(0.72 0.14 160);
-  --success-foreground: oklch(0.16 0.02 250);
+  --success-foreground: oklch(0.14 0.02 255);
   --warning: oklch(0.79 0.14 80);
-  --warning-foreground: oklch(0.16 0.02 250);
-  --admin: oklch(0.7 0.15 300);
-  --admin-foreground: oklch(0.16 0.02 250);
+  --warning-foreground: oklch(0.14 0.02 255);
+  --admin: oklch(0.72 0.15 300);
+  --admin-foreground: oklch(0.14 0.02 255);
 
-  --border: oklch(0.29 0.015 252);
-  --input: oklch(0.29 0.015 252);
-  --ring: oklch(0.78 0.13 195);
+  --border: oklch(0.27 0.015 255);
+  --input: oklch(0.27 0.015 255);
+  --ring: oklch(0.78 0.14 195);
 
-  --chart-1: oklch(0.78 0.13 195);
-  --chart-2: oklch(0.7 0.15 300);
+  --chart-1: oklch(0.78 0.14 195);
+  --chart-2: oklch(0.72 0.15 300);
   --chart-3: oklch(0.72 0.14 160);
   --chart-4: oklch(0.79 0.14 80);
   --chart-5: oklch(0.65 0.13 250);
 
-  --sidebar: oklch(0.17 0.016 252);
+  --sidebar: oklch(0.15 0.015 255);
   --sidebar-foreground: oklch(0.9 0.008 250);
-  --sidebar-primary: oklch(0.78 0.13 195);
-  --sidebar-primary-foreground: oklch(0.16 0.02 250);
-  --sidebar-accent: oklch(0.24 0.018 252);
-  --sidebar-accent-foreground: oklch(0.96 0.005 250);
-  --sidebar-border: oklch(0.26 0.015 252);
-  --sidebar-ring: oklch(0.78 0.13 195);
+  --sidebar-primary: oklch(0.78 0.14 195);
+  --sidebar-primary-foreground: oklch(0.14 0.02 255);
+  --sidebar-accent: oklch(0.22 0.018 255);
+  --sidebar-accent-foreground: oklch(0.96 0.006 250);
+  --sidebar-border: oklch(0.24 0.015 255);
+  --sidebar-ring: oklch(0.78 0.14 195);
 
   --gradient-aether: linear-gradient(
     135deg,
-    color-mix(in oklab, var(--primary) 22%, transparent),
-    transparent 60%
+    color-mix(in oklab, var(--primary) 28%, transparent),
+    color-mix(in oklab, var(--admin) 12%, transparent) 45%,
+    transparent 70%
   );
-  --shadow-panel: 0 1px 0 0 color-mix(in oklab, var(--foreground) 6%, transparent) inset,
-    0 20px 40px -24px oklch(0 0 0 / 0.8);
-  --grid-line: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --gradient-hero: radial-gradient(
+    ellipse 80% 60% at 50% -10%,
+    color-mix(in oklab, var(--primary) 18%, transparent),
+    transparent 70%
+  );
+  --shadow-panel: 0 1px 0 0 color-mix(in oklab, var(--foreground) 5%, transparent) inset,
+    0 24px 48px -28px oklch(0 0 0 / 0.75);
+  --shadow-elevated: 0 1px 0 0 color-mix(in oklab, var(--foreground) 6%, transparent) inset,
+    0 12px 32px -12px oklch(0 0 0 / 0.6);
+  --grid-line: color-mix(in oklab, var(--foreground) 4.5%, transparent);
 }
 
 .light {
-  --background: oklch(0.98 0.003 250);
-  --foreground: oklch(0.2 0.02 250);
+  --background: oklch(0.985 0.003 250);
+  --foreground: oklch(0.18 0.02 255);
   --surface: oklch(1 0 0);
-  --surface-foreground: oklch(0.2 0.02 250);
-  --elevated: oklch(0.96 0.005 250);
+  --surface-foreground: oklch(0.18 0.02 255);
+  --elevated: oklch(0.97 0.004 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.02 250);
+  --card-foreground: oklch(0.18 0.02 255);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.02 250);
-  --primary: oklch(0.55 0.11 200);
+  --popover-foreground: oklch(0.18 0.02 255);
+  --primary: oklch(0.52 0.12 200);
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.95 0.005 250);
-  --secondary-foreground: oklch(0.25 0.02 250);
+  --secondary-foreground: oklch(0.22 0.02 255);
   --muted: oklch(0.95 0.005 250);
-  --muted-foreground: oklch(0.5 0.015 252);
+  --muted-foreground: oklch(0.48 0.015 252);
   --accent: oklch(0.94 0.01 240);
-  --accent-foreground: oklch(0.25 0.02 250);
+  --accent-foreground: oklch(0.22 0.02 255);
   --border: oklch(0.9 0.008 252);
   --input: oklch(0.9 0.008 252);
-  --sidebar: oklch(0.97 0.004 250);
-  --sidebar-foreground: oklch(0.25 0.02 250);
-  --sidebar-accent: oklch(0.93 0.008 250);
-  --sidebar-accent-foreground: oklch(0.2 0.02 250);
+  --sidebar: oklch(0.975 0.004 250);
+  --sidebar-foreground: oklch(0.22 0.02 255);
+  --sidebar-accent: oklch(0.94 0.008 250);
+  --sidebar-accent-foreground: oklch(0.18 0.02 255);
   --sidebar-border: oklch(0.9 0.008 252);
+  --shadow-panel: 0 1px 0 0 color-mix(in oklab, var(--foreground) 4%, transparent) inset,
+    0 12px 32px -16px oklch(0 0 0 / 0.08);
 }
 
 @layer base {
@@ -154,18 +168,29 @@
 
   html {
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
   }
 
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--primary) 30%, transparent);
+    background: color-mix(in oklab, var(--primary) 32%, transparent);
+  }
+
+  /* Refined focus ring */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
   }
 }
+
+/* ─── Utilities ─────────────────────────────────────────────── */
 
 @utility panel {
   background-color: var(--color-surface);
@@ -174,18 +199,70 @@
   box-shadow: var(--shadow-panel);
 }
 
+@utility panel-elevated {
+  background-color: var(--color-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-elevated);
+}
+
+@utility glass {
+  background-color: color-mix(in oklab, var(--color-surface) 75%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid color-mix(in oklab, var(--color-border) 80%, transparent);
+}
+
 @utility grid-backdrop {
   background-image:
     linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
-  background-size: 56px 56px;
+  background-size: 64px 64px;
 }
 
 @utility aether-glow {
   background-image: var(--gradient-aether);
 }
 
+@utility hero-glow {
+  background-image: var(--gradient-hero);
+}
+
 @utility text-balance-tight {
   text-wrap: balance;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+}
+
+/* Subtle entrance animation */
+@utility animate-in-up {
+  animation: aether-in-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@utility animate-in-fade {
+  animation: aether-in-fade 0.4s ease-out both;
+}
+
+@keyframes aether-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes aether-in-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Soft pulse for AI activity indicators */
+@keyframes aether-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@utility ai-pulse {
+  animation: aether-pulse 2s ease-in-out infinite;
 }
