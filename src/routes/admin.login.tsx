@@ -2,8 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
-import { elevateToAdmin } from "@/lib/auth/admin.functions";
-import { AetherLogo } from "@/components/brand/Logo";
+import { adminElevate } from "@/lib/auth/admin.functions";
+import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +23,7 @@ export const Route = createFileRoute("/admin/login")({
 
 function AdminLogin() {
   const navigate = useNavigate();
-  const elevate = useServerFn(elevateToAdmin);
+  const elevate = useServerFn(adminElevate);
   const [passphrase, setPassphrase] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -48,7 +48,7 @@ function AdminLogin() {
     <div className="flex min-h-screen items-center justify-center bg-background px-5 py-16">
       <div className="w-full max-w-sm">
         <Link to="/" className="mx-auto flex w-fit">
-          <AetherLogo />
+          <Logo />
         </Link>
         <div className="panel mt-8 p-6">
           <h1 className="text-lg font-semibold">Administrator access</h1>

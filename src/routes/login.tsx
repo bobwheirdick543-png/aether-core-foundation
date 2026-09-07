@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { AetherLogo } from "@/components/brand/Logo";
+import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,7 +41,7 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-5 py-16">
       <div className="w-full max-w-sm">
         <Link to="/" className="mx-auto flex w-fit">
-          <AetherLogo />
+          <Logo />
         </Link>
         <div className="panel mt-8 p-6">
           <h1 className="text-lg font-semibold">Sign in</h1>
