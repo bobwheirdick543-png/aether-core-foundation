@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AgentsOverviewRouteImport } from './routes/agents-overview'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as DevelopersRouteImport } from './routes/developers'
@@ -32,6 +33,7 @@ import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedResearchRouteImport } from './routes/_authenticated/research'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
+import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedAdminAgentsRouteImport } from './routes/_authenticated/admin/agents'
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
@@ -49,6 +51,10 @@ import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authentic
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AgentsOverviewRoute = AgentsOverviewRouteImport.update({
@@ -107,132 +113,137 @@ const TermsRoute = TermsRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedApiKeysRoute = AuthenticatedApiKeysRouteImport.update({
-  id: '/_authenticated/api-keys',
+  id: '/api-keys',
   path: '/api-keys',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedChatRoute = AuthenticatedChatRouteImport.update({
-  id: '/_authenticated/chat',
+  id: '/chat',
   path: '/chat',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
-  id: '/_authenticated/dashboard',
+  id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedKnowledgeRoute = AuthenticatedKnowledgeRouteImport.update({
-  id: '/_authenticated/knowledge',
+  id: '/knowledge',
   path: '/knowledge',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedMemoryRoute = AuthenticatedMemoryRouteImport.update({
-  id: '/_authenticated/memory',
+  id: '/memory',
   path: '/memory',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedModelsRoute = AuthenticatedModelsRouteImport.update({
-  id: '/_authenticated/models',
+  id: '/models',
   path: '/models',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
-  id: '/_authenticated/projects',
+  id: '/projects',
   path: '/projects',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
-  id: '/_authenticated/reports',
+  id: '/reports',
   path: '/reports',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedResearchRoute = AuthenticatedResearchRouteImport.update({
-  id: '/_authenticated/research',
+  id: '/research',
   path: '/research',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/_authenticated/settings',
+  id: '/settings',
   path: '/settings',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedTasksRoute = AuthenticatedTasksRouteImport.update({
-  id: '/_authenticated/tasks',
+  id: '/tasks',
   path: '/tasks',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/admin/login',
+  path: '/admin/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
-  id: '/_authenticated/admin/',
+  id: '/admin/',
   path: '/admin/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAdminAgentsRoute =
   AuthenticatedAdminAgentsRouteImport.update({
-    id: '/_authenticated/admin/agents',
+    id: '/admin/agents',
     path: '/admin/agents',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminApiKeysRoute =
   AuthenticatedAdminApiKeysRouteImport.update({
-    id: '/_authenticated/admin/api-keys',
+    id: '/admin/api-keys',
     path: '/admin/api-keys',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminKnowledgeRoute =
   AuthenticatedAdminKnowledgeRouteImport.update({
-    id: '/_authenticated/admin/knowledge',
+    id: '/admin/knowledge',
     path: '/admin/knowledge',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminLogsRoute = AuthenticatedAdminLogsRouteImport.update({
-  id: '/_authenticated/admin/logs',
+  id: '/admin/logs',
   path: '/admin/logs',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAdminModelsRoute =
   AuthenticatedAdminModelsRouteImport.update({
-    id: '/_authenticated/admin/models',
+    id: '/admin/models',
     path: '/admin/models',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminProjectsRoute =
   AuthenticatedAdminProjectsRouteImport.update({
-    id: '/_authenticated/admin/projects',
+    id: '/admin/projects',
     path: '/admin/projects',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminResearchRoute =
   AuthenticatedAdminResearchRouteImport.update({
-    id: '/_authenticated/admin/research',
+    id: '/admin/research',
     path: '/admin/research',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminSettingsRoute =
   AuthenticatedAdminSettingsRouteImport.update({
-    id: '/_authenticated/admin/settings',
+    id: '/admin/settings',
     path: '/admin/settings',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminSystemRoute =
   AuthenticatedAdminSystemRouteImport.update({
-    id: '/_authenticated/admin/system',
+    id: '/admin/system',
     path: '/admin/system',
-    getParentRoute: () => rootRouteImport,
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedAdminTasksRoute = AuthenticatedAdminTasksRouteImport.update({
-  id: '/_authenticated/admin/tasks',
+  id: '/admin/tasks',
   path: '/admin/tasks',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAdminUsageRoute = AuthenticatedAdminUsageRouteImport.update({
-  id: '/_authenticated/admin/usage',
+  id: '/admin/usage',
   path: '/admin/usage',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
-  id: '/_authenticated/admin/users',
+  id: '/admin/users',
   path: '/admin/users',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -259,6 +270,7 @@ export interface FileRoutesByFullPath {
   '/research': typeof AuthenticatedResearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/tasks': typeof AuthenticatedTasksRoute
+  '/admin/login': typeof AdminLoginRoute
   '/admin/agents': typeof AuthenticatedAdminAgentsRoute
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/knowledge': typeof AuthenticatedAdminKnowledgeRoute
@@ -297,6 +309,7 @@ export interface FileRoutesByTo {
   '/research': typeof AuthenticatedResearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/tasks': typeof AuthenticatedTasksRoute
+  '/admin/login': typeof AdminLoginRoute
   '/admin/agents': typeof AuthenticatedAdminAgentsRoute
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/knowledge': typeof AuthenticatedAdminKnowledgeRoute
@@ -314,6 +327,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/agents-overview': typeof AgentsOverviewRoute
   '/contact': typeof ContactRoute
   '/developers': typeof DevelopersRoute
@@ -336,6 +350,7 @@ export interface FileRoutesById {
   '/_authenticated/research': typeof AuthenticatedResearchRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/tasks': typeof AuthenticatedTasksRoute
+  '/admin/login': typeof AdminLoginRoute
   '/_authenticated/admin/agents': typeof AuthenticatedAdminAgentsRoute
   '/_authenticated/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/_authenticated/admin/knowledge': typeof AuthenticatedAdminKnowledgeRoute
@@ -376,6 +391,7 @@ export interface FileRouteTypes {
     | '/research'
     | '/settings'
     | '/tasks'
+    | '/admin/login'
     | '/admin/agents'
     | '/admin/api-keys'
     | '/admin/knowledge'
@@ -414,6 +430,7 @@ export interface FileRouteTypes {
     | '/research'
     | '/settings'
     | '/tasks'
+    | '/admin/login'
     | '/admin/agents'
     | '/admin/api-keys'
     | '/admin/knowledge'
@@ -430,6 +447,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/_authenticated'
     | '/agents-overview'
     | '/contact'
     | '/developers'
@@ -452,6 +470,7 @@ export interface FileRouteTypes {
     | '/_authenticated/research'
     | '/_authenticated/settings'
     | '/_authenticated/tasks'
+    | '/admin/login'
     | '/_authenticated/admin/agents'
     | '/_authenticated/admin/api-keys'
     | '/_authenticated/admin/knowledge'
@@ -469,6 +488,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AgentsOverviewRoute: typeof AgentsOverviewRoute
   ContactRoute: typeof ContactRoute
   DevelopersRoute: typeof DevelopersRoute
@@ -480,30 +500,7 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   StatusRoute: typeof StatusRoute
   TermsRoute: typeof TermsRoute
-  AuthenticatedApiKeysRoute: typeof AuthenticatedApiKeysRoute
-  AuthenticatedChatRoute: typeof AuthenticatedChatRoute
-  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedKnowledgeRoute: typeof AuthenticatedKnowledgeRoute
-  AuthenticatedMemoryRoute: typeof AuthenticatedMemoryRoute
-  AuthenticatedModelsRoute: typeof AuthenticatedModelsRoute
-  AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
-  AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
-  AuthenticatedResearchRoute: typeof AuthenticatedResearchRoute
-  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
-  AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
-  AuthenticatedAdminAgentsRoute: typeof AuthenticatedAdminAgentsRoute
-  AuthenticatedAdminApiKeysRoute: typeof AuthenticatedAdminApiKeysRoute
-  AuthenticatedAdminKnowledgeRoute: typeof AuthenticatedAdminKnowledgeRoute
-  AuthenticatedAdminLogsRoute: typeof AuthenticatedAdminLogsRoute
-  AuthenticatedAdminModelsRoute: typeof AuthenticatedAdminModelsRoute
-  AuthenticatedAdminProjectsRoute: typeof AuthenticatedAdminProjectsRoute
-  AuthenticatedAdminResearchRoute: typeof AuthenticatedAdminResearchRoute
-  AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
-  AuthenticatedAdminSystemRoute: typeof AuthenticatedAdminSystemRoute
-  AuthenticatedAdminTasksRoute: typeof AuthenticatedAdminTasksRoute
-  AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
-  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
-  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+  AdminLoginRoute: typeof AdminLoginRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -513,6 +510,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/agents-overview': {
@@ -597,76 +601,83 @@ declare module '@tanstack/react-router' {
       path: '/api-keys'
       fullPath: '/api-keys'
       preLoaderRoute: typeof AuthenticatedApiKeysRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/chat': {
       id: '/_authenticated/chat'
       path: '/chat'
       fullPath: '/chat'
       preLoaderRoute: typeof AuthenticatedChatRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/knowledge': {
       id: '/_authenticated/knowledge'
       path: '/knowledge'
       fullPath: '/knowledge'
       preLoaderRoute: typeof AuthenticatedKnowledgeRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/memory': {
       id: '/_authenticated/memory'
       path: '/memory'
       fullPath: '/memory'
       preLoaderRoute: typeof AuthenticatedMemoryRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/models': {
       id: '/_authenticated/models'
       path: '/models'
       fullPath: '/models'
       preLoaderRoute: typeof AuthenticatedModelsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/projects': {
       id: '/_authenticated/projects'
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof AuthenticatedProjectsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/reports': {
       id: '/_authenticated/reports'
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/research': {
       id: '/_authenticated/research'
       path: '/research'
       fullPath: '/research'
       preLoaderRoute: typeof AuthenticatedResearchRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/tasks': {
       id: '/_authenticated/tasks'
       path: '/tasks'
       fullPath: '/tasks'
       preLoaderRoute: typeof AuthenticatedTasksRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/admin/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/admin/': {
@@ -674,108 +685,123 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/agents': {
       id: '/_authenticated/admin/agents'
       path: '/admin/agents'
       fullPath: '/admin/agents'
       preLoaderRoute: typeof AuthenticatedAdminAgentsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/api-keys': {
       id: '/_authenticated/admin/api-keys'
       path: '/admin/api-keys'
       fullPath: '/admin/api-keys'
       preLoaderRoute: typeof AuthenticatedAdminApiKeysRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/knowledge': {
       id: '/_authenticated/admin/knowledge'
       path: '/admin/knowledge'
       fullPath: '/admin/knowledge'
       preLoaderRoute: typeof AuthenticatedAdminKnowledgeRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/logs': {
       id: '/_authenticated/admin/logs'
       path: '/admin/logs'
       fullPath: '/admin/logs'
       preLoaderRoute: typeof AuthenticatedAdminLogsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/models': {
       id: '/_authenticated/admin/models'
       path: '/admin/models'
       fullPath: '/admin/models'
       preLoaderRoute: typeof AuthenticatedAdminModelsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/projects': {
       id: '/_authenticated/admin/projects'
       path: '/admin/projects'
       fullPath: '/admin/projects'
       preLoaderRoute: typeof AuthenticatedAdminProjectsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/research': {
       id: '/_authenticated/admin/research'
       path: '/admin/research'
       fullPath: '/admin/research'
       preLoaderRoute: typeof AuthenticatedAdminResearchRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/settings': {
       id: '/_authenticated/admin/settings'
       path: '/admin/settings'
       fullPath: '/admin/settings'
       preLoaderRoute: typeof AuthenticatedAdminSettingsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/system': {
       id: '/_authenticated/admin/system'
       path: '/admin/system'
       fullPath: '/admin/system'
       preLoaderRoute: typeof AuthenticatedAdminSystemRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/tasks': {
       id: '/_authenticated/admin/tasks'
       path: '/admin/tasks'
       fullPath: '/admin/tasks'
       preLoaderRoute: typeof AuthenticatedAdminTasksRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/usage': {
       id: '/_authenticated/admin/usage'
       path: '/admin/usage'
       fullPath: '/admin/usage'
       preLoaderRoute: typeof AuthenticatedAdminUsageRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
       path: '/admin/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
   }
 }
 
-const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AgentsOverviewRoute: AgentsOverviewRoute,
-  ContactRoute: ContactRoute,
-  DevelopersRoute: DevelopersRoute,
-  DocsRoute: DocsRoute,
-  FeaturesRoute: FeaturesRoute,
-  LoginRoute: LoginRoute,
-  ModelsOverviewRoute: ModelsOverviewRoute,
-  PrivacyRoute: PrivacyRoute,
-  SignupRoute: SignupRoute,
-  StatusRoute: StatusRoute,
-  TermsRoute: TermsRoute,
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedApiKeysRoute: typeof AuthenticatedApiKeysRoute
+  AuthenticatedChatRoute: typeof AuthenticatedChatRoute
+  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedKnowledgeRoute: typeof AuthenticatedKnowledgeRoute
+  AuthenticatedMemoryRoute: typeof AuthenticatedMemoryRoute
+  AuthenticatedModelsRoute: typeof AuthenticatedModelsRoute
+  AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
+  AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
+  AuthenticatedResearchRoute: typeof AuthenticatedResearchRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
+  AuthenticatedAdminAgentsRoute: typeof AuthenticatedAdminAgentsRoute
+  AuthenticatedAdminApiKeysRoute: typeof AuthenticatedAdminApiKeysRoute
+  AuthenticatedAdminKnowledgeRoute: typeof AuthenticatedAdminKnowledgeRoute
+  AuthenticatedAdminLogsRoute: typeof AuthenticatedAdminLogsRoute
+  AuthenticatedAdminModelsRoute: typeof AuthenticatedAdminModelsRoute
+  AuthenticatedAdminProjectsRoute: typeof AuthenticatedAdminProjectsRoute
+  AuthenticatedAdminResearchRoute: typeof AuthenticatedAdminResearchRoute
+  AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
+  AuthenticatedAdminSystemRoute: typeof AuthenticatedAdminSystemRoute
+  AuthenticatedAdminTasksRoute: typeof AuthenticatedAdminTasksRoute
+  AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedApiKeysRoute: AuthenticatedApiKeysRoute,
   AuthenticatedChatRoute: AuthenticatedChatRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
@@ -800,6 +826,26 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedAdminUsageRoute: AuthenticatedAdminUsageRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
+const rootRouteChildren: RootRouteChildren = {
+  IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AgentsOverviewRoute: AgentsOverviewRoute,
+  ContactRoute: ContactRoute,
+  DevelopersRoute: DevelopersRoute,
+  DocsRoute: DocsRoute,
+  FeaturesRoute: FeaturesRoute,
+  LoginRoute: LoginRoute,
+  ModelsOverviewRoute: ModelsOverviewRoute,
+  PrivacyRoute: PrivacyRoute,
+  SignupRoute: SignupRoute,
+  StatusRoute: StatusRoute,
+  TermsRoute: TermsRoute,
+  AdminLoginRoute: AdminLoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
