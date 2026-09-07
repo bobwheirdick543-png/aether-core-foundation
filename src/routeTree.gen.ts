@@ -15,8 +15,10 @@ import { Route as ContactRouteImport } from './routes/contact'
 import { Route as DevelopersRouteImport } from './routes/developers'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as FeaturesRouteImport } from './routes/features'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ModelsOverviewRouteImport } from './routes/models-overview'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as TermsRouteImport } from './routes/terms'
 
@@ -50,6 +52,11 @@ const FeaturesRoute = FeaturesRouteImport.update({
   path: '/features',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ModelsOverviewRoute = ModelsOverviewRouteImport.update({
   id: '/models-overview',
   path: '/models-overview',
@@ -58,6 +65,11 @@ const ModelsOverviewRoute = ModelsOverviewRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StatusRoute = StatusRouteImport.update({
@@ -78,8 +90,10 @@ export interface FileRoutesByFullPath {
   '/developers': typeof DevelopersRoute
   '/docs': typeof DocsRoute
   '/features': typeof FeaturesRoute
+  '/login': typeof LoginRoute
   '/models-overview': typeof ModelsOverviewRoute
   '/privacy': typeof PrivacyRoute
+  '/signup': typeof SignupRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
 }
@@ -90,8 +104,10 @@ export interface FileRoutesByTo {
   '/developers': typeof DevelopersRoute
   '/docs': typeof DocsRoute
   '/features': typeof FeaturesRoute
+  '/login': typeof LoginRoute
   '/models-overview': typeof ModelsOverviewRoute
   '/privacy': typeof PrivacyRoute
+  '/signup': typeof SignupRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
 }
@@ -103,8 +119,10 @@ export interface FileRoutesById {
   '/developers': typeof DevelopersRoute
   '/docs': typeof DocsRoute
   '/features': typeof FeaturesRoute
+  '/login': typeof LoginRoute
   '/models-overview': typeof ModelsOverviewRoute
   '/privacy': typeof PrivacyRoute
+  '/signup': typeof SignupRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
 }
@@ -117,8 +135,10 @@ export interface FileRouteTypes {
     | '/developers'
     | '/docs'
     | '/features'
+    | '/login'
     | '/models-overview'
     | '/privacy'
+    | '/signup'
     | '/status'
     | '/terms'
   fileRoutesByTo: FileRoutesByTo
@@ -129,8 +149,10 @@ export interface FileRouteTypes {
     | '/developers'
     | '/docs'
     | '/features'
+    | '/login'
     | '/models-overview'
     | '/privacy'
+    | '/signup'
     | '/status'
     | '/terms'
   id:
@@ -141,8 +163,10 @@ export interface FileRouteTypes {
     | '/developers'
     | '/docs'
     | '/features'
+    | '/login'
     | '/models-overview'
     | '/privacy'
+    | '/signup'
     | '/status'
     | '/terms'
   fileRoutesById: FileRoutesById
@@ -154,8 +178,10 @@ export interface RootRouteChildren {
   DevelopersRoute: typeof DevelopersRoute
   DocsRoute: typeof DocsRoute
   FeaturesRoute: typeof FeaturesRoute
+  LoginRoute: typeof LoginRoute
   ModelsOverviewRoute: typeof ModelsOverviewRoute
   PrivacyRoute: typeof PrivacyRoute
+  SignupRoute: typeof SignupRoute
   StatusRoute: typeof StatusRoute
   TermsRoute: typeof TermsRoute
 }
@@ -204,6 +230,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FeaturesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/models-overview': {
       id: '/models-overview'
       path: '/models-overview'
@@ -216,6 +249,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/status': {
@@ -242,8 +282,10 @@ const rootRouteChildren: RootRouteChildren = {
   DevelopersRoute: DevelopersRoute,
   DocsRoute: DocsRoute,
   FeaturesRoute: FeaturesRoute,
+  LoginRoute: LoginRoute,
   ModelsOverviewRoute: ModelsOverviewRoute,
   PrivacyRoute: PrivacyRoute,
+  SignupRoute: SignupRoute,
   StatusRoute: StatusRoute,
   TermsRoute: TermsRoute,
 }
