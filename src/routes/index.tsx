@@ -9,6 +9,7 @@ import {
   FolderKanban,
   KeyRound,
   ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import { SiteHeader, SiteFooter } from "@/components/layout/SiteChrome";
 import { Section, FeatureCard, FlowList } from "@/components/marketing/Sections";
@@ -54,34 +55,43 @@ function Landing() {
     <div className="min-h-screen bg-background">
       <SiteHeader />
 
+      {/* ─── Hero ─────────────────────────────────────────── */}
       <section className="relative overflow-hidden">
-        <div className="grid-backdrop pointer-events-none absolute inset-0 opacity-60" />
-        <div className="aether-glow pointer-events-none absolute inset-0" />
-        <div className="relative mx-auto w-full max-w-7xl px-5 py-24 lg:px-8 lg:py-32">
-          <div className="max-w-3xl">
-            <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface/70 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              <AetherMark className="h-3.5 w-3.5 text-primary" />
-              Foundation build
+        <div className="grid-backdrop pointer-events-none absolute inset-0 opacity-40" />
+        <div className="hero-glow pointer-events-none absolute inset-0" />
+        <div className="aether-glow pointer-events-none absolute inset-0 opacity-80" />
+
+        <div className="relative mx-auto w-full max-w-7xl px-5 py-28 lg:px-8 lg:py-40">
+          <div className="animate-in-up max-w-3xl">
+            <span className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-surface/60 px-3.5 py-1.5 text-[11px] uppercase tracking-[0.18em] text-muted-foreground backdrop-blur-sm">
+              <Sparkles className="h-3 w-3 text-primary" />
+              Next-generation AI platform
             </span>
-            <h1 className="mt-6 text-4xl font-semibold text-balance-tight sm:text-6xl">
-              Aether — Your AI Platform.
+
+            <h1 className="mt-7 text-4xl font-semibold tracking-tight text-balance-tight sm:text-5xl lg:text-6xl">
+              Aether —{" "}
+              <span className="bg-gradient-to-r from-primary to-[oklch(0.72_0.15_300)] bg-clip-text text-transparent">
+                Your AI Platform.
+              </span>
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-              One platform for intelligent conversations, research, memory, knowledge, agents,
-              models, and applications.
+
+            <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+              One platform for intelligent conversations, research, memory, knowledge,
+              agents, models, and applications.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Button asChild size="lg">
+
+            <div className="mt-9 flex flex-wrap gap-3">
+              <Button asChild size="lg" className="h-11 px-6">
                 <Link to="/signup">
                   Get Started <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild size="lg" variant="outline">
+              <Button asChild size="lg" variant="outline" className="h-11 px-6">
                 <Link to="/features">Explore Aether</Link>
               </Button>
             </div>
 
-            <dl className="mt-14 grid max-w-2xl grid-cols-2 gap-6 sm:grid-cols-4">
+            <dl className="mt-16 grid max-w-2xl grid-cols-2 gap-8 sm:grid-cols-4">
               {[
                 ["6", "Model roles"],
                 ["5", "Platform agents"],
@@ -89,8 +99,8 @@ function Landing() {
                 ["8", "API scopes"],
               ].map(([value, label]) => (
                 <div key={label}>
-                  <dt className="font-mono text-2xl font-semibold text-primary">{value}</dt>
-                  <dd className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                  <dt className="font-mono text-2xl font-semibold tabular-nums text-primary">{value}</dt>
+                  <dd className="mt-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                     {label}
                   </dd>
                 </div>
@@ -100,6 +110,7 @@ function Landing() {
         </div>
       </section>
 
+      {/* ─── Features ─────────────────────────────────────── */}
       <Section
         id="features"
         eyebrow="Platform"
@@ -113,6 +124,7 @@ function Landing() {
         </div>
       </Section>
 
+      {/* ─── Models ───────────────────────────────────────── */}
       <Section
         id="models"
         eyebrow="Models"
@@ -121,12 +133,25 @@ function Landing() {
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {MODEL_ROLES.map((m) => (
-            <div key={m.key} className="panel p-5">
+            <div
+              key={m.key}
+              className="panel group p-5 transition-all duration-200 hover:border-primary/35 hover:shadow-[0_0_0_1px_color-mix(in_oklab,var(--primary)_15%,transparent)]"
+            >
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold">{m.name}</h3>
                 <Tag tone="primary">{m.speed}</Tag>
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">{m.description}</p>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{m.description}</p>
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {m.capabilities.map((c) => (
+                  <span
+                    key={c}
+                    className="rounded-md border border-border/60 bg-elevated/50 px-2 py-0.5 text-[10px] text-muted-foreground"
+                  >
+                    {c}
+                  </span>
+                ))}
+              </div>
               <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                 {formatContext(m.contextWindow)}
               </p>
@@ -135,6 +160,7 @@ function Landing() {
         </div>
       </Section>
 
+      {/* ─── Research ─────────────────────────────────────── */}
       <Section
         eyebrow="Research"
         title="Research that has to earn its place"
@@ -152,6 +178,7 @@ function Landing() {
         />
       </Section>
 
+      {/* ─── Memory ───────────────────────────────────────── */}
       <Section
         eyebrow="Memory & knowledge"
         title="Context that survives the conversation"
@@ -160,7 +187,10 @@ function Landing() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {["User memory", "Project memory", "Knowledge bases", "Retrieval", "Versioned knowledge"].map(
             (item) => (
-              <div key={item} className="panel p-5 text-sm">
+              <div
+                key={item}
+                className="panel p-5 text-sm transition-colors hover:border-primary/30"
+              >
                 {item}
               </div>
             ),
@@ -168,6 +198,7 @@ function Landing() {
         </div>
       </Section>
 
+      {/* ─── Agents ───────────────────────────────────────── */}
       <Section
         id="agents"
         eyebrow="Agents"
@@ -176,20 +207,27 @@ function Landing() {
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {AGENTS.map((a) => (
-            <div key={a.key} className="panel p-5">
-              <h3 className="text-sm font-semibold">{a.name}</h3>
-              <p className="mt-1.5 text-sm text-muted-foreground">{a.description}</p>
+            <div
+              key={a.key}
+              className="panel group p-5 transition-all duration-200 hover:border-primary/35"
+            >
+              <div className="flex items-center gap-2">
+                <AetherMark className="h-4 w-4 text-primary opacity-70" />
+                <h3 className="text-sm font-semibold">{a.name}</h3>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{a.description}</p>
             </div>
           ))}
         </div>
       </Section>
 
+      {/* ─── Developers ───────────────────────────────────── */}
       <Section
         eyebrow="Developers"
         title="The Aether API"
         description="External applications will connect to Aether with scoped, revocable API keys — chat, models, knowledge, research, projects and modules."
       >
-        <div className="panel overflow-x-auto p-5 font-mono text-xs text-muted-foreground">
+        <div className="panel overflow-x-auto p-6 font-mono text-xs leading-relaxed text-muted-foreground">
           <pre>{`POST /v1/chat
 Authorization: Bearer aeth_live_••••••••
 Content-Type: application/json
@@ -206,6 +244,28 @@ Content-Type: application/json
           </Button>
         </div>
       </Section>
+
+      {/* ─── CTA ──────────────────────────────────────────── */}
+      <section className="border-t border-border/70 py-24">
+        <div className="mx-auto max-w-3xl px-5 text-center lg:px-8">
+          <h2 className="text-2xl font-semibold text-balance-tight sm:text-3xl">
+            Ready to build with Aether?
+          </h2>
+          <p className="mt-3 text-sm text-muted-foreground sm:text-base">
+            Create your account and step into a unified AI operating environment.
+          </p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Button asChild size="lg">
+              <Link to="/signup">
+                Get Started <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <Link to="/docs">Read the docs</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
 
       <SiteFooter />
     </div>
