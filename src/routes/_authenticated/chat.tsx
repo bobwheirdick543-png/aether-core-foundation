@@ -1,31 +1,190 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import {
+  Plus,
+  Paperclip,
+  Globe,
+  Brain,
+  Send,
+  ChevronDown,
+  MessagesSquare,
+} from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
-import { PageHeader, PhaseNote, Panel } from "@/components/common/Primitives";
+import { Tag, PhaseNote, EmptyState } from "@/components/common/Primitives";
+import { Button } from "@/components/ui/button";
+import { MODEL_ROLES } from "@/lib/aether/models";
+import { MOCK_CONVERSATIONS } from "@/lib/aether/mock";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/chat")({
   head: () => ({
     meta: [
       { title: "Chat — Aether" },
-      { name: "description", content: "Conversations with Aether model roles." },
+      { name: "description", content: "Aether conversation workspace." },
       { property: "og:title", content: "Chat — Aether" },
-      { property: "og:description", content: "Conversations with Aether model roles." },
+      { property: "og:description", content: "Aether conversation workspace." },
     ],
   }),
   component: Page,
 });
 
 function Page() {
+  const [model, setModel] = useState(MODEL_ROLES[0]);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [webResearch, setWebResearch] = useState(false);
+  const [memory, setMemory] = useState(true);
+  const [input, setInput] = useState("");
+
   return (
     <AppShell>
-      <PageHeader title="Chat" description="Conversations with Aether model roles." />
-      <div className="mt-6 space-y-4">
-        <PhaseNote>Interface only — backend behaviour lands in a later phase.</PhaseNote>
-        <Panel>
-          <p className="text-sm text-muted-foreground">
-            This surface is part of the Aether foundation build. Data and actions arrive with the
-            matching platform phase.
-          </p>
-        </Panel>
+      <div className="animate-in-up -mx-5 -my-8 flex h-[calc(100vh-4rem)] flex-col lg:-mx-10 lg:-my-10 lg:h-[calc(100vh)]">
+        <div className="flex min-h-0 flex-1">
+          {/* Conversation sidebar */}
+          <aside className="hidden w-64 shrink-0 flex-col border-r border-border/70 bg-sidebar/40 md:flex">
+            <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
+              <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Conversations
+              </span>
+              <Button size="icon" variant="ghost" className="h-7 w-7">
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
+              {MOCK_CONVERSATIONS.map((c, i) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={cn(
+                    "flex w-full flex-col gap-0.5 rounded-md px-3 py-2.5 text-left transition-colors",
+                    i === 0
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+                  )}
+                >
+                  <span className="truncate text-sm font-medium">{c.title}</span>
+                  <span className="text-[11px]">{c.model} · {c.updated}</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          {/* Main chat area */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Top bar */}
+            <div className="flex items-center gap-3 border-b border-border/70 px-4 py-3 sm:px-6">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setModelOpen((v) => !v)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-elevated/60 px-3 py-1.5 text-sm transition-colors hover:border-primary/40"
+                >
+                  <span className="font-medium">{model.name}</span>
+                  <Tag tone="primary">{model.speed}</Tag>
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+                {modelOpen ? (
+                  <div className="absolute left-0 top-full z-20 mt-1.5 w-72 rounded-lg border border-border bg-popover p-1.5 shadow-elevated">
+                    {MODEL_ROLES.map((m) => (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => {
+                          setModel(m);
+                          setModelOpen(false);
+                        }}
+                        className={cn(
+                          "flex w-full flex-col gap-0.5 rounded-md px-3 py-2.5 text-left transition-colors",
+                          m.key === model.key
+                            ? "bg-primary/10 text-foreground"
+                            : "hover:bg-muted/60",
+                        )}
+                      >
+                        <span className="text-sm font-medium">{m.name}</span>
+                        <span className="text-[11px] text-muted-foreground">{m.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setWebResearch((v) => !v)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
+                    webResearch
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  Web
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemory((v) => !v)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
+                    memory
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Brain className="h-3.5 w-3.5" />
+                  Memory
+                </button>
+              </div>
+            </div>
+
+            {/* Messages area */}
+            <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
+              <EmptyState
+                title="Start a conversation"
+                description="Choose a model role, optionally enable web research or memory, and send your first message."
+                icon={<MessagesSquare className="h-5 w-5" />}
+              />
+              <div className="mt-4 max-w-md">
+                <PhaseNote>
+                  Chat interface shell — model routing and response streaming arrive in a later phase.
+                </PhaseNote>
+              </div>
+            </div>
+
+            {/* Composer */}
+            <div className="border-t border-border/70 px-4 py-4 sm:px-6">
+              <div className="mx-auto max-w-3xl">
+                <div className="panel-elevated flex items-end gap-2 p-2 sm:p-2.5">
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Attach file"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </button>
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Message Aether…"
+                    rows={1}
+                    className="max-h-32 min-h-[40px] flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+                  />
+                  <Button
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    disabled={!input.trim()}
+                    aria-label="Send"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                  Aether can make mistakes. Verify important information.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </AppShell>
   );
