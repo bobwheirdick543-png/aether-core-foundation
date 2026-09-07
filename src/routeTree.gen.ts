@@ -10,33 +10,63 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AgentsOverviewRouteImport } from './routes/agents-overview'
+import { Route as FeaturesRouteImport } from './routes/features'
+import { Route as ModelsOverviewRouteImport } from './routes/models-overview'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgentsOverviewRoute = AgentsOverviewRouteImport.update({
+  id: '/agents-overview',
+  path: '/agents-overview',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FeaturesRoute = FeaturesRouteImport.update({
+  id: '/features',
+  path: '/features',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModelsOverviewRoute = ModelsOverviewRouteImport.update({
+  id: '/models-overview',
+  path: '/models-overview',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/agents-overview': typeof AgentsOverviewRoute
+  '/features': typeof FeaturesRoute
+  '/models-overview': typeof ModelsOverviewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agents-overview': typeof AgentsOverviewRoute
+  '/features': typeof FeaturesRoute
+  '/models-overview': typeof ModelsOverviewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/agents-overview': typeof AgentsOverviewRoute
+  '/features': typeof FeaturesRoute
+  '/models-overview': typeof ModelsOverviewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/agents-overview' | '/features' | '/models-overview'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/agents-overview' | '/features' | '/models-overview'
+  id: '__root__' | '/' | '/agents-overview' | '/features' | '/models-overview'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AgentsOverviewRoute: typeof AgentsOverviewRoute
+  FeaturesRoute: typeof FeaturesRoute
+  ModelsOverviewRoute: typeof ModelsOverviewRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +78,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agents-overview': {
+      id: '/agents-overview'
+      path: '/agents-overview'
+      fullPath: '/agents-overview'
+      preLoaderRoute: typeof AgentsOverviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/features': {
+      id: '/features'
+      path: '/features'
+      fullPath: '/features'
+      preLoaderRoute: typeof FeaturesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/models-overview': {
+      id: '/models-overview'
+      path: '/models-overview'
+      fullPath: '/models-overview'
+      preLoaderRoute: typeof ModelsOverviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AgentsOverviewRoute: AgentsOverviewRoute,
+  FeaturesRoute: FeaturesRoute,
+  ModelsOverviewRoute: ModelsOverviewRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
