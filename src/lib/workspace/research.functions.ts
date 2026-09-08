@@ -17,8 +17,8 @@ export const getMyResearchRuns = createServerFn({ method: "GET" })
       .limit(100);
 
     const ids = (runs ?? []).map((r) => r.id);
-    let sourceCounts: Record<string, number> = {};
-    let findingCounts: Record<string, number> = {};
+    const sourceCounts: Record<string, number> = {};
+    const findingCounts: Record<string, number> = {};
 
     if (ids.length > 0) {
       const { data: sources } = await context.supabase
@@ -60,7 +60,6 @@ export const createMyResearchRun = createServerFn({ method: "POST" })
     return { topic, depth, durationMinutes };
   })
   .handler(async ({ context, data }) => {
-    // Optional linked task for workspace visibility
     const { data: task } = await context.supabase
       .from("tasks")
       .insert({
@@ -104,13 +103,13 @@ export const createMyResearchRun = createServerFn({ method: "POST" })
       });
     }
 
-    // Owner notification — real row, no fake completion claim
+    const shortTopic = data.topic.slice(0, 80);
     await context.supabase.from("notifications").insert({
       recipient_id: context.userId,
       audience: "user",
       event_type: "research.queued",
       title: "Research run queued",
-      body: `“${data.topic.slice(0, 80)}” is queued. Findings appear only after a research worker executes.",
+      body: `"${shortTopic}" is queued. Findings appear only after a research worker executes.`,
       resource_type: "research_runs",
       resource_id: run.id,
       link: "/research",
