@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  verifyAdminSignIn,
+  verifyAdminAccessToken,
   getAdminBootstrapStatus,
   changeAdminCredentialsViaSetupCode,
 } from "@/lib/auth/admin.functions";
@@ -29,7 +29,7 @@ export const Route = createFileRoute("/admin/login")({
 
 function AdminLogin() {
   const navigate = useNavigate();
-  const verify = useServerFn(verifyAdminSignIn);
+  const verifyWithToken = useServerFn(verifyAdminAccessToken);
   const status = useServerFn(getAdminBootstrapStatus);
   const changeCreds = useServerFn(changeAdminCredentialsViaSetupCode);
 
@@ -56,7 +56,6 @@ function AdminLogin() {
     e.preventDefault();
     setBusy(true);
     try {
-      // Clear any stale session so we never verify the wrong user
       await supabase.auth.signOut();
 
       const { data: signInData, error } = await supabase.auth.signInWithPassword({
@@ -64,35 +63,45 @@ function AdminLogin() {
         password,
       });
 
-      if (error || !signInData.session) {
-        toast.error("Sign-in failed. Check the email and password.");
+      if (error) {
+        toast.error(error.message || "Sign-in failed. Check the email and password.");
         return;
       }
 
-      // Ensure the session is fully established before calling the server
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
-        toast.error("Session could not be established. Try again.");
+      const accessToken = signInData.session?.access_token;
+      if (!accessToken) {
+        toast.error("Sign-in succeeded but no session token was returned. Try again.");
         return;
       }
 
-      const result = await verify({});
+      // Persist session explicitly (helps async preview storage)
+      if (signInData.session) {
+        await supabase.auth.setSession({
+          access_token: signInData.session.access_token,
+          refresh_token: signInData.session.refresh_token,
+        });
+      }
+
+      // Verify admin role using the token directly — no middleware race
+      const result = await verifyWithToken({ data: { accessToken } });
+
       if (result.ok) {
         navigate({ to: "/admin" });
-      } else {
-        await supabase.auth.signOut();
+        return;
+      }
+
+      await supabase.auth.signOut().catch(() => {});
+
+      if (result.reason === "not_admin") {
         toast.error(
-          "This account is not an administrator. If you just changed credentials, use the recovery form again to re-assert the admin role.",
+          "This account is signed in but is not an administrator. Open recovery and submit the setup code again to re-assert the admin role.",
         );
+      } else {
+        toast.error("Could not verify administrator access. Try again.");
       }
     } catch (err) {
       await supabase.auth.signOut().catch(() => {});
-      const msg = err instanceof Error ? err.message : "";
-      if (msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("token")) {
-        toast.error("Session could not be verified. Try signing in again.");
-      } else {
-        toast.error("Access denied.");
-      }
+      toast.error(err instanceof Error ? err.message : "Access denied.");
     } finally {
       setBusy(false);
     }
@@ -112,7 +121,6 @@ function AdminLogin() {
       });
       if (result.ok) {
         toast.success(result.message);
-        // Force clean state
         await supabase.auth.signOut().catch(() => {});
         setShowRecovery(false);
         if (recovery.newEmail) setEmail(recovery.newEmail.trim().toLowerCase());
