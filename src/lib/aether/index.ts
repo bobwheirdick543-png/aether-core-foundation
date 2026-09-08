@@ -8,6 +8,7 @@ export * from "./agent-sdk";
 export * from "./task-runtime";
 export * from "./task-service";
 export * from "./task.functions";
+export * from "./task-control.functions";
 export * from "./scheduler";
 export * from "./approvals";
 export * from "./notifications";
