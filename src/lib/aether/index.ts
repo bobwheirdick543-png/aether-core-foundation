@@ -25,3 +25,5 @@ export * from "./inter-agent";
 export * from "./evaluation";
 export * from "./agent-registry";
 export * from "./governance";
+export * from "./executor";
+export * from "./executor.functions";
