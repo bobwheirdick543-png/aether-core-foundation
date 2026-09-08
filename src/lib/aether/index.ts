@@ -20,3 +20,4 @@ export * from "./pdf-report";
 export * from "./report.functions";
 export * from "./security";
 export * from "./orchestrator";
+export * from "./optimization";
