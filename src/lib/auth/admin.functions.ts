@@ -264,7 +264,6 @@ export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST
       .from("user_roles")
       .upsert({ user_id: targetUserId, role: "admin" }, { onConflict: "user_id,role" });
 
-    // Keep bootstrap record in sync with the new email
     if (data.newEmail) {
       await supabaseAdmin
         .from("admin_bootstrap")
@@ -305,7 +304,6 @@ export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST
 export const getMyRoles = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    // Prefer service-role lookup so RLS cannot hide the admin role from the owner
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data } = await supabaseAdmin
       .from("user_roles")
@@ -316,15 +314,13 @@ export const getMyRoles = createServerFn({ method: "GET" })
   });
 
 /**
- * Called right after an administrator signs in on /admin/login.
- * Uses service-role to verify the admin role so RLS cannot cause false denials.
+ * Called after login when the middleware session is already available.
  */
 export const verifyAdminSignIn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Primary: direct table check (reliable, ignores RLS)
     const { data: roleRows } = await supabaseAdmin
       .from("user_roles")
       .select("role")
@@ -332,18 +328,17 @@ export const verifyAdminSignIn = createServerFn({ method: "POST" })
       .eq("role", "admin")
       .limit(1);
 
-    const isAdmin = (roleRows?.length ?? 0) > 0;
+    let isAdmin = (roleRows?.length ?? 0) > 0;
 
-    // Fallback: RPC if table check is empty (covers alternate schema layouts)
     if (!isAdmin) {
       const { data: rpcAdmin } = await supabaseAdmin.rpc("has_role", {
         _user_id: context.userId,
         _role: "admin",
       });
-      if (!rpcAdmin) {
-        return { ok: false as const, reason: "not_admin" as const };
-      }
+      isAdmin = Boolean(rpcAdmin);
     }
+
+    if (!isAdmin) return { ok: false as const, reason: "not_admin" as const };
 
     await supabaseAdmin.from("audit_logs").insert({
       actor_id: context.userId,
@@ -353,4 +348,58 @@ export const verifyAdminSignIn = createServerFn({ method: "POST" })
     });
 
     return { ok: true as const };
+  });
+
+/**
+ * LOGIN-PATH ONLY: verify admin using the access_token returned by signInWithPassword.
+ * Does NOT depend on attachSupabaseAuth / getSession timing (fixes preview storage races).
+ */
+export const verifyAdminAccessToken = createServerFn({ method: "POST" })
+  .inputValidator((data: { accessToken: string }) => {
+    const accessToken = String(data?.accessToken ?? "").trim();
+    if (!accessToken || accessToken.split(".").length !== 3) {
+      throw new Error("Valid access token is required.");
+    }
+    return { accessToken };
+  })
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Validate the JWT and resolve the user via Auth Admin API
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(data.accessToken);
+    if (userError || !userData?.user?.id) {
+      return { ok: false as const, reason: "invalid_token" as const };
+    }
+
+    const userId = userData.user.id;
+
+    const { data: roleRows } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("role", "admin")
+      .limit(1);
+
+    let isAdmin = (roleRows?.length ?? 0) > 0;
+
+    if (!isAdmin) {
+      const { data: rpcAdmin } = await supabaseAdmin.rpc("has_role", {
+        _user_id: userId,
+        _role: "admin",
+      });
+      isAdmin = Boolean(rpcAdmin);
+    }
+
+    if (!isAdmin) {
+      return { ok: false as const, reason: "not_admin" as const };
+    }
+
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: userId,
+      action: "admin.session.started",
+      target_type: "auth.users",
+      target_id: userId,
+    });
+
+    return { ok: true as const, userId };
   });
