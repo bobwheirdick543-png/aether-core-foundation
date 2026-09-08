@@ -17,6 +17,7 @@ import {
   X,
   LogOut,
   ShieldCheck,
+  Bell,
 } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ const NAV = [
   { label: "Research", to: "/research" as const, icon: Telescope },
   { label: "Reports", to: "/reports" as const, icon: FileText },
   { label: "Tasks", to: "/tasks" as const, icon: ListChecks },
+  { label: "Notifications", to: "/notifications" as const, icon: Bell },
   { label: "API / Developers", to: "/api-keys" as const, icon: KeyRound },
   { label: "Settings", to: "/settings" as const, icon: Settings },
 ];
