@@ -13,6 +13,7 @@ export * from "./approvals";
 export * from "./notifications";
 export * from "./notification.functions";
 export * from "./research-engine";
+export * from "./research.functions";
 export * from "./knowledge-pipeline";
 export * from "./knowledge.functions";
 export * from "./pdf-report";
