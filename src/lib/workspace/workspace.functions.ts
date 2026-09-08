@@ -85,6 +85,80 @@ export const getMyTasks = createServerFn({ method: "GET" })
     }));
   });
 
+/**
+ * Create a real Task + initial Run record.
+ * Status is queued. No fake completion, no invented agent output.
+ * A background worker (future slice) will execute runs.
+ */
+export const createMyTask = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { title: string; kind?: string }) => {
+    const title = String(data?.title ?? "").trim().slice(0, 200);
+    if (title.length < 2) throw new Error("Title is required.");
+    const kind = String(data?.kind ?? "general").trim().slice(0, 64) || "general";
+    return { title, kind };
+  })
+  .handler(async ({ context, data }) => {
+    const { data: task, error } = await context.supabase
+      .from("tasks")
+      .insert({
+        user_id: context.userId,
+        title: data.title,
+        kind: data.kind,
+        status: "queued",
+        progress: 0,
+        detail: { source: "user.create" },
+      })
+      .select("id, title, kind, status, progress, created_at")
+      .single();
+
+    if (error || !task) {
+      return { ok: false as const, message: "Could not create task." };
+    }
+
+    // Initial run attempt — queued only. No fabricated execution.
+    await context.supabase.from("task_runs").insert({
+      task_id: task.id,
+      owner_id: context.userId,
+      attempt: 1,
+      status: "queued",
+      inputs: { title: data.title, kind: data.kind },
+      outputs: {},
+      idempotency_key: `task:${task.id}:attempt:1`,
+    });
+
+    return { ok: true as const, task };
+  });
+
+export const cancelMyTask = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { id: string }) => ({ id: String(data?.id ?? "") }))
+  .handler(async ({ context, data }) => {
+    if (!data.id) return { ok: false as const, message: "Task id required." };
+
+    const { data: updated, error } = await context.supabase
+      .from("tasks")
+      .update({ status: "cancelled", completed_at: new Date().toISOString() })
+      .eq("id", data.id)
+      .eq("user_id", context.userId)
+      .in("status", ["queued", "running", "waiting_approval"])
+      .select("id")
+      .maybeSingle();
+
+    if (error || !updated) {
+      return { ok: false as const, message: "Task could not be cancelled." };
+    }
+
+    await context.supabase
+      .from("task_runs")
+      .update({ status: "cancelled", ended_at: new Date().toISOString() })
+      .eq("task_id", data.id)
+      .eq("owner_id", context.userId)
+      .in("status", ["queued", "running"]);
+
+    return { ok: true as const };
+  });
+
 export const getMyNotifications = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {

@@ -50,12 +50,16 @@ const FEATURES = [
   { title: "Developer API", description: "Scoped API keys so external applications can connect to Aether.", icon: KeyRound },
 ];
 
+/** Public → login → intended workspace destination */
+function loginTo(path: string) {
+  return { to: "/login" as const, search: { redirect: path } };
+}
+
 function Landing() {
   return (
     <div className="min-h-screen bg-background">
       <SiteHeader />
 
-      {/* ─── Hero ─────────────────────────────────────────── */}
       <section className="relative overflow-hidden">
         <div className="grid-backdrop pointer-events-none absolute inset-0 opacity-40" />
         <div className="hero-glow pointer-events-none absolute inset-0" />
@@ -87,6 +91,11 @@ function Landing() {
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline" className="h-11 px-6">
+                <Link {...loginTo("/chat")}>
+                  Try Chat
+                </Link>
+              </Button>
+              <Button asChild size="lg" variant="ghost" className="h-11 px-6">
                 <Link to="/features">Explore Aether</Link>
               </Button>
             </div>
@@ -94,7 +103,7 @@ function Landing() {
             <dl className="mt-16 grid max-w-2xl grid-cols-2 gap-8 sm:grid-cols-4">
               {[
                 ["6", "Model roles"],
-                ["5", "Platform agents"],
+                [String(AGENTS.length), "Platform agents"],
                 ["4", "Knowledge stages"],
                 ["8", "API scopes"],
               ].map(([value, label]) => (
@@ -110,7 +119,6 @@ function Landing() {
         </div>
       </section>
 
-      {/* ─── Features ─────────────────────────────────────── */}
       <Section
         id="features"
         eyebrow="Platform"
@@ -122,9 +130,25 @@ function Landing() {
             <FeatureCard key={f.title} {...f} />
           ))}
         </div>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Button asChild variant="outline" size="sm">
+            <Link {...loginTo("/models")}>Open Models</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link {...loginTo("/research")}>Open Research</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link {...loginTo("/projects")}>Open Projects</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link {...loginTo("/knowledge")}>Open Knowledge</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link {...loginTo("/tasks")}>Open Tasks</Link>
+          </Button>
+        </div>
       </Section>
 
-      {/* ─── Models ───────────────────────────────────────── */}
       <Section
         id="models"
         eyebrow="Models"
@@ -158,9 +182,13 @@ function Landing() {
             </div>
           ))}
         </div>
+        <div className="mt-6">
+          <Button asChild variant="outline">
+            <Link {...loginTo("/models")}>Use models in workspace</Link>
+          </Button>
+        </div>
       </Section>
 
-      {/* ─── Research ─────────────────────────────────────── */}
       <Section
         eyebrow="Research"
         title="Research that has to earn its place"
@@ -176,9 +204,13 @@ function Landing() {
             "Require human approval before knowledge goes to production",
           ]}
         />
+        <div className="mt-6">
+          <Button asChild variant="outline">
+            <Link {...loginTo("/research")}>Open research workspace</Link>
+          </Button>
+        </div>
       </Section>
 
-      {/* ─── Memory ───────────────────────────────────────── */}
       <Section
         eyebrow="Memory & knowledge"
         title="Context that survives the conversation"
@@ -187,10 +219,7 @@ function Landing() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {["User memory", "Project memory", "Knowledge bases", "Retrieval", "Versioned knowledge"].map(
             (item) => (
-              <div
-                key={item}
-                className="panel p-5 text-sm transition-colors hover:border-primary/30"
-              >
+              <div key={item} className="panel p-5 text-sm transition-colors hover:border-primary/30">
                 {item}
               </div>
             ),
@@ -198,19 +227,15 @@ function Landing() {
         </div>
       </Section>
 
-      {/* ─── Agents ───────────────────────────────────────── */}
       <Section
         id="agents"
         eyebrow="Agents"
         title="Agents with hard limits"
-        description="Each agent has an explicit permission set. Publishing to production knowledge always requires approval."
+        description="Each agent has an explicit permission set. Publishing to production knowledge always requires approval. Agent control is administrator-only."
       >
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {AGENTS.map((a) => (
-            <div
-              key={a.key}
-              className="panel group p-5 transition-all duration-200 hover:border-primary/35"
-            >
+            <div key={a.key} className="panel group p-5 transition-all duration-200 hover:border-primary/35">
               <div className="flex items-center gap-2">
                 <AetherMark className="h-4 w-4 text-primary opacity-70" />
                 <h3 className="text-sm font-semibold">{a.name}</h3>
@@ -221,7 +246,6 @@ function Landing() {
         </div>
       </Section>
 
-      {/* ─── Developers ───────────────────────────────────── */}
       <Section
         eyebrow="Developers"
         title="The Aether API"
@@ -238,14 +262,16 @@ Content-Type: application/json
   "messages": [{ "role": "user", "content": "..." }]
 }`}</pre>
         </div>
-        <div className="mt-6">
+        <div className="mt-6 flex flex-wrap gap-3">
           <Button asChild variant="outline">
             <Link to="/developers">Developer overview</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link {...loginTo("/api-keys")}>API keys workspace</Link>
           </Button>
         </div>
       </Section>
 
-      {/* ─── CTA ──────────────────────────────────────────── */}
       <section className="border-t border-border/70 py-24">
         <div className="mx-auto max-w-3xl px-5 text-center lg:px-8">
           <h2 className="text-2xl font-semibold text-balance-tight sm:text-3xl">
@@ -261,6 +287,9 @@ Content-Type: application/json
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
+              <Link {...loginTo("/dashboard")}>Sign in to workspace</Link>
+            </Button>
+            <Button asChild size="lg" variant="ghost">
               <Link to="/docs">Read the docs</Link>
             </Button>
           </div>
