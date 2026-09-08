@@ -3,7 +3,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
-import { verifyAdminSignIn, getAdminBootstrapStatus } from "@/lib/auth/admin.functions";
+import {
+  verifyAdminSignIn,
+  getAdminBootstrapStatus,
+  changeAdminCredentialsViaSetupCode,
+} from "@/lib/auth/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
@@ -27,6 +31,8 @@ function AdminLogin() {
   const navigate = useNavigate();
   const verify = useServerFn(verifyAdminSignIn);
   const status = useServerFn(getAdminBootstrapStatus);
+  const changeCreds = useServerFn(changeAdminCredentialsViaSetupCode);
+
   const { data: bootstrap } = useQuery({
     queryKey: ["admin-bootstrap-status"],
     queryFn: () => status({}),
@@ -36,6 +42,16 @@ function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Credential recovery / change via setup code
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recovery, setRecovery] = useState({
+    secret: "",
+    currentEmail: "",
+    newEmail: "",
+    newPassword: "",
+  });
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -61,6 +77,35 @@ function AdminLogin() {
     }
   }
 
+  async function onRecoverySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setRecoveryBusy(true);
+    try {
+      const result = await changeCreds({
+        data: {
+          secret: recovery.secret,
+          currentEmail: recovery.currentEmail || undefined,
+          newEmail: recovery.newEmail || undefined,
+          newPassword: recovery.newPassword || undefined,
+        },
+      });
+      if (result.ok) {
+        toast.success(result.message);
+        setShowRecovery(false);
+        setRecovery({ secret: "", currentEmail: "", newEmail: "", newPassword: "" });
+        // Pre-fill the login form with the new email if provided
+        if (recovery.newEmail) setEmail(recovery.newEmail);
+        setPassword("");
+      } else {
+        toast.error(result.message);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Credential change failed.");
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-5 py-16">
       <div className="w-full max-w-sm">
@@ -72,42 +117,128 @@ function AdminLogin() {
           <p className="mt-1 text-sm text-muted-foreground">
             This area is restricted. Access is verified on the server for every page and action.
           </p>
-          <form onSubmit={onSubmit} className="mt-6 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={busy}>
-              {busy ? "Verifying…" : "Sign in"}
-            </Button>
-          </form>
-          {bootstrap?.configured && !bootstrap?.completed ? (
-            <p className="mt-6 text-xs text-muted-foreground">
-              No administrator exists yet.{" "}
-              <Link to="/admin/setup" className="text-primary hover:underline">
-                Run the one-time setup
-              </Link>
-              .
-            </p>
-          ) : null}
+
+          {!showRecovery ? (
+            <>
+              <form onSubmit={onSubmit} className="mt-6 space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    autoComplete="username"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={busy}>
+                  {busy ? "Verifying…" : "Sign in"}
+                </Button>
+              </form>
+
+              {bootstrap?.configured && !bootstrap?.completed ? (
+                <p className="mt-6 text-xs text-muted-foreground">
+                  No administrator exists yet.{" "}
+                  <Link to="/admin/setup" className="text-primary hover:underline">
+                    Run the one-time setup
+                  </Link>
+                  .
+                </p>
+              ) : null}
+
+              {bootstrap?.configured && bootstrap?.completed ? (
+                <div className="mt-6 border-t border-border pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowRecovery(true)}
+                    className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                  >
+                    Change email or password using setup code
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <p className="mt-4 text-sm text-muted-foreground">
+                Use the server-side setup code to change the administrator email and/or password.
+                This is an emergency recovery path and is rate-limited.
+              </p>
+              <form onSubmit={onRecoverySubmit} className="mt-6 space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="secret">Setup code</Label>
+                  <Input
+                    id="secret"
+                    type="password"
+                    autoComplete="off"
+                    required
+                    value={recovery.secret}
+                    onChange={(e) => setRecovery({ ...recovery, secret: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="currentEmail">Current administrator email (optional)</Label>
+                  <Input
+                    id="currentEmail"
+                    type="email"
+                    autoComplete="off"
+                    value={recovery.currentEmail}
+                    onChange={(e) => setRecovery({ ...recovery, currentEmail: e.target.value })}
+                    placeholder="Leave blank if only one admin exists"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="newEmail">New email (optional)</Label>
+                  <Input
+                    id="newEmail"
+                    type="email"
+                    autoComplete="off"
+                    value={recovery.newEmail}
+                    onChange={(e) => setRecovery({ ...recovery, newEmail: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="newPassword">New password (min 12 characters, optional)</Label>
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={12}
+                    value={recovery.newPassword}
+                    onChange={(e) => setRecovery({ ...recovery, newPassword: e.target.value })}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setShowRecovery(false);
+                      setRecovery({ secret: "", currentEmail: "", newEmail: "", newPassword: "" });
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="flex-1" disabled={recoveryBusy}>
+                    {recoveryBusy ? "Updating…" : "Update credentials"}
+                  </Button>
+                </div>
+              </form>
+            </>
+          )}
         </div>
       </div>
     </div>
