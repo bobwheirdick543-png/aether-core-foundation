@@ -14,7 +14,6 @@ import {
   type CreateRunInput,
   makeIdempotencyKey,
 } from "./task-runtime";
-import type { AgentKey } from "./agents";
 
 export async function createTask(
   admin: SupabaseClient,
@@ -56,19 +55,26 @@ export async function createRun(
 
   if (existing) return { id: existing.id };
 
+  const row: Record<string, unknown> = {
+    task_id: input.task_id,
+    owner_id: input.owner_id,
+    agent_id: input.agent_id ?? null,
+    attempt,
+    status: "queued",
+    inputs: input.inputs ?? {},
+    outputs: {},
+    retry_of: input.retry_of ?? null,
+    idempotency_key: idempotency,
+  };
+
+  // agent_key is optional depending on migration state
+  if (input.agent_key) {
+    row.agent_key = input.agent_key;
+  }
+
   const { data, error } = await admin
     .from("task_runs")
-    .insert({
-      task_id: input.task_id,
-      owner_id: input.owner_id,
-      agent_id: input.agent_id ?? null,
-      attempt,
-      status: "queued",
-      inputs: input.inputs ?? {},
-      outputs: {},
-      retry_of: input.retry_of ?? null,
-      idempotency_key: idempotency,
-    })
+    .insert(row)
     .select("id")
     .single();
 
