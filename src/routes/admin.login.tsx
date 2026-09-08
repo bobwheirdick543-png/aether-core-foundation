@@ -43,7 +43,6 @@ function AdminLogin() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Credential recovery / change via setup code
   const [showRecovery, setShowRecovery] = useState(false);
   const [recovery, setRecovery] = useState({
     secret: "",
@@ -57,21 +56,43 @@ function AdminLogin() {
     e.preventDefault();
     setBusy(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        toast.error("Access denied.");
+      // Clear any stale session so we never verify the wrong user
+      await supabase.auth.signOut();
+
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      if (error || !signInData.session) {
+        toast.error("Sign-in failed. Check the email and password.");
         return;
       }
+
+      // Ensure the session is fully established before calling the server
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        toast.error("Session could not be established. Try again.");
+        return;
+      }
+
       const result = await verify({});
       if (result.ok) {
         navigate({ to: "/admin" });
       } else {
-        // A valid account that is not an administrator must never hold an admin session.
         await supabase.auth.signOut();
+        toast.error(
+          "This account is not an administrator. If you just changed credentials, use the recovery form again to re-assert the admin role.",
+        );
+      }
+    } catch (err) {
+      await supabase.auth.signOut().catch(() => {});
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.toLowerCase().includes("unauthorized") || msg.toLowerCase().includes("token")) {
+        toast.error("Session could not be verified. Try signing in again.");
+      } else {
         toast.error("Access denied.");
       }
-    } catch {
-      toast.error("Access denied.");
     } finally {
       setBusy(false);
     }
@@ -91,11 +112,12 @@ function AdminLogin() {
       });
       if (result.ok) {
         toast.success(result.message);
+        // Force clean state
+        await supabase.auth.signOut().catch(() => {});
         setShowRecovery(false);
-        setRecovery({ secret: "", currentEmail: "", newEmail: "", newPassword: "" });
-        // Pre-fill the login form with the new email if provided
-        if (recovery.newEmail) setEmail(recovery.newEmail);
+        if (recovery.newEmail) setEmail(recovery.newEmail.trim().toLowerCase());
         setPassword("");
+        setRecovery({ secret: "", currentEmail: "", newEmail: "", newPassword: "" });
       } else {
         toast.error(result.message);
       }
@@ -174,7 +196,7 @@ function AdminLogin() {
             <>
               <p className="mt-4 text-sm text-muted-foreground">
                 Use the server-side setup code to change the administrator email and/or password.
-                This is an emergency recovery path and is rate-limited.
+                This also re-asserts the admin role so you cannot lock yourself out.
               </p>
               <form onSubmit={onRecoverySubmit} className="mt-6 space-y-4">
                 <div className="space-y-1.5">
