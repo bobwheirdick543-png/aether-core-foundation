@@ -103,19 +103,25 @@ export const createMyResearchRun = createServerFn({ method: "POST" })
       });
     }
 
-    const shortTopic = data.topic.slice(0, 80);
-    await context.supabase.from("notifications").insert({
-      recipient_id: context.userId,
-      audience: "user",
-      event_type: "research.queued",
-      title: "Research run queued",
-      body: `"${shortTopic}" is queued. Findings appear only after a research worker executes.`,
-      resource_type: "research_runs",
-      resource_id: run.id,
-      link: "/research",
-      status: "delivered",
-      delivered_at: new Date().toISOString(),
-    });
+    // System-written notification (service role) — recipients cannot INSERT under RLS.
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const shortTopic = data.topic.slice(0, 80);
+      await supabaseAdmin.from("notifications").insert({
+        recipient_id: context.userId,
+        audience: "user",
+        event_type: "research.queued",
+        title: "Research run queued",
+        body: `"${shortTopic}" is queued. Findings appear only after a research worker executes.`,
+        resource_type: "research_runs",
+        resource_id: run.id,
+        link: "/research",
+        status: "delivered",
+        delivered_at: new Date().toISOString(),
+      });
+    } catch {
+      // Research run still succeeds if notification write is unavailable.
+    }
 
     return { ok: true as const, run };
   });
