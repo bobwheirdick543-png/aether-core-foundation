@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Gauge,
   Users,
+  UsersRound,
   Boxes,
   Bot,
   Library,
@@ -26,6 +27,7 @@ import { supabase } from "@/integrations/supabase/client";
 const NAV = [
   { label: "Overview", to: "/admin" as const, icon: Gauge, exact: true },
   { label: "Users", to: "/admin/users" as const, icon: Users },
+  { label: "Team", to: "/admin/team" as const, icon: UsersRound },
   { label: "AI Models", to: "/admin/models" as const, icon: Boxes },
   { label: "AI Agents", to: "/admin/agents" as const, icon: Bot },
   { label: "Knowledge", to: "/admin/knowledge" as const, icon: Library },

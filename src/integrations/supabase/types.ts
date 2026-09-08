@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_bootstrap: {
+        Row: {
+          completed_at: string
+          completed_by: string | null
+          completed_email: string | null
+          id: boolean
+        }
+        Insert: {
+          completed_at?: string
+          completed_by?: string | null
+          completed_email?: string | null
+          id?: boolean
+        }
+        Update: {
+          completed_at?: string
+          completed_by?: string | null
+          completed_email?: string | null
+          id?: boolean
+        }
+        Relationships: []
+      }
+      admin_bootstrap_attempts: {
+        Row: {
+          attempted_at: string
+          fingerprint: string
+          id: string
+          succeeded: boolean
+        }
+        Insert: {
+          attempted_at?: string
+          fingerprint: string
+          id?: string
+          succeeded?: boolean
+        }
+        Update: {
+          attempted_at?: string
+          fingerprint?: string
+          id?: string
+          succeeded?: boolean
+        }
+        Relationships: []
+      }
       agent_permissions: {
         Row: {
           agent_id: string
@@ -481,6 +523,57 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          audience: string
+          body: string | null
+          created_at: string
+          delivered_at: string | null
+          delivery_attempts: number
+          event_type: string
+          id: string
+          link: string | null
+          read_at: string | null
+          recipient_id: string
+          resource_id: string | null
+          resource_type: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          audience?: string
+          body?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          delivery_attempts?: number
+          event_type: string
+          id?: string
+          link?: string | null
+          read_at?: string | null
+          recipient_id: string
+          resource_id?: string | null
+          resource_type?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          audience?: string
+          body?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          delivery_attempts?: number
+          event_type?: string
+          id?: string
+          link?: string | null
+          read_at?: string | null
+          recipient_id?: string
+          resource_id?: string | null
+          resource_type?: string | null
+          status?: string
+          title?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -760,6 +853,82 @@ export type Database = {
             columns: ["run_id"]
             isOneToOne: false
             referencedRelation: "research_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_runs: {
+        Row: {
+          agent_id: string | null
+          attempt: number
+          created_at: string
+          ended_at: string | null
+          error: string | null
+          id: string
+          idempotency_key: string | null
+          inputs: Json
+          outputs: Json
+          owner_id: string
+          retry_of: string | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["task_status"]
+          task_id: string
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          attempt?: number
+          created_at?: string
+          ended_at?: string | null
+          error?: string | null
+          id?: string
+          idempotency_key?: string | null
+          inputs?: Json
+          outputs?: Json
+          owner_id: string
+          retry_of?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["task_status"]
+          task_id: string
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          attempt?: number
+          created_at?: string
+          ended_at?: string | null
+          error?: string | null
+          id?: string
+          idempotency_key?: string | null
+          inputs?: Json
+          outputs?: Json
+          owner_id?: string
+          retry_of?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["task_status"]
+          task_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_runs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_runs_retry_of_fkey"
+            columns: ["retry_of"]
+            isOneToOne: false
+            referencedRelation: "task_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_runs_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
             referencedColumns: ["id"]
           },
         ]

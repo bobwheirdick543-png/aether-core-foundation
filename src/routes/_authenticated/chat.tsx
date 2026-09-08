@@ -13,7 +13,8 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Tag, PhaseNote, EmptyState } from "@/components/common/Primitives";
 import { Button } from "@/components/ui/button";
 import { MODEL_ROLES } from "@/lib/aether/models";
-import { MOCK_CONVERSATIONS } from "@/lib/aether/mock";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/chat")({
@@ -29,7 +30,19 @@ export const Route = createFileRoute("/_authenticated/chat")({
 });
 
 function Page() {
-  const [model, setModel] = useState(MODEL_ROLES[0]);
+  const { data: conversations } = useQuery({
+    queryKey: ["conversations"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("conversations")
+        .select("id, title, model_role, updated_at")
+        .eq("archived", false)
+        .order("updated_at", { ascending: false })
+        .limit(50);
+      return data ?? [];
+    },
+  });
+  const [model, setModel] = useState(MODEL_ROLES[0]!);
   const [modelOpen, setModelOpen] = useState(false);
   const [webResearch, setWebResearch] = useState(false);
   const [memory, setMemory] = useState(true);
@@ -50,21 +63,29 @@ function Page() {
               </Button>
             </div>
             <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
-              {MOCK_CONVERSATIONS.map((c, i) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={cn(
-                    "flex w-full flex-col gap-0.5 rounded-md px-3 py-2.5 text-left transition-colors",
-                    i === 0
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
-                  )}
-                >
-                  <span className="truncate text-sm font-medium">{c.title}</span>
-                  <span className="text-[11px]">{c.model} · {c.updated}</span>
-                </button>
-              ))}
+              {(conversations ?? []).length === 0 ? (
+                <p className="px-3 py-4 text-xs text-muted-foreground">
+                  No conversations yet.
+                </p>
+              ) : (
+                (conversations ?? []).map((c, i) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={cn(
+                      "flex w-full flex-col gap-0.5 rounded-md px-3 py-2.5 text-left transition-colors",
+                      i === 0
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground",
+                    )}
+                  >
+                    <span className="truncate text-sm font-medium">{c.title}</span>
+                    <span className="text-[11px]">
+                      {c.model_role} · {new Date(c.updated_at).toLocaleDateString()}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
           </aside>
 
