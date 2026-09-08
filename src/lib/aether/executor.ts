@@ -10,6 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertAgentBoundary } from "./security";
 import { retrievePage, toSourceMeta, isHttpUrl } from "./research-engine";
 import { transitionRunStatus, transitionTaskStatus } from "./task-service";
+import { notifyTaskCompleted } from "./hooks";
 import type { TaskStatus } from "./task-runtime";
 import type { AgentResult } from "./agent-sdk";
 
@@ -86,6 +87,23 @@ export async function executeResearchStep(
   await transitionTaskStatus(admin, opts.taskId, "running", finalStatus, {
     progress: finalStatus === "completed" ? 100 : 0,
   });
+
+  // Ownership-safe notification
+  try {
+    await notifyTaskCompleted(admin, {
+      ownerId: opts.ownerId,
+      taskId: opts.taskId,
+      runId: opts.runId,
+      title:
+        finalStatus === "completed"
+          ? `Research completed (${sources.length} sources)`
+          : "Research failed",
+      body: opts.topic ? `Topic: ${opts.topic}` : undefined,
+      eventType: finalStatus === "completed" ? "research.completed" : "task.failed",
+    });
+  } catch {
+    // notification failure must not roll back the run
+  }
 
   return result;
 }
