@@ -21,3 +21,4 @@ export * from "./report.functions";
 export * from "./security";
 export * from "./orchestrator";
 export * from "./optimization";
+export * from "./inter-agent";
