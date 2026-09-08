@@ -1,12 +1,14 @@
 /**
  * AETHER RESEARCH SERVER FUNCTIONS
- * Uses the native research engine. No external AI. No fabricated findings.
+ * Uses the native research engine via the controlled executor.
+ * No external AI. No fabricated findings.
  */
 
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { retrievePage, toSourceMeta, isHttpUrl } from "./research-engine";
+import { isHttpUrl } from "./research-engine";
 import { createTask, createRun } from "./task-service";
+import { executeResearchStep } from "./executor";
 
 export const startResearchRun = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -23,14 +25,13 @@ export const startResearchRun = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Create durable task + run
     const task = await createTask(supabaseAdmin, {
       owner_id: context.userId,
       project_id: data.projectId,
       title: `Research: ${data.topic}`,
       kind: "research",
       detail: { topic: data.topic, urls: data.urls },
-      status: "running",
+      status: "queued",
     });
 
     const run = await createRun(supabaseAdmin, {
@@ -41,81 +42,45 @@ export const startResearchRun = createServerFn({ method: "POST" })
       attempt: 1,
     });
 
-    // Perform actual retrieval (no AI)
-    const pages = [];
-    for (const url of data.urls) {
-      const page = await retrievePage(url);
-      pages.push(page);
-    }
+    // Execute through the controlled, permission-checked path
+    const result = await executeResearchStep(supabaseAdmin, {
+      taskId: task.id,
+      runId: run.id,
+      ownerId: context.userId,
+      urls: data.urls,
+      topic: data.topic,
+    });
 
-    const sources = pages
-      .filter((p) => !p.error && p.status >= 200 && p.status < 400)
-      .map(toSourceMeta);
-
-    // Persist research run record if table exists
+    // Best-effort research_runs row
+    const sourceCount = (result.result as any)?.source_count ?? 0;
     const { data: researchRow } = await supabaseAdmin
       .from("research_runs")
       .insert({
         user_id: context.userId,
         topic: data.topic,
-        status: pages.length > 0 ? "completed" : "failed",
-        sources: sources,
-        findings: [], // no fabricated findings
+        status: result.status === "completed" ? "completed" : "failed",
+        sources: (result.result as any)?.sources ?? [],
+        findings: [],
       })
       .select("id")
       .maybeSingle();
-
-    // Store sources
-    for (const src of sources) {
-      await supabaseAdmin.from("research_sources").insert({
-        run_id: researchRow?.id ?? null,
-        url: src.url,
-        domain: src.domain,
-        title: src.title,
-        content_hash: src.contentHash,
-        retrieved_at: src.retrievedAt,
-      }).select().maybeSingle();
-    }
-
-    // Update run + task
-    await supabaseAdmin
-      .from("task_runs")
-      .update({
-        status: "completed",
-        outputs: { source_count: sources.length, pages: pages.map((p) => ({ url: p.url, status: p.status, title: p.title, error: p.error })) },
-        ended_at: new Date().toISOString(),
-      })
-      .eq("id", run.id);
-
-    await supabaseAdmin
-      .from("tasks")
-      .update({
-        status: "completed",
-        progress: 100,
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", task.id);
 
     await supabaseAdmin.from("audit_logs").insert({
       actor_id: context.userId,
       action: "research.completed",
       target_type: "tasks",
       target_id: task.id,
-      metadata: { run_id: run.id, source_count: sources.length },
+      metadata: { run_id: run.id, source_count: sourceCount, status: result.status },
     });
 
     return {
       taskId: task.id,
       runId: run.id,
       researchId: researchRow?.id ?? null,
-      sourceCount: sources.length,
-      pages: pages.map((p) => ({
-        url: p.url,
-        status: p.status,
-        title: p.title,
-        error: p.error,
-        textLength: p.text.length,
-      })),
+      sourceCount,
+      status: result.status,
+      warnings: result.warnings ?? [],
+      errors: result.errors ?? [],
     };
   });
 
