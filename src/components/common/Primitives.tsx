@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
+import { BackButton } from "@/components/common/BackButton";
 
 /* ─── Page Header ───────────────────────────────────────────── */
 
@@ -10,26 +11,36 @@ export function PageHeader({
   description,
   actions,
   eyebrow,
+  backFallback,
+  showBack = true,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
   eyebrow?: string;
+  /** Safe fallback when browser history is empty (user vs admin shell). */
+  backFallback?: string;
+  showBack?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-border/80 pb-7 sm:flex-row sm:items-end sm:justify-between">
-      <div className="space-y-1.5">
-        {eyebrow ? (
-          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-primary">{eyebrow}</p>
-        ) : null}
-        <h1 className="text-2xl font-semibold tracking-tight text-balance-tight sm:text-[28px]">
-          {title}
-        </h1>
-        {description ? (
-          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>
-        ) : null}
+    <div className="space-y-4 border-b border-border/80 pb-7">
+      {showBack ? (
+        <BackButton fallback={backFallback ?? "/dashboard"} />
+      ) : null}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1.5">
+          {eyebrow ? (
+            <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-primary">{eyebrow}</p>
+          ) : null}
+          <h1 className="text-2xl font-semibold tracking-tight text-balance-tight sm:text-[28px]">
+            {title}
+          </h1>
+          {description ? (
+            <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>
+          ) : null}
+        </div>
+        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   );
 }

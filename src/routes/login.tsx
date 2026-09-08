@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Eye, EyeOff } from "lucide-react";
@@ -7,8 +7,14 @@ import { Logo, AetherMark } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { z } from "zod";
+
+const loginSearchSchema = z.object({
+  redirect: z.string().optional(),
+});
 
 export const Route = createFileRoute("/login")({
+  validateSearch: loginSearchSchema,
   head: () => ({
     meta: [
       { title: "Sign in — Aether AI Platform" },
@@ -20,8 +26,16 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
+function safeInternalPath(path: string | undefined): string {
+  if (!path || !path.startsWith("/") || path.startsWith("//")) return "/dashboard";
+  // Never bounce ordinary users into admin after login via open redirect.
+  if (path.startsWith("/admin")) return "/dashboard";
+  return path;
+}
+
 function LoginPage() {
   const navigate = useNavigate();
+  const search = useSearch({ from: "/login" });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -36,12 +50,11 @@ function LoginPage() {
       toast.error(error.message);
       return;
     }
-    navigate({ to: "/dashboard" });
+    navigate({ to: safeInternalPath(search.redirect) });
   }
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
-      {/* Left brand panel */}
       <div className="relative hidden overflow-hidden bg-surface lg:flex lg:flex-col lg:justify-between lg:p-12">
         <div className="grid-backdrop pointer-events-none absolute inset-0 opacity-30" />
         <div className="aether-glow pointer-events-none absolute inset-0" />
@@ -64,7 +77,6 @@ function LoginPage() {
         </p>
       </div>
 
-      {/* Right form panel */}
       <div className="flex flex-col items-center justify-center px-5 py-16">
         <div className="w-full max-w-[380px] animate-in-up">
           <div className="mb-8 flex justify-center lg:hidden">
@@ -97,6 +109,12 @@ function LoginPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs text-muted-foreground transition-colors hover:text-primary"
+                >
+                  Forgot password?
+                </Link>
               </div>
               <div className="relative">
                 <Input

@@ -31,7 +31,8 @@ function Page() {
         <PageHeader
           eyebrow="Team"
           title="Internal workforce"
-          description="Every agent that works inside Aether, with its real permissions and measured activity."
+          description="Every agent that works inside Aether, with its real permissions and measured activity. No fabricated metrics."
+          backFallback="/admin"
         />
 
         <div className="grid gap-3 sm:grid-cols-3">
@@ -74,7 +75,10 @@ function Page() {
                       <span className="text-xs text-muted-foreground">No permissions granted.</span>
                     ) : (
                       agent.permissions.map((p) => (
-                        <Tag key={p.permission} tone={p.allowed ? (p.requires_approval ? "warning" : "primary") : "neutral"}>
+                        <Tag
+                          key={p.permission}
+                          tone={p.allowed ? (p.requires_approval ? "warning" : "primary") : "neutral"}
+                        >
                           {p.permission}
                           {p.requires_approval ? " · approval" : ""}
                         </Tag>
