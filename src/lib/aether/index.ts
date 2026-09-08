@@ -22,4 +22,6 @@ export * from "./security";
 export * from "./orchestrator";
 export * from "./optimization";
 export * from "./inter-agent";
+export * from "./evaluation";
+export * from "./agent-registry";
 export * from "./governance";
