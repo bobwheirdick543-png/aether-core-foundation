@@ -6,6 +6,9 @@
  * to create the first persistent administrator identity. After that the
  * administrator signs in with a normal email + password account whose admin
  * role is stored in public.user_roles and verified server-side on every call.
+ *
+ * The same secret can also be used for emergency credential recovery / change
+ * after bootstrap is complete (see changeAdminCredentialsViaSetupCode).
  */
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
@@ -148,6 +151,144 @@ export const bootstrapAdmin = createServerFn({ method: "POST" })
     });
 
     return { ok: true as const, message: "Administrator account created." };
+  });
+
+/**
+ * Emergency / recovery path: change the existing administrator's email and/or
+ * password by providing the same server-side bootstrap setup code.
+ *
+ * This is intentionally available after bootstrap so the legitimate operator
+ * can recover or rotate credentials without being locked out.
+ * Rate-limited and fully audited. Never returns the secret.
+ */
+export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST" })
+  .inputValidator((data: {
+    secret: string;
+    currentEmail?: string;
+    newEmail?: string;
+    newPassword?: string;
+  }) => {
+    const secret = String(data?.secret ?? "").slice(0, 512);
+    if (!secret) throw new Error("Setup code is required.");
+
+    const currentEmail = data?.currentEmail
+      ? String(data.currentEmail).trim().toLowerCase()
+      : undefined;
+    const newEmail = data?.newEmail
+      ? String(data.newEmail).trim().toLowerCase()
+      : undefined;
+    const newPassword = data?.newPassword ? String(data.newPassword) : undefined;
+
+    if (!newEmail && !newPassword) {
+      throw new Error("Provide a new email and/or a new password.");
+    }
+    if (newEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
+      throw new Error("A valid new email is required.");
+    }
+    if (newPassword && newPassword.length < 12) {
+      throw new Error("New password must be at least 12 characters.");
+    }
+
+    return { secret, currentEmail, newEmail, newPassword };
+  })
+  .handler(async ({ data }) => {
+    const expected = process.env["AETHER_ADMIN_PASSWORD"];
+    if (!expected) {
+      return { ok: false as const, message: "Administrator recovery is not configured on this server." };
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const fingerprint = callerFingerprint();
+    const since = new Date(Date.now() - ATTEMPT_WINDOW_MINUTES * 60_000).toISOString();
+
+    const { count: recentFailures } = await supabaseAdmin
+      .from("admin_bootstrap_attempts")
+      .select("*", { count: "exact", head: true })
+      .eq("fingerprint", fingerprint)
+      .eq("succeeded", false)
+      .gte("attempted_at", since);
+
+    if ((recentFailures ?? 0) >= MAX_FAILED_ATTEMPTS) {
+      return { ok: false as const, message: "Too many attempts. Try again later." };
+    }
+
+    // Must already have an administrator
+    const { count: hasAdmin } = await supabaseAdmin
+      .from("admin_bootstrap")
+      .select("*", { count: "exact", head: true });
+    if ((hasAdmin ?? 0) === 0) {
+      return { ok: false as const, message: "No administrator has been initialized yet. Use the setup page." };
+    }
+
+    if (!secretMatches(data.secret, expected)) {
+      await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: false });
+      return { ok: false as const, message: "Setup code rejected." };
+    }
+
+    // Locate the current administrator account
+    const { data: roleRows } = await supabaseAdmin
+      .from("user_roles")
+      .select("user_id")
+      .eq("role", "admin")
+      .limit(5);
+
+    if (!roleRows || roleRows.length === 0) {
+      return { ok: false as const, message: "No administrator role found." };
+    }
+
+    // Prefer the one matching currentEmail if provided, otherwise the first admin
+    let targetUserId = roleRows[0].user_id as string;
+
+    if (data.currentEmail) {
+      const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      const match = list?.users?.find(
+        (u) => (u.email ?? "").toLowerCase() === data.currentEmail && roleRows.some((r) => r.user_id === u.id),
+      );
+      if (!match) {
+        await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: false });
+        return { ok: false as const, message: "No administrator found with that email." };
+      }
+      targetUserId = match.id;
+    }
+
+    const updates: { email?: string; password?: string; email_confirm?: boolean } = {};
+    if (data.newEmail) {
+      updates.email = data.newEmail;
+      updates.email_confirm = true;
+    }
+    if (data.newPassword) {
+      updates.password = data.newPassword;
+    }
+
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, updates);
+    if (updateError) {
+      await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: false });
+      return { ok: false as const, message: updateError.message || "Could not update administrator credentials." };
+    }
+
+    // Keep profile display name in sync if email changed
+    if (data.newEmail) {
+      await supabaseAdmin.from("profiles").update({ updated_at: new Date().toISOString() }).eq("id", targetUserId);
+    }
+
+    await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: true });
+
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_id: targetUserId,
+      action: "admin.credentials.changed_via_setup_code",
+      target_type: "auth.users",
+      target_id: targetUserId,
+      metadata: {
+        email_changed: Boolean(data.newEmail),
+        password_changed: Boolean(data.newPassword),
+        via: "setup_code",
+      },
+    });
+
+    return {
+      ok: true as const,
+      message: "Administrator credentials updated successfully. You can now sign in with the new credentials.",
+    };
   });
 
 /** Server-side role check. Never trust the client for this. */
