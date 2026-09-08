@@ -4,7 +4,12 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { avatarUrlForId, isAetherAvatarId, randomAetherAvatarId } from "@/lib/aether/avatars";
+import {
+  avatarUrlForId,
+  isAetherAvatarId,
+  randomAetherAvatarId,
+  storageRefForPath,
+} from "@/lib/aether/avatars";
 
 export const getMyProfile = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -24,6 +29,16 @@ export const getMyProfile = createServerFn({ method: "GET" })
       .select("role")
       .eq("user_id", context.userId);
 
+    let avatarSignedUrl: string | null = null;
+    const rawAvatar = profile?.avatar_url ?? null;
+    if (rawAvatar?.startsWith("storage:")) {
+      const path = rawAvatar.slice("storage:".length);
+      const { data: signed } = await context.supabase.storage
+        .from("avatars")
+        .createSignedUrl(path, 60 * 60);
+      avatarSignedUrl = signed?.signedUrl ?? null;
+    }
+
     return {
       email,
       profile: profile ?? {
@@ -38,6 +53,7 @@ export const getMyProfile = createServerFn({ method: "GET" })
         created_at: null,
         updated_at: null,
       },
+      avatarSignedUrl,
       roles: (roles ?? []).map((r) => r.role as string),
       isAdmin: (roles ?? []).some((r) => r.role === "admin"),
     };
@@ -53,6 +69,8 @@ export const updateMyProfile = createServerFn({ method: "POST" })
       responseStyle?: string;
       memoryEnabled?: boolean;
       avatarChoice?: string; // builtin id | "random" | "clear"
+      /** Storage object path under avatars/{userId}/… after client upload */
+      avatarStoragePath?: string;
       onboardingCompleted?: boolean;
     }) => data,
   )
@@ -84,6 +102,16 @@ export const updateMyProfile = createServerFn({ method: "POST" })
       patch.avatar_url = avatarUrlForId(randomAetherAvatarId());
     } else if (typeof data.avatarChoice === "string" && isAetherAvatarId(data.avatarChoice)) {
       patch.avatar_url = avatarUrlForId(data.avatarChoice);
+    } else if (typeof data.avatarStoragePath === "string") {
+      // Must live under this user's folder only.
+      const path = data.avatarStoragePath.replace(/^\/+/, "");
+      if (!path.startsWith(`${context.userId}/`)) {
+        return { ok: false as const, message: "Invalid avatar path." };
+      }
+      if (path.includes("..")) {
+        return { ok: false as const, message: "Invalid avatar path." };
+      }
+      patch.avatar_url = storageRefForPath(path);
     }
 
     if (Object.keys(patch).length === 0) {

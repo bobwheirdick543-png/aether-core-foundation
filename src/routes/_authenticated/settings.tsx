@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -9,7 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getMyProfile, updateMyProfile } from "@/lib/auth/profile.functions";
-import { AETHER_AVATARS, parseAvatarUrl } from "@/lib/aether/avatars";
+import {
+  AETHER_AVATARS,
+  AVATAR_BUCKET,
+  AVATAR_MAX_BYTES,
+  AVATAR_MIME,
+  avatarObjectPath,
+  parseAvatarUrl,
+} from "@/lib/aether/avatars";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +37,7 @@ function Page() {
   const load = useServerFn(getMyProfile);
   const save = useServerFn(updateMyProfile);
   const { data, isLoading } = useQuery({ queryKey: ["my-profile"], queryFn: () => load({}) });
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [displayName, setDisplayName] = useState("");
   const [language, setLanguage] = useState("en");
@@ -38,6 +46,7 @@ function Page() {
   const [memory, setMemory] = useState(true);
   const [avatarChoice, setAvatarChoice] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -78,6 +87,44 @@ function Page() {
     }
   }
 
+  async function onUploadAvatar(file: File) {
+    if (!data?.profile?.id) {
+      toast.error("Sign in required.");
+      return;
+    }
+    if (!AVATAR_MIME.includes(file.type as (typeof AVATAR_MIME)[number])) {
+      toast.error("Use JPEG, PNG, WebP or GIF.");
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      toast.error("Image must be 2 MB or smaller.");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const path = avatarObjectPath(data.profile.id, file.name);
+      const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, file, {
+        upsert: true,
+        contentType: file.type,
+      });
+      if (upErr) {
+        toast.error(upErr.message || "Upload failed. Apply the avatars storage migration if needed.");
+        return;
+      }
+
+      const result = await save({ data: { avatarStoragePath: path } });
+      if (result.ok) {
+        toast.success("Avatar uploaded.");
+        setAvatarChoice(undefined);
+        queryClient.invalidateQueries({ queryKey: ["my-profile"] });
+      } else toast.error(result.message);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
   async function onChangePassword(e: React.FormEvent) {
     e.preventDefault();
     if (newPassword.length < 12) {
@@ -103,6 +150,9 @@ function Page() {
   }
 
   const currentAvatar = parseAvatarUrl(data?.profile?.avatar_url ?? null);
+  const previewSrc =
+    data?.avatarSignedUrl ??
+    (currentAvatar.kind === "upload" ? currentAvatar.src : undefined);
 
   return (
     <AppShell>
@@ -143,9 +193,45 @@ function Page() {
                 <div className="space-y-2">
                   <Label>Avatar</Label>
                   <p className="text-xs text-muted-foreground">
-                    Built-in Aether avatars are decorative only and never change permissions.
+                    Upload an image or pick a built-in Aether avatar. Avatars are decorative only and
+                    never change permissions.
                   </p>
-                  <div className="flex flex-wrap gap-2">
+
+                  {previewSrc ? (
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={previewSrc}
+                        alt="Current avatar"
+                        className="h-14 w-14 rounded-xl border border-border object-cover"
+                      />
+                      <span className="text-xs text-muted-foreground">Current uploaded image</span>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept={AVATAR_MIME.join(",")}
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void onUploadAvatar(f);
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={uploading}
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      {uploading ? "Uploading…" : "Upload image"}
+                    </Button>
+                    <span className="text-[11px] text-muted-foreground">JPEG / PNG / WebP / GIF · max 2 MB</span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
                     {AETHER_AVATARS.map((a) => (
                       <button
                         key={a.id}
