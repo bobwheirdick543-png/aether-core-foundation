@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AdminShell } from "@/components/layout/AdminShell";
-import { PageHeader, StatCard, PhaseNote, Panel, Tag } from "@/components/common/Primitives";
-import { MOCK_ADMIN_STATS, MOCK_AUDIT_LOG } from "@/lib/aether/mock";
+import { PageHeader, StatCard, Panel, Tag } from "@/components/common/Primitives";
+import { getAdminOverview } from "@/lib/admin/console.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   head: () => ({
@@ -16,70 +18,78 @@ export const Route = createFileRoute("/_authenticated/admin/")({
 });
 
 function Page() {
+  const fetchOverview = useServerFn(getAdminOverview);
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-overview"],
+    queryFn: () => fetchOverview({}),
+  });
+
+  const c = data?.counts;
+  const stats = [
+    { label: "Accounts", value: c?.users, hint: `${c?.admins ?? 0} administrator(s)` } as const,
+    { label: "Projects", value: c?.projects },
+    { label: "Conversations", value: c?.conversations },
+    { label: "Tasks", value: c?.tasks, hint: `${c?.activeTasks ?? 0} active` },
+    { label: "Execution runs", value: c?.runs },
+    { label: "Research runs", value: c?.research },
+    { label: "Knowledge entries", value: c?.knowledge, hint: `${c?.approvedKnowledge ?? 0} in production` },
+    { label: "Reports", value: c?.reports },
+  ];
+
   return (
     <AdminShell>
       <div className="animate-in-up space-y-6">
         <PageHeader
           eyebrow="Control plane"
           title="Overview"
-          description="Platform-level health, usage and activity at a glance."
+          description="Live platform counters read directly from the database."
         />
 
-        <PhaseNote>
-          Admin overview — live metrics connect as backend services come online. Counts below are placeholders.
-        </PhaseNote>
-
-        {/* Stats grid */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {MOCK_ADMIN_STATS.map((s) => (
-            <StatCard key={s.label} label={s.label} value={s.value} hint={s.hint} />
+          {stats.map((s) => (
+            <StatCard
+              key={s.label}
+              label={s.label}
+              value={isLoading ? "—" : String(s.value ?? 0)}
+              {...(!isLoading && s.hint ? { hint: s.hint } : {})}
+            />
           ))}
         </div>
 
-        {/* System status + recent audit */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section>
-            <h2 className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              System status
-            </h2>
-            <Panel className="space-y-3">
-              {[
-                { label: "API gateway", status: "operational" as const },
-                { label: "Auth service", status: "operational" as const },
-                { label: "Model router", status: "planned" as const },
-                { label: "Research workers", status: "planned" as const },
-                { label: "Knowledge pipeline", status: "planned" as const },
-              ].map((s) => (
-                <div key={s.label} className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{s.label}</span>
-                  <Tag tone={s.status === "operational" ? "success" : "neutral"}>{s.status}</Tag>
-                </div>
-              ))}
-            </Panel>
-          </section>
-
-          <section>
-            <h2 className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              Recent audit log
-            </h2>
-            <Panel className="space-y-0 p-0">
-              {MOCK_AUDIT_LOG.map((l, i) => (
+        <section>
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            Recent activity
+          </h2>
+          <Panel className="space-y-0 p-0">
+            {isLoading ? (
+              <p className="px-5 py-4 text-sm text-muted-foreground">Loading activity…</p>
+            ) : (data?.audit?.length ?? 0) === 0 ? (
+              <p className="px-5 py-4 text-sm text-muted-foreground">
+                No activity has been recorded yet.
+              </p>
+            ) : (
+              data!.audit.map((l, i) => (
                 <div
                   key={l.id}
-                  className={`flex items-start gap-3 px-5 py-3 text-xs ${i < MOCK_AUDIT_LOG.length - 1 ? "border-b border-border/50" : ""}`}
+                  className={`flex items-start gap-3 px-5 py-3 text-xs ${
+                    i < data!.audit.length - 1 ? "border-b border-border/50" : ""
+                  }`}
                 >
-                  <span className="shrink-0 font-mono text-muted-foreground">{l.time}</span>
+                  <span className="shrink-0 font-mono text-muted-foreground">
+                    {new Date(l.created_at).toLocaleString()}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <span className="font-medium">{l.action}</span>
-                    <span className="text-muted-foreground"> · {l.actor}</span>
-                    <p className="mt-0.5 text-muted-foreground">{l.target}</p>
+                    <p className="mt-0.5 truncate text-muted-foreground">
+                      {l.target_type ?? "—"} {l.target_id ? `· ${l.target_id}` : ""}
+                    </p>
                   </div>
-                  <Tag tone={l.level === "warn" ? "warning" : "neutral"}>{l.level}</Tag>
+                  <Tag tone="neutral">audit</Tag>
                 </div>
-              ))}
-            </Panel>
-          </section>
-        </div>
+              ))
+            )}
+          </Panel>
+        </section>
       </div>
     </AdminShell>
   );

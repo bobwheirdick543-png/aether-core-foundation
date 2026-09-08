@@ -22,6 +22,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as AuthenticatedAdminRouteRouteImport } from './routes/_authenticated/admin/route'
 import { Route as AuthenticatedApiKeysRouteImport } from './routes/_authenticated/api-keys'
 import { Route as AuthenticatedChatRouteImport } from './routes/_authenticated/chat'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
@@ -34,6 +35,7 @@ import { Route as AuthenticatedResearchRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedTasksRouteImport } from './routes/_authenticated/tasks'
 import { Route as AdminLoginRouteImport } from './routes/admin.login'
+import { Route as AdminSetupRouteImport } from './routes/admin.setup'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedAdminAgentsRouteImport } from './routes/_authenticated/admin/agents'
 import { Route as AuthenticatedAdminApiKeysRouteImport } from './routes/_authenticated/admin/api-keys'
@@ -45,6 +47,7 @@ import { Route as AuthenticatedAdminResearchRouteImport } from './routes/_authen
 import { Route as AuthenticatedAdminSettingsRouteImport } from './routes/_authenticated/admin/settings'
 import { Route as AuthenticatedAdminSystemRouteImport } from './routes/_authenticated/admin/system'
 import { Route as AuthenticatedAdminTasksRouteImport } from './routes/_authenticated/admin/tasks'
+import { Route as AuthenticatedAdminTeamRouteImport } from './routes/_authenticated/admin/team'
 import { Route as AuthenticatedAdminUsageRouteImport } from './routes/_authenticated/admin/usage'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin/users'
 
@@ -112,6 +115,11 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedAdminRouteRoute = AuthenticatedAdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedApiKeysRoute = AuthenticatedApiKeysRouteImport.update({
   id: '/api-keys',
   path: '/api-keys',
@@ -172,78 +180,88 @@ const AdminLoginRoute = AdminLoginRouteImport.update({
   path: '/admin/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminSetupRoute = AdminSetupRouteImport.update({
+  id: '/admin/setup',
+  path: '/admin/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
-  id: '/admin/',
-  path: '/admin/',
-  getParentRoute: () => AuthenticatedRouteRoute,
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
 const AuthenticatedAdminAgentsRoute =
   AuthenticatedAdminAgentsRouteImport.update({
-    id: '/admin/agents',
-    path: '/admin/agents',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/agents',
+    path: '/agents',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminApiKeysRoute =
   AuthenticatedAdminApiKeysRouteImport.update({
-    id: '/admin/api-keys',
-    path: '/admin/api-keys',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/api-keys',
+    path: '/api-keys',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminKnowledgeRoute =
   AuthenticatedAdminKnowledgeRouteImport.update({
-    id: '/admin/knowledge',
-    path: '/admin/knowledge',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/knowledge',
+    path: '/knowledge',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminLogsRoute = AuthenticatedAdminLogsRouteImport.update({
-  id: '/admin/logs',
-  path: '/admin/logs',
-  getParentRoute: () => AuthenticatedRouteRoute,
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
 const AuthenticatedAdminModelsRoute =
   AuthenticatedAdminModelsRouteImport.update({
-    id: '/admin/models',
-    path: '/admin/models',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/models',
+    path: '/models',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminProjectsRoute =
   AuthenticatedAdminProjectsRouteImport.update({
-    id: '/admin/projects',
-    path: '/admin/projects',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/projects',
+    path: '/projects',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminResearchRoute =
   AuthenticatedAdminResearchRouteImport.update({
-    id: '/admin/research',
-    path: '/admin/research',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/research',
+    path: '/research',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminSettingsRoute =
   AuthenticatedAdminSettingsRouteImport.update({
-    id: '/admin/settings',
-    path: '/admin/settings',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminSystemRoute =
   AuthenticatedAdminSystemRouteImport.update({
-    id: '/admin/system',
-    path: '/admin/system',
-    getParentRoute: () => AuthenticatedRouteRoute,
+    id: '/system',
+    path: '/system',
+    getParentRoute: () => AuthenticatedAdminRouteRoute,
   } as any)
 const AuthenticatedAdminTasksRoute = AuthenticatedAdminTasksRouteImport.update({
-  id: '/admin/tasks',
-  path: '/admin/tasks',
-  getParentRoute: () => AuthenticatedRouteRoute,
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
+} as any)
+const AuthenticatedAdminTeamRoute = AuthenticatedAdminTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
 const AuthenticatedAdminUsageRoute = AuthenticatedAdminUsageRouteImport.update({
-  id: '/admin/usage',
-  path: '/admin/usage',
-  getParentRoute: () => AuthenticatedRouteRoute,
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
-  id: '/admin/users',
-  path: '/admin/users',
-  getParentRoute: () => AuthenticatedRouteRoute,
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AuthenticatedAdminRouteRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -259,6 +277,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/api-keys': typeof AuthenticatedApiKeysRoute
   '/chat': typeof AuthenticatedChatRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
@@ -271,6 +290,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/tasks': typeof AuthenticatedTasksRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/setup': typeof AdminSetupRoute
   '/admin/agents': typeof AuthenticatedAdminAgentsRoute
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/knowledge': typeof AuthenticatedAdminKnowledgeRoute
@@ -281,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
   '/admin/tasks': typeof AuthenticatedAdminTasksRoute
+  '/admin/team': typeof AuthenticatedAdminTeamRoute
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
@@ -310,6 +331,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/tasks': typeof AuthenticatedTasksRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/setup': typeof AdminSetupRoute
   '/admin/agents': typeof AuthenticatedAdminAgentsRoute
   '/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/admin/knowledge': typeof AuthenticatedAdminKnowledgeRoute
@@ -320,6 +342,7 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/admin/system': typeof AuthenticatedAdminSystemRoute
   '/admin/tasks': typeof AuthenticatedAdminTasksRoute
+  '/admin/team': typeof AuthenticatedAdminTeamRoute
   '/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
@@ -339,6 +362,7 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/status': typeof StatusRoute
   '/terms': typeof TermsRoute
+  '/_authenticated/admin': typeof AuthenticatedAdminRouteRouteWithChildren
   '/_authenticated/api-keys': typeof AuthenticatedApiKeysRoute
   '/_authenticated/chat': typeof AuthenticatedChatRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
@@ -351,6 +375,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/tasks': typeof AuthenticatedTasksRoute
   '/admin/login': typeof AdminLoginRoute
+  '/admin/setup': typeof AdminSetupRoute
   '/_authenticated/admin/agents': typeof AuthenticatedAdminAgentsRoute
   '/_authenticated/admin/api-keys': typeof AuthenticatedAdminApiKeysRoute
   '/_authenticated/admin/knowledge': typeof AuthenticatedAdminKnowledgeRoute
@@ -361,6 +386,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/_authenticated/admin/system': typeof AuthenticatedAdminSystemRoute
   '/_authenticated/admin/tasks': typeof AuthenticatedAdminTasksRoute
+  '/_authenticated/admin/team': typeof AuthenticatedAdminTeamRoute
   '/_authenticated/admin/usage': typeof AuthenticatedAdminUsageRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
@@ -380,6 +406,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/status'
     | '/terms'
+    | '/admin'
     | '/api-keys'
     | '/chat'
     | '/dashboard'
@@ -392,6 +419,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tasks'
     | '/admin/login'
+    | '/admin/setup'
     | '/admin/agents'
     | '/admin/api-keys'
     | '/admin/knowledge'
@@ -402,6 +430,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/system'
     | '/admin/tasks'
+    | '/admin/team'
     | '/admin/usage'
     | '/admin/users'
     | '/admin/'
@@ -431,6 +460,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tasks'
     | '/admin/login'
+    | '/admin/setup'
     | '/admin/agents'
     | '/admin/api-keys'
     | '/admin/knowledge'
@@ -441,6 +471,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/system'
     | '/admin/tasks'
+    | '/admin/team'
     | '/admin/usage'
     | '/admin/users'
     | '/admin'
@@ -459,6 +490,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/status'
     | '/terms'
+    | '/_authenticated/admin'
     | '/_authenticated/api-keys'
     | '/_authenticated/chat'
     | '/_authenticated/dashboard'
@@ -471,6 +503,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/tasks'
     | '/admin/login'
+    | '/admin/setup'
     | '/_authenticated/admin/agents'
     | '/_authenticated/admin/api-keys'
     | '/_authenticated/admin/knowledge'
@@ -481,6 +514,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/settings'
     | '/_authenticated/admin/system'
     | '/_authenticated/admin/tasks'
+    | '/_authenticated/admin/team'
     | '/_authenticated/admin/usage'
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/'
@@ -501,6 +535,7 @@ export interface RootRouteChildren {
   StatusRoute: typeof StatusRoute
   TermsRoute: typeof TermsRoute
   AdminLoginRoute: typeof AdminLoginRoute
+  AdminSetupRoute: typeof AdminSetupRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -596,6 +631,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/api-keys': {
       id: '/_authenticated/api-keys'
       path: '/api-keys'
@@ -680,101 +722,156 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/setup': {
+      id: '/admin/setup'
+      path: '/admin/setup'
+      fullPath: '/admin/setup'
+      preLoaderRoute: typeof AdminSetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/admin/': {
       id: '/_authenticated/admin/'
-      path: '/admin'
+      path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/agents': {
       id: '/_authenticated/admin/agents'
-      path: '/admin/agents'
+      path: '/agents'
       fullPath: '/admin/agents'
       preLoaderRoute: typeof AuthenticatedAdminAgentsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/api-keys': {
       id: '/_authenticated/admin/api-keys'
-      path: '/admin/api-keys'
+      path: '/api-keys'
       fullPath: '/admin/api-keys'
       preLoaderRoute: typeof AuthenticatedAdminApiKeysRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/knowledge': {
       id: '/_authenticated/admin/knowledge'
-      path: '/admin/knowledge'
+      path: '/knowledge'
       fullPath: '/admin/knowledge'
       preLoaderRoute: typeof AuthenticatedAdminKnowledgeRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/logs': {
       id: '/_authenticated/admin/logs'
-      path: '/admin/logs'
+      path: '/logs'
       fullPath: '/admin/logs'
       preLoaderRoute: typeof AuthenticatedAdminLogsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/models': {
       id: '/_authenticated/admin/models'
-      path: '/admin/models'
+      path: '/models'
       fullPath: '/admin/models'
       preLoaderRoute: typeof AuthenticatedAdminModelsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/projects': {
       id: '/_authenticated/admin/projects'
-      path: '/admin/projects'
+      path: '/projects'
       fullPath: '/admin/projects'
       preLoaderRoute: typeof AuthenticatedAdminProjectsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/research': {
       id: '/_authenticated/admin/research'
-      path: '/admin/research'
+      path: '/research'
       fullPath: '/admin/research'
       preLoaderRoute: typeof AuthenticatedAdminResearchRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/settings': {
       id: '/_authenticated/admin/settings'
-      path: '/admin/settings'
+      path: '/settings'
       fullPath: '/admin/settings'
       preLoaderRoute: typeof AuthenticatedAdminSettingsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/system': {
       id: '/_authenticated/admin/system'
-      path: '/admin/system'
+      path: '/system'
       fullPath: '/admin/system'
       preLoaderRoute: typeof AuthenticatedAdminSystemRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/tasks': {
       id: '/_authenticated/admin/tasks'
-      path: '/admin/tasks'
+      path: '/tasks'
       fullPath: '/admin/tasks'
       preLoaderRoute: typeof AuthenticatedAdminTasksRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
+    }
+    '/_authenticated/admin/team': {
+      id: '/_authenticated/admin/team'
+      path: '/team'
+      fullPath: '/admin/team'
+      preLoaderRoute: typeof AuthenticatedAdminTeamRouteImport
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/usage': {
       id: '/_authenticated/admin/usage'
-      path: '/admin/usage'
+      path: '/usage'
       fullPath: '/admin/usage'
       preLoaderRoute: typeof AuthenticatedAdminUsageRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
-      path: '/admin/users'
+      path: '/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+      parentRoute: typeof AuthenticatedAdminRouteRoute
     }
   }
 }
 
+interface AuthenticatedAdminRouteRouteChildren {
+  AuthenticatedAdminAgentsRoute: typeof AuthenticatedAdminAgentsRoute
+  AuthenticatedAdminApiKeysRoute: typeof AuthenticatedAdminApiKeysRoute
+  AuthenticatedAdminKnowledgeRoute: typeof AuthenticatedAdminKnowledgeRoute
+  AuthenticatedAdminLogsRoute: typeof AuthenticatedAdminLogsRoute
+  AuthenticatedAdminModelsRoute: typeof AuthenticatedAdminModelsRoute
+  AuthenticatedAdminProjectsRoute: typeof AuthenticatedAdminProjectsRoute
+  AuthenticatedAdminResearchRoute: typeof AuthenticatedAdminResearchRoute
+  AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
+  AuthenticatedAdminSystemRoute: typeof AuthenticatedAdminSystemRoute
+  AuthenticatedAdminTasksRoute: typeof AuthenticatedAdminTasksRoute
+  AuthenticatedAdminTeamRoute: typeof AuthenticatedAdminTeamRoute
+  AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
+  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
+}
+
+const AuthenticatedAdminRouteRouteChildren: AuthenticatedAdminRouteRouteChildren =
+  {
+    AuthenticatedAdminAgentsRoute: AuthenticatedAdminAgentsRoute,
+    AuthenticatedAdminApiKeysRoute: AuthenticatedAdminApiKeysRoute,
+    AuthenticatedAdminKnowledgeRoute: AuthenticatedAdminKnowledgeRoute,
+    AuthenticatedAdminLogsRoute: AuthenticatedAdminLogsRoute,
+    AuthenticatedAdminModelsRoute: AuthenticatedAdminModelsRoute,
+    AuthenticatedAdminProjectsRoute: AuthenticatedAdminProjectsRoute,
+    AuthenticatedAdminResearchRoute: AuthenticatedAdminResearchRoute,
+    AuthenticatedAdminSettingsRoute: AuthenticatedAdminSettingsRoute,
+    AuthenticatedAdminSystemRoute: AuthenticatedAdminSystemRoute,
+    AuthenticatedAdminTasksRoute: AuthenticatedAdminTasksRoute,
+    AuthenticatedAdminTeamRoute: AuthenticatedAdminTeamRoute,
+    AuthenticatedAdminUsageRoute: AuthenticatedAdminUsageRoute,
+    AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
+    AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
+  }
+
+const AuthenticatedAdminRouteRouteWithChildren =
+  AuthenticatedAdminRouteRoute._addFileChildren(
+    AuthenticatedAdminRouteRouteChildren,
+  )
+
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAdminRouteRoute: typeof AuthenticatedAdminRouteRouteWithChildren
   AuthenticatedApiKeysRoute: typeof AuthenticatedApiKeysRoute
   AuthenticatedChatRoute: typeof AuthenticatedChatRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
@@ -786,22 +883,10 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedResearchRoute: typeof AuthenticatedResearchRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedTasksRoute: typeof AuthenticatedTasksRoute
-  AuthenticatedAdminAgentsRoute: typeof AuthenticatedAdminAgentsRoute
-  AuthenticatedAdminApiKeysRoute: typeof AuthenticatedAdminApiKeysRoute
-  AuthenticatedAdminKnowledgeRoute: typeof AuthenticatedAdminKnowledgeRoute
-  AuthenticatedAdminLogsRoute: typeof AuthenticatedAdminLogsRoute
-  AuthenticatedAdminModelsRoute: typeof AuthenticatedAdminModelsRoute
-  AuthenticatedAdminProjectsRoute: typeof AuthenticatedAdminProjectsRoute
-  AuthenticatedAdminResearchRoute: typeof AuthenticatedAdminResearchRoute
-  AuthenticatedAdminSettingsRoute: typeof AuthenticatedAdminSettingsRoute
-  AuthenticatedAdminSystemRoute: typeof AuthenticatedAdminSystemRoute
-  AuthenticatedAdminTasksRoute: typeof AuthenticatedAdminTasksRoute
-  AuthenticatedAdminUsageRoute: typeof AuthenticatedAdminUsageRoute
-  AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
-  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAdminRouteRoute: AuthenticatedAdminRouteRouteWithChildren,
   AuthenticatedApiKeysRoute: AuthenticatedApiKeysRoute,
   AuthenticatedChatRoute: AuthenticatedChatRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
@@ -813,19 +898,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedResearchRoute: AuthenticatedResearchRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedTasksRoute: AuthenticatedTasksRoute,
-  AuthenticatedAdminAgentsRoute: AuthenticatedAdminAgentsRoute,
-  AuthenticatedAdminApiKeysRoute: AuthenticatedAdminApiKeysRoute,
-  AuthenticatedAdminKnowledgeRoute: AuthenticatedAdminKnowledgeRoute,
-  AuthenticatedAdminLogsRoute: AuthenticatedAdminLogsRoute,
-  AuthenticatedAdminModelsRoute: AuthenticatedAdminModelsRoute,
-  AuthenticatedAdminProjectsRoute: AuthenticatedAdminProjectsRoute,
-  AuthenticatedAdminResearchRoute: AuthenticatedAdminResearchRoute,
-  AuthenticatedAdminSettingsRoute: AuthenticatedAdminSettingsRoute,
-  AuthenticatedAdminSystemRoute: AuthenticatedAdminSystemRoute,
-  AuthenticatedAdminTasksRoute: AuthenticatedAdminTasksRoute,
-  AuthenticatedAdminUsageRoute: AuthenticatedAdminUsageRoute,
-  AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
-  AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
@@ -846,6 +918,7 @@ const rootRouteChildren: RootRouteChildren = {
   StatusRoute: StatusRoute,
   TermsRoute: TermsRoute,
   AdminLoginRoute: AdminLoginRoute,
+  AdminSetupRoute: AdminSetupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
