@@ -18,6 +18,7 @@ export * from "./research.functions";
 export * from "./knowledge-pipeline";
 export * from "./knowledge.functions";
 export * from "./pdf-report";
+export * from "./report-builder";
 export * from "./report.functions";
 export * from "./security";
 export * from "./orchestrator";
