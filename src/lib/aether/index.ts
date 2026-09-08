@@ -28,3 +28,4 @@ export * from "./agent-registry";
 export * from "./governance";
 export * from "./executor";
 export * from "./executor.functions";
+export * from "./hooks";
