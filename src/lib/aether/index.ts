@@ -11,6 +11,7 @@ export * from "./task.functions";
 export * from "./scheduler";
 export * from "./approvals";
 export * from "./notifications";
+export * from "./notification.functions";
 export * from "./research-engine";
 export * from "./knowledge-pipeline";
 export * from "./knowledge.functions";
