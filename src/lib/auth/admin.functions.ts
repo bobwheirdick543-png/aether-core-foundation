@@ -2,13 +2,10 @@
  * ADMIN IDENTITY & AUTHORIZATION — server side only.
  *
  * The bootstrap secret lives exclusively in the server environment variable
- * AETHER_ADMIN_PASSWORD. It never reaches the browser and is only used ONCE,
- * to create the first persistent administrator identity. After that the
- * administrator signs in with a normal email + password account whose admin
- * role is stored in public.user_roles and verified server-side on every call.
+ * AETHER_ADMIN_PASSWORD. It never reaches the browser.
  *
- * The same secret can also be used for emergency credential recovery / change
- * after bootstrap is complete (see changeAdminCredentialsViaSetupCode).
+ * After bootstrap, the administrator signs in with a normal email + password.
+ * The admin role is stored in public.user_roles and verified server-side.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
@@ -101,7 +98,6 @@ export const bootstrapAdmin = createServerFn({ method: "POST" })
       return { ok: false as const, message: "Setup code rejected." };
     }
 
-    // Create (or adopt) the administrator account.
     let userId: string | null = null;
     const created = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
@@ -113,7 +109,6 @@ export const bootstrapAdmin = createServerFn({ method: "POST" })
     if (created.data?.user) {
       userId = created.data.user.id;
     } else {
-      // Account with this email already exists — adopt it and set the password.
       const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const existing = list?.users?.find((u) => (u.email ?? "").toLowerCase() === data.email);
       if (!existing) {
@@ -154,12 +149,8 @@ export const bootstrapAdmin = createServerFn({ method: "POST" })
   });
 
 /**
- * Emergency / recovery path: change the existing administrator's email and/or
- * password by providing the same server-side bootstrap setup code.
- *
- * This is intentionally available after bootstrap so the legitimate operator
- * can recover or rotate credentials without being locked out.
- * Rate-limited and fully audited. Never returns the secret.
+ * Emergency recovery: change admin email and/or password using the setup code.
+ * Always re-asserts the admin role so access cannot be lost.
  */
 export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST" })
   .inputValidator((data: {
@@ -212,7 +203,6 @@ export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST
       return { ok: false as const, message: "Too many attempts. Try again later." };
     }
 
-    // Must already have an administrator
     const { count: hasAdmin } = await supabaseAdmin
       .from("admin_bootstrap")
       .select("*", { count: "exact", head: true });
@@ -225,24 +215,24 @@ export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST
       return { ok: false as const, message: "Setup code rejected." };
     }
 
-    // Locate the current administrator account
     const { data: roleRows } = await supabaseAdmin
       .from("user_roles")
       .select("user_id")
       .eq("role", "admin")
-      .limit(5);
+      .limit(10);
 
     if (!roleRows || roleRows.length === 0) {
       return { ok: false as const, message: "No administrator role found." };
     }
 
-    // Prefer the one matching currentEmail if provided, otherwise the first admin
     let targetUserId = roleRows[0].user_id as string;
 
     if (data.currentEmail) {
       const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const match = list?.users?.find(
-        (u) => (u.email ?? "").toLowerCase() === data.currentEmail && roleRows.some((r) => r.user_id === u.id),
+        (u) =>
+          (u.email ?? "").toLowerCase() === data.currentEmail &&
+          roleRows.some((r) => r.user_id === u.id),
       );
       if (!match) {
         await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: false });
@@ -263,12 +253,30 @@ export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, updates);
     if (updateError) {
       await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: false });
-      return { ok: false as const, message: updateError.message || "Could not update administrator credentials." };
+      return {
+        ok: false as const,
+        message: updateError.message || "Could not update administrator credentials.",
+      };
     }
 
-    // Keep profile display name in sync if email changed
+    // CRITICAL: always re-assert the admin role so access cannot be lost
+    await supabaseAdmin
+      .from("user_roles")
+      .upsert({ user_id: targetUserId, role: "admin" }, { onConflict: "user_id,role" });
+
+    // Keep bootstrap record in sync with the new email
     if (data.newEmail) {
-      await supabaseAdmin.from("profiles").update({ updated_at: new Date().toISOString() }).eq("id", targetUserId);
+      await supabaseAdmin
+        .from("admin_bootstrap")
+        .update({ completed_email: data.newEmail, completed_by: targetUserId })
+        .eq("id", true);
+
+      await supabaseAdmin
+        .from("profiles")
+        .upsert(
+          { id: targetUserId, updated_at: new Date().toISOString() },
+          { onConflict: "id" },
+        );
     }
 
     await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: true });
@@ -287,7 +295,9 @@ export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST
 
     return {
       ok: true as const,
-      message: "Administrator credentials updated successfully. You can now sign in with the new credentials.",
+      message:
+        "Administrator credentials updated. Sign in with the new email and password. " +
+        "If you changed the email, use the NEW email on the login form.",
     };
   });
 
@@ -295,7 +305,9 @@ export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST
 export const getMyRoles = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data } = await context.supabase
+    // Prefer service-role lookup so RLS cannot hide the admin role from the owner
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
       .from("user_roles")
       .select("role")
       .eq("user_id", context.userId);
@@ -305,23 +317,40 @@ export const getMyRoles = createServerFn({ method: "GET" })
 
 /**
  * Called right after an administrator signs in on /admin/login.
- * Confirms the signed-in account really holds the admin role and records it.
+ * Uses service-role to verify the admin role so RLS cannot cause false denials.
  */
 export const verifyAdminSignIn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId,
-      _role: "admin",
-    });
-    if (!isAdmin) return { ok: false as const };
-
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Primary: direct table check (reliable, ignores RLS)
+    const { data: roleRows } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", context.userId)
+      .eq("role", "admin")
+      .limit(1);
+
+    const isAdmin = (roleRows?.length ?? 0) > 0;
+
+    // Fallback: RPC if table check is empty (covers alternate schema layouts)
+    if (!isAdmin) {
+      const { data: rpcAdmin } = await supabaseAdmin.rpc("has_role", {
+        _user_id: context.userId,
+        _role: "admin",
+      });
+      if (!rpcAdmin) {
+        return { ok: false as const, reason: "not_admin" as const };
+      }
+    }
+
     await supabaseAdmin.from("audit_logs").insert({
       actor_id: context.userId,
       action: "admin.session.started",
       target_type: "auth.users",
       target_id: context.userId,
     });
+
     return { ok: true as const };
   });
