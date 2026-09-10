@@ -23,5 +23,5 @@ jobs:
         run: npm run build
       - name: Phase C TypeScript validation
         run: npx tsc -p tsconfig.phase-c.json --noEmit --pretty false
-      - name: AAX unit tests
-        run: npx vitest run src/lib/aether/aax.test.ts
+      - name: AAX and Phase D workspace tests
+        run: npx vitest run src/lib/aether/aax.test.ts src/lib/aether/aax-phase-d.test.ts
