@@ -9,7 +9,7 @@ export async function assertAaxAdmin(supabase: SupabaseClient, userId: string) {
 export async function listAaxTrainingJobs(admin: SupabaseClient, limit = 50): Promise<AaxTrainingJobSummary[]> {
   const { data, error } = await admin
     .from("aax_training_jobs")
-    .select("id,target_model_id,source_type,source_name,current_stage,pipeline_status,completed_agents,started_at,completed_at,last_event_at,created_at")
+    .select("id,target_model_id,source_type,current_stage,pipeline_status,completed_agents,started_at,completed_at,last_event_at,created_at")
     .order("created_at", { ascending: false })
     .limit(Math.max(1, Math.min(100, limit)));
   if (error) throw new Error(error.message);
