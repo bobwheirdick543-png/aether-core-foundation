@@ -8,6 +8,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { recoverExpiredRuntimeWork, runNextRuntimeWork } from "./runtime-worker";
+import { getRuntimeHealth } from "./runtime-health";
 
 async function requireAdmin(context: any): Promise<void> {
   const { data } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
@@ -33,4 +34,12 @@ export const recoverRuntimeWorkerLeases = createServerFn({ method: "POST" })
     await requireAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     return { recovered: await recoverExpiredRuntimeWork(supabaseAdmin, data.limit) };
+  });
+
+export const getRuntimeHealthSnapshot = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    return getRuntimeHealth(supabaseAdmin);
   });
