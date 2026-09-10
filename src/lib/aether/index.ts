@@ -9,6 +9,8 @@ export * from "./task-runtime";
 export * from "./task-service";
 export * from "./task.functions";
 export * from "./task-control.functions";
+export * from "./runtime-worker";
+export * from "./runtime.functions";
 export * from "./scheduler";
 export * from "./approvals";
 export * from "./notifications";
