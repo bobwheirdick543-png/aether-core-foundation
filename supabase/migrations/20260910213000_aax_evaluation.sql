@@ -42,3 +42,26 @@ create index if not exists aax_knowledge_changes_target_version_idx on public.aa
 alter table public.aax_training_jobs add column if not exists requested_by uuid references auth.users(id);
 alter table public.aax_training_jobs add column if not exists approved_by uuid references auth.users(id);
 alter table public.aax_training_jobs add column if not exists approved_at timestamptz;
+
+create or replace function public.activate_due_aax_releases()
+returns integer language plpgsql security definer set search_path=public as $$
+declare changed integer;
+begin
+  update public.aax_models set release_status='available', available_at=scheduled_release_at, updated_at=now()
+  where release_status in ('scheduled','announced') and scheduled_release_at is not null and scheduled_release_at<=now() and disabled_at is null;
+  get diagnostics changed=row_count; return changed;
+end; $$;
+revoke all on function public.activate_due_aax_releases() from public;
+grant execute on function public.activate_due_aax_releases() to service_role;
+
+create or replace function public.get_available_aax_model(p_model_key text)
+returns table(id uuid, model_key text, display_name text, generation integer, revision integer, provider text, provider_model text, capabilities text[], specializations text[], context_window integer, output_limit integer, release_status text, available_at timestamptz, config jsonb)
+language plpgsql security definer set search_path=public as $$
+begin
+  update public.aax_models set release_status='available', available_at=scheduled_release_at, updated_at=now()
+  where model_key=p_model_key and release_status in ('scheduled','announced') and scheduled_release_at is not null and scheduled_release_at<=now() and disabled_at is null;
+  return query select m.id,m.model_key,m.display_name,m.generation,m.revision,m.provider,m.provider_model,m.capabilities,m.specializations,m.context_window,m.output_limit,m.release_status,m.available_at,m.config
+  from public.aax_models m where m.model_key=p_model_key and m.release_status='available' and (m.available_at is null or m.available_at<=now()) and m.disabled_at is null limit 1;
+end; $$;
+revoke all on function public.get_available_aax_model(text) from public;
+grant execute on function public.get_available_aax_model(text) to authenticated, service_role;
