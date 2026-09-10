@@ -1,11 +1,10 @@
 /**
- * AETHER TASK / RUN RUNTIME FOUNDATION
+ * AETHER UNIVERSAL TASK RUNTIME
  *
- * Separates TASK (requested/scheduled unit of work) from RUN (one execution attempt).
- * Background-capable. Browser-independent.
- * Explicit ownership. Idempotent side-effects. Strict state transitions.
- *
- * No fabricated activity. No silent success.
+ * Task = durable unit of work. Run = one execution attempt.
+ * Attempts are never overwritten. Runtime state is persisted in Supabase so
+ * browser lifetime is irrelevant. Domain agents consume this runtime rather
+ * than implementing their own queues, retries, cancellation or timeouts.
  */
 
 import type { AgentKey } from "./agents";
@@ -24,17 +23,31 @@ export type TaskStatus =
 
 export type RunStatus = TaskStatus;
 
-/** Allowed transitions — invalid ones must be rejected */
+export const TIMEOUT_PRESETS_MS = {
+  "20m": 20 * 60 * 1000,
+  "30m": 30 * 60 * 1000,
+  "40m": 40 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  "2h": 2 * 60 * 60 * 1000,
+  "3h": 3 * 60 * 60 * 1000,
+  "4h": 4 * 60 * 60 * 1000,
+  "5h": 5 * 60 * 60 * 1000,
+} as const;
+
+export type TimeoutPreset = keyof typeof TIMEOUT_PRESETS_MS;
+export const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+export const MAX_TIMEOUT_MS = TIMEOUT_PRESETS_MS["5h"];
+
 const ALLOWED_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  queued: ["running", "cancelled", "scheduled"],
-  scheduled: ["queued", "cancelled"],
+  queued: ["running", "cancelled", "scheduled", "paused"],
+  scheduled: ["queued", "cancelled", "paused"],
   running: ["completed", "failed", "waiting_approval", "cancelled", "paused", "retrying"],
-  waiting_approval: ["completed", "failed", "retrying", "cancelled"],
+  waiting_approval: ["completed", "failed", "retrying", "cancelled", "paused"],
   paused: ["running", "cancelled", "queued"],
-  retrying: ["running", "failed", "cancelled"],
-  completed: [], // terminal
-  failed: ["retrying", "cancelled"], // can be retried
-  cancelled: [], // terminal
+  retrying: ["running", "failed", "cancelled", "paused"],
+  completed: ["retrying"],
+  failed: ["retrying", "cancelled"],
+  cancelled: ["retrying"],
 };
 
 export function canTransition(from: TaskStatus, to: TaskStatus): boolean {
@@ -47,15 +60,36 @@ export function assertTransition(from: TaskStatus, to: TaskStatus): void {
   }
 }
 
-/** Core Task record shape (maps to public.tasks) */
+export function resolveTimeoutMs(value?: number | TimeoutPreset | null): number {
+  if (typeof value === "string") return TIMEOUT_PRESETS_MS[value];
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_TIMEOUT_MS;
+  if (value <= 0) throw new Error("Timeout must be greater than zero");
+  return Math.min(Math.floor(value), MAX_TIMEOUT_MS);
+}
+
+export function deadlineFromTimeout(timeoutMs: number, now = Date.now()): string {
+  return new Date(now + resolveTimeoutMs(timeoutMs)).toISOString();
+}
+
 export interface TaskRecord {
   id: string;
   owner_id: string;
   project_id?: string | null;
   title: string;
-  kind: string; // research | knowledge | report | etc.
+  kind: string;
   status: TaskStatus;
   progress: number;
+  priority: number;
+  timeout_ms: number;
+  deadline_at?: string | null;
+  cancel_requested_at?: string | null;
+  cancellation_reason?: string | null;
+  worker_id?: string | null;
+  lease_expires_at?: string | null;
+  heartbeat_at?: string | null;
+  retry_count: number;
+  max_retries: number;
+  next_attempt_at?: string | null;
   detail: Record<string, unknown>;
   started_at?: string | null;
   completed_at?: string | null;
@@ -63,7 +97,6 @@ export interface TaskRecord {
   updated_at: string;
 }
 
-/** Core Run record shape (maps to public.task_runs) */
 export interface RunRecord {
   id: string;
   task_id: string;
@@ -72,6 +105,17 @@ export interface RunRecord {
   agent_key?: AgentKey | null;
   attempt: number;
   status: RunStatus;
+  timeout_ms: number;
+  deadline_at?: string | null;
+  worker_id?: string | null;
+  lease_expires_at?: string | null;
+  heartbeat_at?: string | null;
+  retry_count: number;
+  max_retries: number;
+  next_attempt_at?: string | null;
+  failure_code?: string | null;
+  retryable?: boolean | null;
+  duration_ms?: number | null;
   started_at?: string | null;
   ended_at?: string | null;
   inputs: Record<string, unknown>;
@@ -83,7 +127,6 @@ export interface RunRecord {
   updated_at: string;
 }
 
-/** Create a new task payload (server-side only) */
 export interface CreateTaskInput {
   owner_id: string;
   project_id?: string | null;
@@ -91,9 +134,13 @@ export interface CreateTaskInput {
   kind: string;
   detail?: Record<string, unknown>;
   status?: TaskStatus;
+  priority?: number;
+  timeout_ms?: number | TimeoutPreset;
+  max_retries?: number;
+  deadline_at?: string | null;
+  idempotency_key?: string | null;
 }
 
-/** Create a new run for an existing task */
 export interface CreateRunInput {
   task_id: string;
   owner_id: string;
@@ -103,9 +150,11 @@ export interface CreateRunInput {
   inputs?: Record<string, unknown>;
   retry_of?: string | null;
   idempotency_key?: string | null;
+  timeout_ms?: number | TimeoutPreset;
+  max_retries?: number;
+  deadline_at?: string | null;
 }
 
-/** Result of a state transition */
 export interface TransitionResult {
   ok: boolean;
   previous: TaskStatus;
@@ -113,26 +162,29 @@ export interface TransitionResult {
   message?: string;
 }
 
-/**
- * Pure helper: compute the next status after an agent finishes.
- * Does not write to the database — callers must persist.
- */
+export interface TaskEvent {
+  id: string;
+  task_id: string;
+  run_id?: string | null;
+  sequence: number;
+  event_type: string;
+  from_status?: TaskStatus | null;
+  to_status?: TaskStatus | null;
+  message?: string | null;
+  data: Record<string, unknown>;
+  actor_id?: string | null;
+  worker_id?: string | null;
+  created_at: string;
+}
+
 export function deriveStatusFromAgentResult(result: AgentResult): TaskStatus {
-  if (result.status === "waiting_approval" || result.requiresReview) {
-    return "waiting_approval";
-  }
-  if (result.status === "failed" || (result.errors && result.errors.length > 0)) {
-    return "failed";
-  }
+  if (result.status === "waiting_approval" || result.requiresReview) return "waiting_approval";
+  if (result.status === "failed" || (result.errors && result.errors.length > 0)) return "failed";
   if (result.status === "cancelled") return "cancelled";
   if (result.status === "completed") return "completed";
   return result.status as TaskStatus;
 }
 
-/**
- * Build a minimal AgentTaskContext from task + run records.
- * Used by the orchestrator / agents.
- */
 export function buildAgentContext(
   task: TaskRecord,
   run: RunRecord,
@@ -146,32 +198,41 @@ export function buildAgentContext(
     requesterId: task.owner_id,
     projectId: task.project_id,
     taskType: task.kind,
-    priority: "normal",
+    priority: task.priority ?? "normal",
+    deadline: run.deadline_at ?? task.deadline_at ?? null,
     inputs: run.inputs ?? {},
     previousResults: [],
   };
 }
 
-/**
- * Idempotency helper — generate a stable key for a side-effect operation.
- * Callers should store and check this before performing notification, PDF write, etc.
- */
-export function makeIdempotencyKey(
-  kind: string,
-  taskId: string,
-  runId: string,
-  extra?: string,
-): string {
+export function makeIdempotencyKey(kind: string, taskId: string, runId: string, extra?: string): string {
   return `aether:${kind}:${taskId}:${runId}${extra ? `:${extra}` : ""}`;
 }
 
-/** Ownership check — never infer from browser state */
-export function assertOwnership(
-  resourceOwnerId: string,
-  actorId: string,
-  isAdmin: boolean,
-): void {
+export function assertOwnership(resourceOwnerId: string, actorId: string, isAdmin: boolean): void {
   if (resourceOwnerId !== actorId && !isAdmin) {
     throw new Error("Forbidden: resource does not belong to the current actor");
   }
+}
+
+export function isDeadlineExceeded(deadline?: string | null, now = Date.now()): boolean {
+  return Boolean(deadline && new Date(deadline).getTime() <= now);
+}
+
+export function exponentialBackoffMs(retryCount: number, baseMs = 5000, capMs = 300000): number {
+  const safeCount = Math.max(0, Math.floor(retryCount));
+  return Math.min(capMs, baseMs * 2 ** Math.min(safeCount, 10));
+}
+
+export function isRetryableFailure(code?: string | null): boolean {
+  if (!code) return true;
+  return !new Set([
+    "cancelled",
+    "permission_denied",
+    "invalid_input",
+    "not_found",
+    "policy_denied",
+    "approval_rejected",
+    "timeout_budget_exhausted",
+  ]).has(code);
 }
