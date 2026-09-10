@@ -1,303 +1,143 @@
 /**
  * ADMIN IDENTITY & AUTHORIZATION — server side only.
  *
- * The bootstrap secret lives exclusively in the server environment variable
- * AETHER_ADMIN_PASSWORD. It never reaches the browser.
- *
- * After bootstrap, the administrator signs in with a normal email + password.
- * The admin role is stored in public.user_roles and verified server-side.
+ * The only account that can become the Aether administrator is the exact email
+ * configured in AETHER_ADMIN_EMAIL. The value is never exposed to the browser.
+ * Supabase Auth remains the identity provider; public.user_roles remains the
+ * authorization source of truth.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createHash, timingSafeEqual } from "node:crypto";
 
-const MAX_FAILED_ATTEMPTS = 5;
-const ATTEMPT_WINDOW_MINUTES = 15;
-
-function secretMatches(input: string, expected: string): boolean {
-  const a = createHash("sha256").update(input, "utf8").digest();
-  const b = createHash("sha256").update(expected, "utf8").digest();
-  return timingSafeEqual(a, b);
+function normalizeEmail(value: string): string {
+  return String(value ?? "").trim().toLowerCase();
 }
 
-function callerFingerprint(): string {
-  try {
-    const req = getRequest();
-    const h = req?.headers;
-    return (
-      h?.get("cf-connecting-ip") ??
-      h?.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      h?.get("x-real-ip") ??
-      "unknown"
-    );
-  } catch {
-    return "unknown";
+function validEmail(value: string): boolean {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
+}
+
+function configuredAdminEmail(): string | null {
+  const value = normalizeEmail(process.env["AETHER_ADMIN_EMAIL"] ?? "");
+  return value && validEmail(value) ? value : null;
+}
+
+async function claimDesignatedAdmin(userId: string, email: string, displayName?: string) {
+  const configured = configuredAdminEmail();
+  if (!configured || normalizeEmail(email) !== configured) {
+    return { ok: false as const, reason: "not_designated_admin" as const };
   }
+
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+  // The designated admin is the single controlling admin identity.
+  const { error: roleError } = await supabaseAdmin
+    .from("user_roles")
+    .upsert({ user_id: userId, role: "admin" }, { onConflict: "user_id,role" });
+
+  if (roleError) {
+    return { ok: false as const, reason: "role_assignment_failed" as const };
+  }
+
+  // If an older bootstrap admin exists, it must not retain admin authority.
+  await supabaseAdmin.from("user_roles").delete().eq("role", "admin").neq("user_id", userId);
+
+  await supabaseAdmin.from("profiles").upsert(
+    {
+      id: userId,
+      display_name: displayName?.trim().slice(0, 80) || email.split("@")[0] || email,
+      onboarding_completed: true,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" },
+  );
+
+  await supabaseAdmin.from("audit_logs").insert({
+    actor_id: userId,
+    action: "admin.designated_account.verified",
+    target_type: "auth.users",
+    target_id: userId,
+    metadata: { authorization_source: "AETHER_ADMIN_EMAIL" },
+  });
+
+  return { ok: true as const };
 }
 
-/** Public: can the administrator setup screen be used at all? Reveals nothing sensitive. */
-export const getAdminBootstrapStatus = createServerFn({ method: "GET" }).handler(async () => {
-  const configured = Boolean(process.env["AETHER_ADMIN_PASSWORD"]);
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { count } = await supabaseAdmin
-    .from("admin_bootstrap")
-    .select("*", { count: "exact", head: true });
-  return { configured, completed: (count ?? 0) > 0 };
-});
-
-/**
- * Public but secret-gated and rate limited: creates the FIRST administrator.
- * Refuses to run a second time.
- */
-export const bootstrapAdmin = createServerFn({ method: "POST" })
-  .inputValidator((data: { secret: string; email: string; password: string; displayName?: string }) => {
-    const email = String(data?.email ?? "").trim().toLowerCase();
-    const password = String(data?.password ?? "");
-    const secret = String(data?.secret ?? "");
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("A valid email is required.");
-    if (password.length < 12) throw new Error("Password must be at least 12 characters.");
-    if (!secret) throw new Error("Setup code is required.");
-    return {
-      secret: secret.slice(0, 512),
-      email,
-      password,
-      displayName: String(data?.displayName ?? "").trim().slice(0, 80),
-    };
+/** Public preflight for the dedicated administrator signup page. */
+export const validateAdminSignupEmail = createServerFn({ method: "POST" })
+  .inputValidator((data: { email: string }) => {
+    const email = normalizeEmail(data?.email);
+    if (!validEmail(email)) throw new Error("A valid email is required.");
+    return { email };
   })
   .handler(async ({ data }) => {
-    const expected = process.env["AETHER_ADMIN_PASSWORD"];
-    if (!expected) {
-      return { ok: false as const, message: "Administrator setup is not configured on this server." };
+    const configured = configuredAdminEmail();
+    if (!configured) {
+      return { ok: false as const, message: "Administrator signup is not configured on this server." };
+    }
+
+    if (data.email !== configured) {
+      return { ok: false as const, message: "This email is not authorized for administrator signup." };
     }
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const fingerprint = callerFingerprint();
-    const since = new Date(Date.now() - ATTEMPT_WINDOW_MINUTES * 60_000).toISOString();
-
-    const { count: recentFailures } = await supabaseAdmin
-      .from("admin_bootstrap_attempts")
-      .select("*", { count: "exact", head: true })
-      .eq("fingerprint", fingerprint)
-      .eq("succeeded", false)
-      .gte("attempted_at", since);
-
-    if ((recentFailures ?? 0) >= MAX_FAILED_ATTEMPTS) {
-      return { ok: false as const, message: "Too many attempts. Try again later." };
+    const { data: users, error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (error) {
+      return { ok: false as const, message: "Could not verify administrator signup availability." };
     }
 
-    const { count: alreadyDone } = await supabaseAdmin
-      .from("admin_bootstrap")
-      .select("*", { count: "exact", head: true });
-    if ((alreadyDone ?? 0) > 0) {
-      return { ok: false as const, message: "An administrator already exists. Sign in instead." };
+    const exists = (users.users ?? []).some((u) => normalizeEmail(u.email ?? "") === configured);
+    if (exists) {
+      return { ok: false as const, message: "The designated administrator account already exists. Sign in instead." };
     }
 
-    if (!secretMatches(data.secret, expected)) {
-      await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: false });
-      return { ok: false as const, message: "Setup code rejected." };
-    }
-
-    let userId: string | null = null;
-    const created = await supabaseAdmin.auth.admin.createUser({
-      email: data.email,
-      password: data.password,
-      email_confirm: true,
-      user_metadata: { display_name: data.displayName || data.email.split("@")[0] || data.email },
-    });
-
-    if (created.data?.user) {
-      userId = created.data.user.id;
-    } else {
-      const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      const existing = list?.users?.find((u) => (u.email ?? "").toLowerCase() === data.email);
-      if (!existing) {
-        return { ok: false as const, message: "Could not create the administrator account." };
-      }
-      const updated = await supabaseAdmin.auth.admin.updateUserById(existing.id, {
-        password: data.password,
-        email_confirm: true,
-      });
-      if (updated.error) return { ok: false as const, message: "Could not update the existing account." };
-      userId = existing.id;
-    }
-
-    await supabaseAdmin.from("profiles").upsert(
-      { id: userId, display_name: data.displayName || data.email.split("@")[0] || data.email },
-      { onConflict: "id" },
-    );
-
-    const { error: roleError } = await supabaseAdmin
-      .from("user_roles")
-      .upsert({ user_id: userId, role: "admin" }, { onConflict: "user_id,role" });
-    if (roleError) return { ok: false as const, message: "Could not assign the administrator role." };
-
-    await supabaseAdmin
-      .from("admin_bootstrap")
-      .insert({ id: true, completed_by: userId, completed_email: data.email });
-
-    await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: true });
-
-    await supabaseAdmin.from("audit_logs").insert({
-      actor_id: userId,
-      action: "admin.bootstrap.completed",
-      target_type: "user_roles",
-      target_id: userId,
-    });
-
-    return { ok: true as const, message: "Administrator account created." };
+    return { ok: true as const };
   });
 
 /**
- * Emergency recovery: change admin email and/or password using the setup code.
- * Always re-asserts the admin role so access cannot be lost.
+ * Called after Supabase Auth sign-up. This does not create the Auth account itself;
+ * Supabase Auth client signUp() sends the confirmation email. This server function
+ * is the authoritative gate that assigns admin privileges after confirmation/login.
  */
-export const changeAdminCredentialsViaSetupCode = createServerFn({ method: "POST" })
-  .inputValidator((data: {
-    secret: string;
-    currentEmail?: string;
-    newEmail?: string;
-    newPassword?: string;
-  }) => {
-    const secret = String(data?.secret ?? "").slice(0, 512);
-    if (!secret) throw new Error("Setup code is required.");
-
-    const currentEmail = data?.currentEmail
-      ? String(data.currentEmail).trim().toLowerCase()
-      : undefined;
-    const newEmail = data?.newEmail
-      ? String(data.newEmail).trim().toLowerCase()
-      : undefined;
-    const newPassword = data?.newPassword ? String(data.newPassword) : undefined;
-
-    if (!newEmail && !newPassword) {
-      throw new Error("Provide a new email and/or a new password.");
+export const verifyAdminAccessToken = createServerFn({ method: "POST" })
+  .inputValidator((data: { accessToken: string }) => {
+    const accessToken = String(data?.accessToken ?? "").trim();
+    if (!accessToken || accessToken.split(".").length !== 3) {
+      throw new Error("Valid access token is required.");
     }
-    if (newEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) {
-      throw new Error("A valid new email is required.");
-    }
-    if (newPassword && newPassword.length < 12) {
-      throw new Error("New password must be at least 12 characters.");
-    }
-
-    return { secret, currentEmail, newEmail, newPassword };
+    return { accessToken };
   })
   .handler(async ({ data }) => {
-    const expected = process.env["AETHER_ADMIN_PASSWORD"];
-    if (!expected) {
-      return { ok: false as const, message: "Administrator recovery is not configured on this server." };
-    }
-
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const fingerprint = callerFingerprint();
-    const since = new Date(Date.now() - ATTEMPT_WINDOW_MINUTES * 60_000).toISOString();
+    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(data.accessToken);
 
-    const { count: recentFailures } = await supabaseAdmin
-      .from("admin_bootstrap_attempts")
-      .select("*", { count: "exact", head: true })
-      .eq("fingerprint", fingerprint)
-      .eq("succeeded", false)
-      .gte("attempted_at", since);
-
-    if ((recentFailures ?? 0) >= MAX_FAILED_ATTEMPTS) {
-      return { ok: false as const, message: "Too many attempts. Try again later." };
+    if (userError || !userData?.user?.id) {
+      return { ok: false as const, reason: "invalid_token" as const };
     }
 
-    const { count: hasAdmin } = await supabaseAdmin
-      .from("admin_bootstrap")
-      .select("*", { count: "exact", head: true });
-    if ((hasAdmin ?? 0) === 0) {
-      return { ok: false as const, message: "No administrator has been initialized yet. Use the setup page." };
+    const user = userData.user;
+    const email = normalizeEmail(user.email ?? "");
+    const configured = configuredAdminEmail();
+
+    if (!configured || email !== configured) {
+      return { ok: false as const, reason: "not_designated_admin" as const };
     }
 
-    if (!secretMatches(data.secret, expected)) {
-      await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: false });
-      return { ok: false as const, message: "Setup code rejected." };
+    if (!user.email_confirmed_at) {
+      return { ok: false as const, reason: "email_not_confirmed" as const };
     }
 
-    const { data: roleRows } = await supabaseAdmin
-      .from("user_roles")
-      .select("user_id")
-      .eq("role", "admin")
-      .limit(10);
+    const claimed = await claimDesignatedAdmin(
+      user.id,
+      email,
+      typeof user.user_metadata?.display_name === "string" ? user.user_metadata.display_name : undefined,
+    );
 
-    if (!roleRows || roleRows.length === 0) {
-      return { ok: false as const, message: "No administrator role found." };
+    if (!claimed.ok) {
+      return { ok: false as const, reason: claimed.reason };
     }
 
-    let targetUserId = roleRows[0].user_id as string;
-
-    if (data.currentEmail) {
-      const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      const match = list?.users?.find(
-        (u) =>
-          (u.email ?? "").toLowerCase() === data.currentEmail &&
-          roleRows.some((r) => r.user_id === u.id),
-      );
-      if (!match) {
-        await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: false });
-        return { ok: false as const, message: "No administrator found with that email." };
-      }
-      targetUserId = match.id;
-    }
-
-    const updates: { email?: string; password?: string; email_confirm?: boolean } = {};
-    if (data.newEmail) {
-      updates.email = data.newEmail;
-      updates.email_confirm = true;
-    }
-    if (data.newPassword) {
-      updates.password = data.newPassword;
-    }
-
-    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, updates);
-    if (updateError) {
-      await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: false });
-      return {
-        ok: false as const,
-        message: updateError.message || "Could not update administrator credentials.",
-      };
-    }
-
-    // CRITICAL: always re-assert the admin role so access cannot be lost
-    await supabaseAdmin
-      .from("user_roles")
-      .upsert({ user_id: targetUserId, role: "admin" }, { onConflict: "user_id,role" });
-
-    if (data.newEmail) {
-      await supabaseAdmin
-        .from("admin_bootstrap")
-        .update({ completed_email: data.newEmail, completed_by: targetUserId })
-        .eq("id", true);
-
-      await supabaseAdmin
-        .from("profiles")
-        .upsert(
-          { id: targetUserId, updated_at: new Date().toISOString() },
-          { onConflict: "id" },
-        );
-    }
-
-    await supabaseAdmin.from("admin_bootstrap_attempts").insert({ fingerprint, succeeded: true });
-
-    await supabaseAdmin.from("audit_logs").insert({
-      actor_id: targetUserId,
-      action: "admin.credentials.changed_via_setup_code",
-      target_type: "auth.users",
-      target_id: targetUserId,
-      metadata: {
-        email_changed: Boolean(data.newEmail),
-        password_changed: Boolean(data.newPassword),
-        via: "setup_code",
-      },
-    });
-
-    return {
-      ok: true as const,
-      message:
-        "Administrator credentials updated. Sign in with the new email and password. " +
-        "If you changed the email, use the NEW email on the login form.",
-    };
+    return { ok: true as const, userId: user.id };
   });
 
 /** Server-side role check. Never trust the client for this. */
@@ -314,31 +154,30 @@ export const getMyRoles = createServerFn({ method: "GET" })
   });
 
 /**
- * Called after login when the middleware session is already available.
+ * Server-side session verification. The designated email is authoritative;
+ * the database role is synchronized from that identity instead of trusting a
+ * role created by an older setup flow.
  */
 export const verifyAdminSignIn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: userData, error } = await supabaseAdmin.auth.admin.getUserById(context.userId);
 
-    const { data: roleRows } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", context.userId)
-      .eq("role", "admin")
-      .limit(1);
-
-    let isAdmin = (roleRows?.length ?? 0) > 0;
-
-    if (!isAdmin) {
-      const { data: rpcAdmin } = await supabaseAdmin.rpc("has_role", {
-        _user_id: context.userId,
-        _role: "admin",
-      });
-      isAdmin = Boolean(rpcAdmin);
+    if (error || !userData.user) return { ok: false as const, reason: "invalid_user" as const };
+    if (!userData.user.email_confirmed_at) {
+      return { ok: false as const, reason: "email_not_confirmed" as const };
     }
 
-    if (!isAdmin) return { ok: false as const, reason: "not_admin" as const };
+    const claimed = await claimDesignatedAdmin(
+      context.userId,
+      userData.user.email ?? "",
+      typeof userData.user.user_metadata?.display_name === "string"
+        ? userData.user.user_metadata.display_name
+        : undefined,
+    );
+
+    if (!claimed.ok) return { ok: false as const, reason: claimed.reason };
 
     await supabaseAdmin.from("audit_logs").insert({
       actor_id: context.userId,
@@ -348,58 +187,4 @@ export const verifyAdminSignIn = createServerFn({ method: "POST" })
     });
 
     return { ok: true as const };
-  });
-
-/**
- * LOGIN-PATH ONLY: verify admin using the access_token returned by signInWithPassword.
- * Does NOT depend on attachSupabaseAuth / getSession timing (fixes preview storage races).
- */
-export const verifyAdminAccessToken = createServerFn({ method: "POST" })
-  .inputValidator((data: { accessToken: string }) => {
-    const accessToken = String(data?.accessToken ?? "").trim();
-    if (!accessToken || accessToken.split(".").length !== 3) {
-      throw new Error("Valid access token is required.");
-    }
-    return { accessToken };
-  })
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-    // Validate the JWT and resolve the user via Auth Admin API
-    const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(data.accessToken);
-    if (userError || !userData?.user?.id) {
-      return { ok: false as const, reason: "invalid_token" as const };
-    }
-
-    const userId = userData.user.id;
-
-    const { data: roleRows } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .eq("role", "admin")
-      .limit(1);
-
-    let isAdmin = (roleRows?.length ?? 0) > 0;
-
-    if (!isAdmin) {
-      const { data: rpcAdmin } = await supabaseAdmin.rpc("has_role", {
-        _user_id: userId,
-        _role: "admin",
-      });
-      isAdmin = Boolean(rpcAdmin);
-    }
-
-    if (!isAdmin) {
-      return { ok: false as const, reason: "not_admin" as const };
-    }
-
-    await supabaseAdmin.from("audit_logs").insert({
-      actor_id: userId,
-      action: "admin.session.started",
-      target_type: "auth.users",
-      target_id: userId,
-    });
-
-    return { ok: true as const, userId };
   });
