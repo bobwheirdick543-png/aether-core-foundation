@@ -31,7 +31,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
+          registry-url: https://registry.npmjs.org
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: ESLint report
         run: |
           npx eslint . --fix || true
