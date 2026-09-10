@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createTask } from "@/lib/aether/task-service";
+import { createRun, createTask } from "@/lib/aether/task-service";
 
 async function assertAdmin(supabase: SupabaseClient, userId: string) {
   const { data } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
@@ -12,17 +12,17 @@ export const createAaxTrainingJob = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context, data }) => {
     await assertAdmin(context.supabase as unknown as SupabaseClient, context.userId);
-    const input = data as { targetModelId: string; sourceType: string; originalSource: string; sourceHash?: string; sourceId?: string; sourceMetadata?: Record<string, unknown>; timeoutMs?: number; };
+    const input = data as { targetModelId: string; sourceType: string; originalSource: string; sourceHash?: string; sourceId?: string; sourceMetadata?: Record<string, unknown>; timeoutMs?: number };
     if (!input.targetModelId || !input.sourceType || !input.originalSource?.trim()) throw new Response("Target AAX and original source are required", { status: 400 });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: model, error: modelError } = await supabaseAdmin.from("aax_models").select("id, model_key, release_status, provider, provider_model").eq("id", input.targetModelId).single();
+    const { data: model, error: modelError } = await supabaseAdmin.from("aax_models").select("id, model_key, provider, provider_model").eq("id", input.targetModelId).single();
     if (modelError || !model) throw new Response("Target AAX model not found", { status: 404 });
     if (!model.provider || !model.provider_model) throw new Response("Target AAX is not provider-configured", { status: 409 });
-    const { data: job, error: jobError } = await supabaseAdmin.from("aax_training_jobs").insert({ target_model_id: input.targetModelId, source_type: input.sourceType, source_id: input.sourceId ?? null, source_hash: input.sourceHash ?? null, original_source_ref: input.sourceMetadata ?? {}, original_source_content: input.originalSource, source_metadata: input.sourceMetadata ?? {}, pipeline_status: "queued", current_stage: "queued", timeout_ms: input.timeoutMs ?? 1800000, completed_agents: [] }).select("id").single();
+    const timeoutMs = input.timeoutMs ?? 30 * 60 * 1000;
+    const { data: job, error: jobError } = await supabaseAdmin.from("aax_training_jobs").insert({ target_model_id: input.targetModelId, source_type: input.sourceType, source_id: input.sourceId ?? null, source_hash: input.sourceHash ?? null, original_source_ref: input.sourceMetadata ?? {}, original_source_content: input.originalSource, source_metadata: input.sourceMetadata ?? {}, pipeline_status: "queued", current_stage: "queued", timeout_ms: timeoutMs, completed_agents: [] }).select("id").single();
     if (jobError || !job) throw new Response(jobError?.message ?? "Could not create AAX training job", { status: 500 });
-    const task = await createTask(supabaseAdmin, { owner_id: context.userId, title: `AAX knowledge evolution — ${model.model_key}`, kind: "aax-training", detail: { training_job_id: job.id }, timeout_ms: input.timeoutMs ?? 1800000, idempotency_key: `aax-training:${job.id}` });
-    const { data: run, error: runError } = await supabaseAdmin.from("task_runs").insert({ task_id: task.id, owner_id: context.userId, status: "queued", attempt: 1, inputs: { training_job_id: job.id }, outputs: {}, timeout_ms: input.timeoutMs ?? 1800000, deadline_at: new Date(Date.now() + (input.timeoutMs ?? 1800000)).toISOString(), max_retries: 3, retry_count: 0, idempotency_key: `aax-training-run:${job.id}` }).select("id").single();
-    if (runError || !run) throw new Response(runError?.message ?? "Could not queue AAX training run", { status: 500 });
+    const task = await createTask(supabaseAdmin, { owner_id: context.userId, title: `AAX knowledge evolution — ${model.model_key}`, kind: "aax-training", detail: { training_job_id: job.id }, timeout_ms: timeoutMs, idempotency_key: `aax-training:${job.id}` });
+    const run = await createRun(supabaseAdmin, { task_id: task.id, owner_id: context.userId, inputs: { training_job_id: job.id }, timeout_ms: timeoutMs, max_retries: 3, idempotency_key: `aax-training-run:${job.id}` });
     return { trainingJobId: job.id, taskId: task.id, runId: run.id };
   });
 
