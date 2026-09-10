@@ -1,0 +1,75 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { appendTaskEvent, transitionTask, transitionRun } from "./task-service";
+
+export type OrchestrationDecision = "execute" | "clarify" | "approve" | "deny";
+
+export interface OrchestrationContext {
+  userId: string;
+  taskId: string;
+  planId: string;
+  runId?: string | null;
+  message: string;
+}
+
+export interface OrchestrationExecutionResult {
+  decision: OrchestrationDecision;
+  status: "completed" | "waiting_approval" | "waiting_clarification" | "denied" | "failed";
+  reason: string;
+}
+
+/**
+ * Phase B orchestration execution boundary. This module deliberately does not
+ * execute tools or agents itself; it coordinates them through the universal
+ * Phase A runtime and records every decision.
+ */
+export async function evaluateOrchestrationPolicy(
+  admin: SupabaseClient,
+  context: OrchestrationContext,
+  input: { riskLevel: string; approvalRequired: boolean; authorized: boolean },
+): Promise<OrchestrationExecutionResult> {
+  const emit = async (eventType: string, action: string, reason: string, decision: string) => {
+    await admin.rpc("append_orchestration_event", {
+      p_plan_id: context.planId,
+      p_event_type: eventType,
+      p_actor_type: "orchestrator",
+      p_actor_id: context.userId,
+      p_task_id: context.taskId,
+      p_run_id: context.runId ?? null,
+      p_action: action,
+      p_reason: reason,
+      p_decision: decision,
+      p_data: { risk_level: input.riskLevel, approval_required: input.approvalRequired },
+    });
+  };
+
+  if (!input.authorized) {
+    await emit("policy.denied", "deny_execution", "The requester is not authorized for this orchestration.", "denied");
+    await appendTaskEvent(admin, { taskId: context.taskId, eventType: "orchestration.policy_denied", message: "Orchestration denied by authorization policy", data: { plan_id: context.planId }, actorId: context.userId });
+    await transitionTask(admin, context.taskId, "failed", { errorCode: "permission_denied", errorMessage: "Orchestration is not authorized." });
+    return { decision: "deny", status: "denied", reason: "Orchestration is not authorized." };
+  }
+
+  if (input.approvalRequired) {
+    await emit("approval.requested", "request_approval", "This orchestration requires approval before execution.", "approval_required");
+    await appendTaskEvent(admin, { taskId: context.taskId, eventType: "orchestration.approval_requested", message: "Orchestration is waiting for approval", data: { plan_id: context.planId }, actorId: context.userId });
+    return { decision: "approve", status: "waiting_approval", reason: "Approval is required before execution." };
+  }
+
+  await emit("policy.passed", "authorize_execution", "Policy and authorization checks passed.", "approved_for_execution");
+  await appendTaskEvent(admin, { taskId: context.taskId, eventType: "orchestration.policy_passed", message: "Orchestration passed policy checks", data: { plan_id: context.planId }, actorId: context.userId });
+  return { decision: "execute", status: "completed", reason: "Policy and authorization checks passed." };
+}
+
+export async function recordOrchestrationStepStart(admin: SupabaseClient, context: OrchestrationContext, stepId: string) {
+  await admin.from("orchestration_steps").update({ status: "running", started_at: new Date().toISOString() }).eq("id", stepId).eq("plan_id", context.planId);
+  await admin.rpc("append_orchestration_event", { p_plan_id: context.planId, p_event_type: "step.started", p_actor_type: "orchestrator", p_actor_id: context.userId, p_task_id: context.taskId, p_run_id: context.runId ?? null, p_step_id: stepId, p_action: "start_step", p_reason: "Orchestration dependency became executable", p_decision: "execute", p_data: {} });
+}
+
+export async function recordOrchestrationStepCompletion(admin: SupabaseClient, context: OrchestrationContext, stepId: string, output: Record<string, unknown>) {
+  await admin.from("orchestration_steps").update({ status: "completed", ended_at: new Date().toISOString(), output }).eq("id", stepId).eq("plan_id", context.planId);
+  await admin.rpc("append_orchestration_event", { p_plan_id: context.planId, p_event_type: "step.completed", p_actor_type: "orchestrator", p_actor_id: context.userId, p_task_id: context.taskId, p_run_id: context.runId ?? null, p_step_id: stepId, p_action: "complete_step", p_reason: "Step completed successfully", p_decision: "continue", p_data: { output_keys: Object.keys(output) } });
+}
+
+export async function recordOrchestrationFailure(admin: SupabaseClient, context: OrchestrationContext, reason: string, retryable: boolean) {
+  await admin.rpc("append_orchestration_event", { p_plan_id: context.planId, p_event_type: "execution.failed", p_actor_type: "orchestrator", p_actor_id: context.userId, p_task_id: context.taskId, p_run_id: context.runId ?? null, p_action: "handle_failure", p_reason: reason, p_decision: retryable ? "retry_or_fallback" : "escalate", p_data: { retryable } });
+}
