@@ -1,0 +1,202 @@
+import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { appendTaskEvent, createRun, createTask } from "./task-service";
+import { classifyIntent, validateOrchestrationPlan } from "./orchestrator";
+
+async function isAdmin(supabase: any, userId: string) {
+  const { data } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
+  return Boolean(data);
+}
+
+function assertNonEmpty(value: string, label: string) {
+  const result = String(value ?? "").trim();
+  if (!result) throw new Error(`${label} is required`);
+  return result;
+}
+
+export const createOrchestration = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { message: string; conversationId?: string; projectId?: string | null; requestId?: string }) => ({
+    message: assertNonEmpty(data?.message, "Message").slice(0, 8000),
+    conversationId: data?.conversationId || null,
+    projectId: data?.projectId || null,
+    requestId: data?.requestId || crypto.randomUUID(),
+  }))
+  .handler(async ({ context, data }) => {
+    const draft = classifyIntent(data.message);
+    validateOrchestrationPlan(draft);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const task = await createTask(supabaseAdmin, {
+      owner_id: context.userId,
+      project_id: data.projectId,
+      title: draft.title,
+      kind: "orchestration",
+      detail: { request_id: data.requestId, conversation_id: data.conversationId, intent: draft.intent },
+      idempotency_key: `aether:orchestration:${data.requestId}`,
+      timeout_ms: "1h",
+      max_retries: 3,
+    });
+
+    const { data: plan, error: planError } = await supabaseAdmin.from("orchestration_plans").insert({
+      task_id: task.id,
+      owner_id: context.userId,
+      title: draft.title,
+      intent: draft.intent,
+      capabilities: draft.capabilities,
+      context: { requestText: data.message, conversationId: data.conversationId },
+      model_requirements: draft.modelRequirements,
+      tools: draft.tools,
+      agents: draft.agents,
+      expected_outputs: draft.expectedOutputs,
+      risk_level: draft.riskLevel,
+      approval_required: draft.approvalRequired,
+      approval_status: draft.approvalRequired ? "pending" : "not_required",
+      status: draft.approvalRequired ? "awaiting_approval" : "validated",
+    }).select("*").single();
+    if (planError || !plan) throw new Error(planError?.message || "Failed to create orchestration plan");
+
+    const steps = draft.agents.map((agentKey, index) => ({
+      plan_id: plan.id,
+      task_id: task.id,
+      sequence: index + 1,
+      step_key: `${agentKey}-${index + 1}`,
+      kind: agentKey === "orchestrator" ? "planning" : "agent",
+      title: agentKey === "orchestrator" ? "Understand and plan request" : `Delegate to ${agentKey}`,
+      description: agentKey === "orchestrator" ? "Normalize intent, context, policy and execution requirements." : `Prepare authorized work for the ${agentKey} agent.`,
+      dependencies: index > 0 ? [] : [],
+      agent_key: agentKey,
+      model_role: draft.capabilities.includes("code") ? "aether-code" : draft.capabilities.includes("vision") ? "aether-vision" : draft.capabilities.includes("translation") ? "aether-translate" : draft.capabilities.length > 1 ? "aether-think" : "aether-fast",
+      required_capabilities: draft.capabilities,
+      expected_output: { type: draft.expectedOutputs[0] ?? "response" },
+      risk_level: draft.riskLevel,
+      approval_required: draft.approvalRequired,
+      status: draft.approvalRequired ? "waiting_approval" : index === 0 ? "ready" : "pending",
+    }));
+    const { error: stepError } = await supabaseAdmin.from("orchestration_steps").insert(steps);
+    if (stepError) throw new Error(stepError.message);
+
+    await supabaseAdmin.rpc("append_orchestration_event", {
+      p_plan_id: plan.id,
+      p_event_type: "plan.created",
+      p_actor_type: "orchestrator",
+      p_actor_id: context.userId,
+      p_task_id: task.id,
+      p_action: "create_plan",
+      p_reason: "Request normalized into a typed orchestration plan",
+      p_decision: draft.approvalRequired ? "approval_required" : "approved_for_execution",
+      p_data: { intent: draft.intent, capabilities: draft.capabilities, agents: draft.agents, risk_level: draft.riskLevel },
+    });
+    await appendTaskEvent(supabaseAdmin, {
+      taskId: task.id,
+      eventType: "orchestration.plan_created",
+      message: "Orchestration plan created",
+      data: { plan_id: plan.id, intent: draft.intent },
+      actorId: context.userId,
+    });
+
+    let runId: string | null = null;
+    if (!draft.approvalRequired) {
+      const run = await createRun(supabaseAdmin, {
+        task_id: task.id,
+        owner_id: context.userId,
+        agent_key: "orchestrator",
+        inputs: { plan_id: plan.id, message: data.message },
+        timeout_ms: "1h",
+        max_retries: 3,
+        idempotency_key: `aether:orchestration-run:${plan.id}`,
+      });
+      runId = run.id;
+    }
+
+    return { taskId: task.id, planId: plan.id, runId, status: plan.status, draft };
+  });
+
+export const getOrchestrationPlan = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { planId: string }) => ({ planId: assertNonEmpty(data?.planId, "Plan ID") }))
+  .handler(async ({ context, data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: plan, error } = await supabaseAdmin.from("orchestration_plans").select("*").eq("id", data.planId).maybeSingle();
+    if (error || !plan || (plan.owner_id !== context.userId && !(await isAdmin(supabaseAdmin, context.userId)))) throw new Error("Plan not found or access denied");
+    const [{ data: steps }, { data: events }] = await Promise.all([
+      supabaseAdmin.from("orchestration_steps").select("*").eq("plan_id", plan.id).order("sequence"),
+      supabaseAdmin.from("orchestration_events").select("*").eq("plan_id", plan.id).order("sequence"),
+    ]);
+    return { plan, steps: steps ?? [], events: events ?? [] };
+  });
+
+export const listAgentConversations = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { agentKey: string }) => ({ agentKey: assertNonEmpty(data?.agentKey, "Agent key").slice(0, 100) }))
+  .handler(async ({ context, data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: conversations, error } = await supabaseAdmin.from("agent_conversations").select("id, agent_key, title, archived, last_message_at, created_at, updated_at").eq("owner_id", context.userId).eq("agent_key", data.agentKey).order("updated_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return conversations ?? [];
+  });
+
+export const createAgentConversation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { agentKey: string; title?: string }) => ({ agentKey: assertNonEmpty(data?.agentKey, "Agent key").slice(0, 100), title: String(data?.title ?? "New chat").trim().slice(0, 160) || "New chat" }))
+  .handler(async ({ context, data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: conversation, error } = await supabaseAdmin.from("agent_conversations").insert({ owner_id: context.userId, agent_key: data.agentKey, title: data.title }).select("*").single();
+    if (error || !conversation) throw new Error(error?.message || "Failed to create conversation");
+    await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "agent_conversation.created", target_type: "agent_conversation", target_id: conversation.id, metadata: { agent_key: data.agentKey } });
+    return conversation;
+  });
+
+export const getAgentConversation = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { conversationId: string }) => ({ conversationId: assertNonEmpty(data?.conversationId, "Conversation ID") }))
+  .handler(async ({ context, data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: conversation, error } = await supabaseAdmin.from("agent_conversations").select("*").eq("id", data.conversationId).maybeSingle();
+    if (error || !conversation || conversation.owner_id !== context.userId) throw new Error("Conversation not found or access denied");
+    const { data: messages, error: messageError } = await supabaseAdmin.from("agent_conversation_messages").select("id, role, content, metadata, created_at").eq("conversation_id", conversation.id).order("created_at", { ascending: true });
+    if (messageError) throw new Error(messageError.message);
+    return { conversation, messages: messages ?? [] };
+  });
+
+export const appendAgentConversationMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { conversationId: string; content: string; role?: "user" | "assistant" | "system" | "event"; metadata?: Record<string, unknown> }) => ({
+    conversationId: assertNonEmpty(data?.conversationId, "Conversation ID"),
+    content: assertNonEmpty(data?.content, "Message").slice(0, 20000),
+    role: data?.role ?? "user",
+    metadata: data?.metadata ?? {},
+  }))
+  .handler(async ({ context, data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: conversation } = await supabaseAdmin.from("agent_conversations").select("id, owner_id, agent_key").eq("id", data.conversationId).maybeSingle();
+    if (!conversation || conversation.owner_id !== context.userId) throw new Error("Conversation not found or access denied");
+    const { data: message, error } = await supabaseAdmin.from("agent_conversation_messages").insert({ conversation_id: conversation.id, owner_id: context.userId, role: data.role, content: data.content, metadata: data.metadata }).select("*").single();
+    if (error || !message) throw new Error(error?.message || "Failed to save message");
+    await supabaseAdmin.from("agent_conversations").update({ last_message_at: message.created_at, updated_at: message.created_at }).eq("id", conversation.id).eq("owner_id", context.userId);
+    await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: `agent_conversation.message.${data.role}`, target_type: "agent_conversation", target_id: conversation.id, metadata: { agent_key: conversation.agent_key } });
+    return message;
+  });
+
+export const getAgentProductivity = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    if (!(await isAdmin(supabaseAdmin, context.userId))) throw new Response("Forbidden", { status: 403 });
+    const { data: agents } = await supabaseAdmin.from("agents").select("agent_key, name").order("name");
+    const { data: runs } = await supabaseAdmin.from("task_runs").select("agent_key, status, retry_count, started_at, ended_at").not("agent_key", "is", null).limit(5000);
+    const windowStart = new Date(Date.now() - 30 * 86400000);
+    const metrics = (agents ?? []).map((agent) => {
+      const mine = (runs ?? []).filter((r) => r.agent_key === agent.agent_key && new Date(r.started_at ?? r.ended_at ?? 0) >= windowStart);
+      const total = mine.length;
+      const completed = mine.filter((r) => r.status === "completed").length;
+      const failed = mine.filter((r) => r.status === "failed").length;
+      const retried = mine.filter((r) => Number(r.retry_count ?? 0) > 0).length;
+      const successRate = total ? completed / total : 0;
+      const reliability = total ? (total - failed) / total : 0;
+      const cleanExecution = total ? (total - retried) / total : 0;
+      const productivity = total ? Math.round((successRate * 0.6 + reliability * 0.25 + cleanExecution * 0.15) * 10000) / 100 : 0;
+      return { agentKey: agent.agent_key, name: agent.name, productivityPercent: productivity, totalRuns: total, completed, failed, retried, windowDays: 30 };
+    });
+    return metrics;
+  });
