@@ -1,101 +1,35 @@
-/**
- * AETHER MODEL LAYER — architecture only.
- *
- * UI never talks to an AI provider directly. It selects a *model role*.
- * A future ModelRouter maps a role to a concrete provider + model.
- *
- * STATUS: types + static catalog implemented. Provider execution: Phase 4.
- */
+/** Aether model layer — Aether Ascension (AAX). */
+import type { AaxCapability, AaxReleaseStatus } from "./aax";
 
-export type ModelRoleKey =
-  | "aether-fast"
-  | "aether-think"
-  | "aether-code"
-  | "aether-vision"
-  | "aether-long"
-  | "aether-translate";
-
+export type ModelRoleKey = string;
 export type SpeedIndicator = "fast" | "balanced" | "deliberate";
-export type ModelStatus = "planned" | "beta" | "available" | "offline";
+export type ModelStatus = AaxReleaseStatus;
 
 export interface ModelRole {
-  key: ModelRoleKey;
+  key: string;
   name: string;
   description: string;
   capabilities: string[];
   contextWindow: number;
   speed: SpeedIndicator;
   status: ModelStatus;
+  generation: number;
+  revision: number;
+  specializations: string[];
 }
 
-export const MODEL_ROLES: ModelRole[] = [
-  {
-    key: "aether-fast",
-    name: "Aether Fast",
-    description: "Optimized for fast everyday conversations.",
-    capabilities: ["Chat", "Summaries", "Drafting"],
-    contextWindow: 128_000,
-    speed: "fast",
-    status: "planned",
-  },
-  {
-    key: "aether-think",
-    name: "Aether Think",
-    description: "Designed for deeper reasoning and complex analysis.",
-    capabilities: ["Reasoning", "Analysis", "Planning"],
-    contextWindow: 200_000,
-    speed: "deliberate",
-    status: "planned",
-  },
-  {
-    key: "aether-code",
-    name: "Aether Code",
-    description: "Designed for programming and technical tasks.",
-    capabilities: ["Code", "Debugging", "Refactoring"],
-    contextWindow: 200_000,
-    speed: "balanced",
-    status: "planned",
-  },
-  {
-    key: "aether-vision",
-    name: "Aether Vision",
-    description: "Designed for images, screenshots and visual documents.",
-    capabilities: ["Vision", "OCR", "Diagrams"],
-    contextWindow: 128_000,
-    speed: "balanced",
-    status: "planned",
-  },
-  {
-    key: "aether-long",
-    name: "Aether Long",
-    description: "Designed for long documents and large-context tasks.",
-    capabilities: ["Long context", "Documents", "Corpus review"],
-    contextWindow: 1_000_000,
-    speed: "deliberate",
-    status: "planned",
-  },
-  {
-    key: "aether-translate",
-    name: "Aether Translate",
-    description: "Optimized for multilingual communication and translation.",
-    capabilities: ["Translation", "Localization", "Tone matching"],
-    contextWindow: 128_000,
-    speed: "fast",
-    status: "planned",
-  },
+export const AAX_MODEL_CATALOG: ModelRole[] = [
+  { key: "aax-1.0", name: "Aether Ascension 1.0", description: "The first AAX generation: a unified Aether intelligence foundation.", capabilities: ["conversation", "knowledge", "reasoning", "tools"], contextWindow: 128_000, speed: "balanced", status: "draft", generation: 1, revision: 0, specializations: [] },
+  { key: "aax-2.0", name: "Aether Ascension 2.0", description: "A later AAX generation with broader reasoning and multimodal capability targets.", capabilities: ["conversation", "knowledge", "reasoning", "tools", "multimodal"], contextWindow: 200_000, speed: "balanced", status: "draft", generation: 2, revision: 0, specializations: [] },
+  { key: "aax-3.1", name: "Aether Ascension 3.1", description: "An evolving AAX generation designed for deeper reasoning, research and knowledge evolution.", capabilities: ["conversation", "knowledge", "reasoning", "advanced-reasoning", "tools", "multimodal", "streaming"], contextWindow: 200_000, speed: "balanced", status: "draft", generation: 3, revision: 1, specializations: [] },
+  { key: "aax-4.0", name: "Aether Ascension 4.0", description: "A future AAX generation for higher capability and broader platform integration.", capabilities: ["conversation", "knowledge", "advanced-reasoning", "tools", "multimodal", "long-context", "streaming", "tool-calling"], contextWindow: 1_000_000, speed: "deliberate", status: "draft", generation: 4, revision: 0, specializations: [] },
+  { key: "aax-5.1", name: "Aether Ascension 5.1", description: "A future AAX generation representing continued intelligence evolution.", capabilities: ["conversation", "knowledge", "advanced-reasoning", "tools", "multimodal", "long-context", "streaming", "tool-calling"], contextWindow: 1_000_000, speed: "deliberate", status: "draft", generation: 5, revision: 1, specializations: [] },
 ];
 
-export function getModelRole(key: string): ModelRole | undefined {
-  return MODEL_ROLES.find((m) => m.key === key);
-}
-
-export function formatContext(tokens: number): string {
-  return tokens >= 1_000_000
-    ? `${tokens / 1_000_000}M tokens`
-    : `${Math.round(tokens / 1000)}K tokens`;
-}
-
-/* ---------- Provider abstraction (no implementation yet) ---------- */
+/** Compatibility export for existing Phase A/B consumers; it now resolves to AAX. */
+export const MODEL_ROLES = AAX_MODEL_CATALOG;
+export function getModelRole(key: string): ModelRole | undefined { return AAX_MODEL_CATALOG.find((m) => m.key === key); }
+export function formatContext(tokens: number): string { return tokens >= 1_000_000 ? `${tokens / 1_000_000}M tokens` : `${Math.round(tokens / 1000)}K tokens`; }
 
 export interface AIRequest {
   role: ModelRoleKey;
@@ -127,5 +61,5 @@ export interface ModelRouter {
   route(request: AIRequest): Promise<AIResponse>;
 }
 
-/** Phase 4 will register real providers here. Deliberately not implemented. */
-export const MODEL_ROUTER_STATUS = "not-implemented" as const;
+export type { AaxCapability, AaxReleaseStatus };
+export const MODEL_ROUTER_STATUS = "phase-c-aax-model-foundation" as const;
