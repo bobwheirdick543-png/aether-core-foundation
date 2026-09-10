@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/lib/aether/aax*.ts",
+    "src/lib/admin/aax*.ts",
+    "src/routes/_authenticated/admin/aax-lab.tsx",
+    "src/routes/_authenticated/admin/models.tsx",
+    "src/routes/_authenticated/chat.tsx",
+    "src/routes/models-overview.tsx"
+  ]
+}
