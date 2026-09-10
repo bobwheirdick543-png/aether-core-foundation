@@ -1,135 +1,39 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, Paperclip, Globe, Brain, Send, ChevronDown, MessagesSquare } from "lucide-react";
+import { Plus, Paperclip, Globe, Brain, Send, ChevronDown, MessagesSquare, Menu, Archive, Trash2, Pencil, Square, RefreshCw, Save, ExternalLink, FolderKanban, X } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Tag, PhaseNote, EmptyState } from "@/components/common/Primitives";
 import { Button } from "@/components/ui/button";
-import { AAX_MODEL_CATALOG } from "@/lib/aether/models";
-import { getAaxConversation, listAaxConversations, sendAaxMessage } from "@/lib/aether/aax-chat.functions";
+import { listPublicAaxModels } from "@/lib/aether/aax-catalog.functions";
+import { createAaxConversation, deleteAaxConversation, getAaxAttachmentDownloadUrl, getAaxConversation, listAaxConversations, listAaxProjects, renameAaxConversation, archiveAaxConversation, saveAaxMemoryCandidate, updateAaxConversationSettings, stopAaxGeneration, registerAaxAttachment } from "@/lib/aether/aax-chat.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
-export const Route = createFileRoute("/_authenticated/chat")({
-  head: () => ({ meta: [{ title: "Chat — Aether Ascension" }, { name: "description", content: "Persistent conversations organized by Aether Ascension model generation." }] }),
-  component: Page,
-});
-
-type AaxModel = (typeof AAX_MODEL_CATALOG)[number];
-type ConversationModel = { model_key?: string; display_name?: string };
-
-function getConversationModel(value: unknown): ConversationModel | null {
-  if (Array.isArray(value)) return (value[0] as ConversationModel | undefined) ?? null;
-  return (value as ConversationModel | null) ?? null;
-}
+export const Route = createFileRoute("/_authenticated/chat")({ head: () => ({ meta: [{ title: "Chat — Aether Ascension" }, { name: "description", content: "Fully operational Aether Ascension chat workspace." }] }), component: Page });
+type Model = { model_key: string; display_name: string; description: string | null; release_status: string; generation: number; revision: number; capabilities: string[] | null };
 
 function Page() {
-  const queryClient = useQueryClient();
-  const fetchConversations = useServerFn(listAaxConversations);
-  const fetchConversation = useServerFn(getAaxConversation);
-  const sendMessage = useServerFn(sendAaxMessage);
-  const { data: conversations = [] } = useQuery({ queryKey: ["aax-conversations"], queryFn: () => fetchConversations() });
-  const [model, setModel] = useState<AaxModel>(AAX_MODEL_CATALOG[0]!);
-  const [modelOpen, setModelOpen] = useState(false);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [input, setInput] = useState("");
-  const [webResearch, setWebResearch] = useState(false);
-  const [memory, setMemory] = useState(true);
+  const queryClient = useQueryClient(); const getModels = useServerFn(listPublicAaxModels); const fetchConversations = useServerFn(listAaxConversations); const fetchProjects = useServerFn(listAaxProjects); const fetchConversation = useServerFn(getAaxConversation); const createConversation = useServerFn(createAaxConversation); const renameConversation = useServerFn(renameAaxConversation); const archiveConversation = useServerFn(archiveAaxConversation); const deleteConversation = useServerFn(deleteAaxConversation); const updateSettings = useServerFn(updateAaxConversationSettings); const stopGeneration = useServerFn(stopAaxGeneration); const saveMemory = useServerFn(saveAaxMemoryCandidate); const registerAttachment = useServerFn(registerAaxAttachment); const getAttachmentUrl = useServerFn(getAaxAttachmentDownloadUrl);
+  const { data: models = [] } = useQuery({ queryKey: ["public-aax-models"], queryFn: () => getModels() as Promise<Model[]> }); const [search, setSearch] = useState(""); const { data: page } = useQuery({ queryKey: ["aax-conversations", search], queryFn: () => fetchConversations({ data: { search, limit: 100 } }) }); const { data: projects = [] } = useQuery({ queryKey: ["aax-projects"], queryFn: () => fetchProjects() }); const conversations = page?.conversations ?? [];
+  const [conversationId, setConversationId] = useState<string | null>(null); const [modelKey, setModelKey] = useState(""); const [modelOpen, setModelOpen] = useState(false); const [input, setInput] = useState(""); const [webResearch, setWebResearch] = useState(false); const [memory, setMemory] = useState(true); const [projectId, setProjectId] = useState<string | null>(null); const [historyOpen, setHistoryOpen] = useState(false); const [runId, setRunId] = useState<string | null>(null); const [generating, setGenerating] = useState(false); const [status, setStatus] = useState(""); const [error, setError] = useState(""); const [attachmentIds, setAttachmentIds] = useState<string[]>([]); const [attachmentNames, setAttachmentNames] = useState<string[]>([]); const inputRef = useRef<HTMLTextAreaElement>(null); const abortRef = useRef<AbortController | null>(null);
+  const activeModel = useMemo(() => models.find((m) => m.model_key === modelKey) ?? models[0], [models, modelKey]); const { data: conversationData } = useQuery({ queryKey: ["aax-conversation", conversationId], queryFn: () => fetchConversation({ data: { conversationId: conversationId! } }), enabled: Boolean(conversationId) });
+  useEffect(() => { if (!modelKey && activeModel) setModelKey(activeModel.model_key); }, [activeModel, modelKey]); useEffect(() => { if (!conversationId && conversations[0]) setConversationId(conversations[0].id); }, [conversationId, conversations]); useEffect(() => { const c = conversationData?.conversation as any; if (!c) return; const m = Array.isArray(c.aax_models) ? c.aax_models[0] : c.aax_models; if (m?.model_key) setModelKey(m.model_key); setWebResearch(Boolean(c.web_research_enabled)); setMemory(c.memory_enabled !== false); setProjectId(c.project_id ?? null); }, [conversationData]);
+  useEffect(() => { const handler = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); inputRef.current?.focus(); } if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") { e.preventDefault(); newConversation(); } if (e.key === "Escape" && generating) void stop(); }; window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); });
+  async function ensureConversation() { if (conversationId) return conversationId; if (!activeModel) throw new Error("No released AAX model is currently available."); const r = await createConversation({ data: { modelKey: activeModel.model_key, projectId, memoryEnabled: memory, webResearchEnabled: webResearch } }); setConversationId(r.conversationId); await queryClient.invalidateQueries({ queryKey: ["aax-conversations"] }); return r.conversationId; }
+  function newConversation() { setConversationId(null); setInput(""); setAttachmentIds([]); setAttachmentNames([]); setError(""); setStatus(""); setProjectId(null); }
+  async function send(message: string, extra: { regenerateMessageId?: string } = {}) { const id = await ensureConversation(); setGenerating(true); setError(""); setStatus(webResearch ? "Researching the web…" : "Generating…"); const controller = new AbortController(); abortRef.current = controller; try { const response = await fetch("/api/aax/chat", { method: "POST", headers: { "Content-Type": "application/json", Accept: "text/event-stream" }, body: JSON.stringify({ conversationId: id, modelKey: activeModel?.model_key, message, projectId, webResearch, memoryEnabled: memory, attachmentIds, ...extra }), signal: controller.signal }); if (!response.ok || !response.body) throw new Error(await response.text() || `Chat request failed (${response.status})`); const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; for (;;) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const frames = buffer.split("\n\n"); buffer = frames.pop() ?? ""; for (const frame of frames) { const data = frame.split("\n").find((line) => line.startsWith("data:")); const type = frame.split("\n").find((line) => line.startsWith("event:"))?.slice(6).trim(); if (!data) continue; const payload = JSON.parse(data.slice(5).trim()); if (type === "start") setRunId(payload.runId); if (type === "research") setStatus(`Research complete · ${payload.sourceCount} sources`); if (type === "error") throw new Error(payload.message); if (type === "done") { setRunId(null); setInput(""); setAttachmentIds([]); setAttachmentNames([]); setStatus(""); } if (type === "cancelled") setStatus("Generation stopped."); } } await queryClient.invalidateQueries({ queryKey: ["aax-conversations"] }); await queryClient.invalidateQueries({ queryKey: ["aax-conversation", id] }); } catch (e) { if ((e as Error)?.name === "AbortError") setStatus("Generation stopped."); else setError(e instanceof Error ? e.message : "AAX could not complete this request."); await queryClient.invalidateQueries({ queryKey: ["aax-conversation", id] }); } finally { abortRef.current = null; setGenerating(false); setRunId(null); } }
+  async function submit() { const value = input.trim(); if (!value || generating || !activeModel) return; await send(value); } async function stop() { abortRef.current?.abort(); if (runId) { try { await stopGeneration({ data: { runId } }); } catch { /* abort still stops the browser stream */ } } } async function regenerate(messageId?: string) { if (messageId && !generating) await send("", { regenerateMessageId: messageId }); }
+  async function toggleWeb(value: boolean) { setWebResearch(value); if (conversationId) await updateSettings({ data: { conversationId, webResearchEnabled: value } }); } async function toggleMemory(value: boolean) { setMemory(value); if (conversationId) await updateSettings({ data: { conversationId, memoryEnabled: value } }); } async function changeProject(value: string) { const next = value || null; setProjectId(next); if (conversationId) await updateSettings({ data: { conversationId, projectId: next } }); }
+  async function attach(file: File) { const allowed = new Set(["application/pdf","text/plain","text/markdown","text/csv","application/json","application/xml","text/xml","text/html","image/jpeg","image/png","image/webp","image/gif"]); if (file.size > 25 * 1024 * 1024) { setError("Attachments are limited to 25 MB."); return; } if (!allowed.has(file.type)) { setError("That file type is not supported."); return; } const id = await ensureConversation(); setStatus("Uploading attachment…"); setError(""); const user = (await supabase.auth.getUser()).data.user; if (!user) { setError("Authentication expired."); return; } const path = `${user.id}/${id}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`; const upload = await supabase.storage.from("aax-chat-attachments").upload(path, file, { contentType: file.type, upsert: false }); if (upload.error) { setStatus(""); setError(`Upload failed: ${upload.error.message}`); return; } try { const a = await registerAttachment({ data: { conversationId: id, storagePath: path, filename: file.name, mimeType: file.type, sizeBytes: file.size } }); setAttachmentIds((v) => [...v, a.id]); setAttachmentNames((v) => [...v, a.filename]); setStatus("Attachment uploaded and queued for extraction."); } catch (e) { await supabase.storage.from("aax-chat-attachments").remove([path]); setStatus(""); setError(e instanceof Error ? e.message : "Attachment registration failed."); } }
+  async function rename() { if (!conversationId) return; const title = window.prompt("Conversation name", conversationData?.conversation.title ?? ""); if (title) { await renameConversation({ data: { conversationId, title } }); await queryClient.invalidateQueries({ queryKey: ["aax-conversations"] }); await queryClient.invalidateQueries({ queryKey: ["aax-conversation", conversationId] }); } } async function archive() { if (!conversationId) return; await archiveConversation({ data: { conversationId } }); newConversation(); await queryClient.invalidateQueries({ queryKey: ["aax-conversations"] }); } async function removeConversation() { if (!conversationId || !window.confirm("Delete this conversation and its attachments permanently?")) return; await deleteConversation({ data: { conversationId } }); newConversation(); await queryClient.invalidateQueries({ queryKey: ["aax-conversations"] }); } async function saveMemory(messageId: string, content: string) { await saveMemoryCandidate({ data: { conversationId: conversationId!, messageId, content } }); setStatus("Saved as a memory candidate for review."); } async function downloadAttachment(id: string) { const r = await getAttachmentUrl({ data: { attachmentId: id } }); window.open(r.url, "_blank", "noopener,noreferrer"); }
+  const messages = conversationData?.messages ?? []; const sources = conversationData?.sources ?? []; const attachments = conversationData?.attachments ?? [];
 
-  const { data: conversationData } = useQuery({
-    queryKey: ["aax-conversation", conversationId],
-    queryFn: () => fetchConversation({ data: { conversationId: conversationId! } }),
-    enabled: Boolean(conversationId),
-  });
-
-  useEffect(() => {
-    if (!conversationId && conversations.length > 0) {
-      const first = conversations[0];
-      setConversationId(first.id);
-      const info = getConversationModel(first.aax_models);
-      const next = AAX_MODEL_CATALOG.find((item) => item.key === info?.model_key);
-      if (next) setModel(next);
-    }
-  }, [conversationId, conversations]);
-
-  const mutation = useMutation({
-    mutationFn: (message: string) => sendMessage({ data: { conversationId: conversationId ?? undefined, modelKey: model.key, message } }),
-    onSuccess: (result) => {
-      setConversationId(result.conversationId);
-      setInput("");
-      void queryClient.invalidateQueries({ queryKey: ["aax-conversations"] });
-      void queryClient.invalidateQueries({ queryKey: ["aax-conversation", result.conversationId] });
-    },
-  });
-
-  function selectConversation(id: string) {
-    setConversationId(id);
-    const selected = conversations.find((item) => item.id === id);
-    const info = getConversationModel(selected?.aax_models);
-    const next = AAX_MODEL_CATALOG.find((item) => item.key === info?.model_key);
-    if (next) setModel(next);
-  }
-
-  function newConversation() {
-    setConversationId(null);
-    setInput("");
-  }
-
-  function submit() {
-    const value = input.trim();
-    if (!value || mutation.isPending) return;
-    mutation.mutate(value);
-  }
-
-  return (
-    <AppShell>
-      <div className="animate-in-up -mx-5 -my-8 flex h-[calc(100vh-4rem)] flex-col lg:-mx-10 lg:-my-10 lg:h-[calc(100vh)]">
-        <div className="flex min-h-0 flex-1">
-          <aside className="hidden w-64 shrink-0 flex-col border-r border-border/70 bg-sidebar/40 md:flex">
-            <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
-              <span className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">AAX conversations</span>
-              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={newConversation} aria-label="New conversation"><Plus className="h-3.5 w-3.5" /></Button>
-            </div>
-            <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
-              {conversations.length === 0 ? <p className="px-3 py-4 text-xs text-muted-foreground">No conversations yet.</p> : conversations.map((conversation) => {
-                const info = getConversationModel(conversation.aax_models);
-                return <button key={conversation.id} type="button" onClick={() => selectConversation(conversation.id)} className={cn("flex w-full flex-col gap-0.5 rounded-md px-3 py-2.5 text-left transition-colors", conversation.id === conversationId ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground")}><span className="truncate text-sm font-medium">{conversation.title}</span><span className="text-[11px]">{info?.display_name ?? "AAX"} · {new Date(conversation.updated_at).toLocaleDateString()}</span></button>;
-              })}
-            </div>
-          </aside>
-
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center gap-3 border-b border-border/70 px-4 py-3 sm:px-6">
-              <div className="relative">
-                <button type="button" onClick={() => setModelOpen((value) => !value)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-elevated/60 px-3 py-1.5 text-sm transition-colors hover:border-primary/40"><span className="font-medium">{model.name}</span><Tag tone="primary">{model.speed}</Tag><ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /></button>
-                {modelOpen ? <div className="absolute left-0 top-full z-20 mt-1.5 w-80 rounded-lg border border-border bg-popover p-1.5 shadow-elevated">{AAX_MODEL_CATALOG.map((candidate) => <button key={candidate.key} type="button" disabled={candidate.status !== "available"} onClick={() => { setModel(candidate); setModelOpen(false); newConversation(); }} className={cn("flex w-full flex-col gap-0.5 rounded-md px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50", candidate.key === model.key ? "bg-primary/10 text-foreground" : "hover:bg-muted/60")}><span className="text-sm font-medium">{candidate.name}</span><span className="text-[11px] text-muted-foreground">{candidate.description}</span></button>)}</div> : null}
-              </div>
-              <span className="hidden truncate text-xs text-muted-foreground sm:block">{conversationData?.conversation.title ?? "New conversation"}</span>
-              <div className="ml-auto flex items-center gap-1.5">
-                <button type="button" onClick={() => setWebResearch((value) => !value)} className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors", webResearch ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}><Globe className="h-3.5 w-3.5" />Web</button>
-                <button type="button" onClick={() => setMemory((value) => !value)} className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors", memory ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}><Brain className="h-3.5 w-3.5" />Memory</button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-4 py-8 sm:px-6">
-              <div className="mx-auto flex max-w-3xl flex-col gap-4">
-                {(conversationData?.messages ?? []).length === 0 ? <div className="flex min-h-[45vh] items-center justify-center"><EmptyState title={`Start a conversation with ${model.name}`} description="Every conversation is permanently tied to its selected AAX generation. Shared Aether knowledge can evolve across the family while model-specific context stays isolated." icon={<MessagesSquare className="h-5 w-5" />} /></div> : (conversationData?.messages ?? []).map((message) => <div key={message.id} className={cn("rounded-xl border p-4 text-sm leading-relaxed", message.role === "user" ? "ml-8 border-primary/20 bg-primary/5" : "mr-8 border-border/70 bg-elevated/30")}><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{message.role === "user" ? "You" : model.name}</div><div className="whitespace-pre-wrap">{message.content}</div></div>)}
-              </div>
-            </div>
-
-            <div className="border-t border-border/70 px-4 py-4 sm:px-6">
-              <div className="mx-auto max-w-3xl">
-                <div className="panel-elevated flex items-end gap-2 p-2 sm:p-2.5">
-                  <button type="button" className="shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" aria-label="Attach file"><Paperclip className="h-4 w-4" /></button>
-                  <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder={`Message ${model.name}…`} rows={1} className="max-h-32 min-h-[40px] flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground" />
-                  <Button size="icon" className="h-9 w-9 shrink-0" disabled={!input.trim() || mutation.isPending} onClick={submit} aria-label="Send"><Send className="h-4 w-4" /></Button>
-                </div>
-                {mutation.isError ? <p className="mt-2 text-center text-xs text-destructive">{mutation.error instanceof Error ? mutation.error.message : "AAX could not complete this request."}</p> : <PhaseNote>Responses use only AAX models that the server has released and configured. User inputs may become learning candidates, but are never trusted as permanent knowledge automatically.</PhaseNote>}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </AppShell>
-  );
+  return <AppShell><div className="-mx-5 -my-8 flex h-[calc(100vh-4rem)] flex-col lg:-mx-10 lg:-my-10 lg:h-[calc(100vh)]"><div className="flex min-h-0 flex-1">
+    <aside className={cn("absolute inset-y-0 left-0 z-30 w-80 border-r border-border bg-sidebar/95 backdrop-blur md:relative md:flex", historyOpen ? "flex" : "hidden md:flex")}><div className="flex min-h-0 w-full flex-col"><div className="flex items-center gap-2 border-b border-border px-4 py-3"><span className="text-xs font-medium uppercase tracking-[0.14em]">AAX conversations</span><Button size="icon" variant="ghost" className="ml-auto h-7 w-7" onClick={newConversation}><Plus className="h-4 w-4" /></Button><Button size="icon" variant="ghost" className="h-7 w-7 md:hidden" onClick={() => setHistoryOpen(false)}><X className="h-4 w-4" /></Button></div><div className="p-3"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search conversations…" className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs outline-none" /></div><div className="flex-1 overflow-y-auto px-2 pb-3">{conversations.length ? conversations.map((c) => <button key={c.id} type="button" onClick={() => { setConversationId(c.id); setHistoryOpen(false); }} className={cn("mb-1 flex w-full flex-col rounded-md px-3 py-2.5 text-left", c.id === conversationId ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60")}><span className="truncate text-sm font-medium">{c.title}</span><span className="truncate text-[11px] text-muted-foreground">{Array.isArray(c.aax_models) ? c.aax_models[0]?.display_name : c.aax_models?.display_name} · {new Date(c.updated_at).toLocaleDateString()}</span></button>) : <p className="px-3 py-5 text-xs text-muted-foreground">No conversations yet.</p>}</div></div></aside>
+    <section className="flex min-w-0 flex-1 flex-col"><header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-3 sm:px-5"><Button size="icon" variant="ghost" className="h-8 w-8 md:hidden" onClick={() => setHistoryOpen(true)}><Menu className="h-4 w-4" /></Button><div className="relative"><button type="button" disabled={!models.length} onClick={() => setModelOpen((v) => !v)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-elevated/60 px-3 py-1.5 text-sm disabled:opacity-50"><span className="font-medium">{activeModel?.display_name ?? "No released AAX model"}</span><ChevronDown className="h-3.5 w-3.5" /></button>{modelOpen && <div className="absolute left-0 top-full z-40 mt-1.5 w-80 rounded-lg border border-border bg-popover p-1.5 shadow-elevated">{models.map((m) => <button key={m.model_key} type="button" onClick={() => { setModelKey(m.model_key); setModelOpen(false); newConversation(); }} className={cn("flex w-full flex-col rounded-md px-3 py-2 text-left hover:bg-muted/60", m.model_key === modelKey && "bg-primary/10")}><span className="text-sm font-medium">{m.display_name}</span><span className="text-[11px] text-muted-foreground">AAX {m.generation}.{m.revision} · {m.release_status}</span></button>)}</div>}</div><span className="hidden truncate text-xs text-muted-foreground sm:block">{conversationData?.conversation.title ?? "New conversation"}</span><div className="ml-auto flex flex-wrap items-center gap-1.5"><select value={projectId ?? ""} onChange={(e) => void changeProject(e.target.value)} className="max-w-40 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs"><option value="">No project</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><button type="button" onClick={() => void toggleWeb(!webResearch)} disabled={!activeModel} className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs", webResearch ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground")} title="Real-time web research via xAI web search"><Globe className="h-3.5 w-3.5" />Web</button><button type="button" onClick={() => void toggleMemory(!memory)} className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs", memory ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground")}><Brain className="h-3.5 w-3.5" />Memory</button>{conversationId && <div className="flex"><Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => void rename()}><Pencil className="h-3.5 w-3.5" /></Button><Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => void archive()}><Archive className="h-3.5 w-3.5" /></Button><Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => void removeConversation()}><Trash2 className="h-3.5 w-3.5" /></Button></div>}</div></header>
+    <main className="flex-1 overflow-y-auto px-3 py-6 sm:px-5"><div className="mx-auto flex max-w-3xl flex-col gap-5">{!activeModel ? <div className="flex min-h-[55vh] items-center justify-center"><EmptyState title="No AAX model is released yet" description="The Phase D workspace is connected to the real AAX release gate. A model must be released and provider-configured before it can answer." icon={<MessagesSquare className="h-5 w-5" />} /></div> : messages.length === 0 ? <div className="flex min-h-[55vh] items-center justify-center"><EmptyState title={`Start a conversation with ${activeModel.display_name}`} description="Persistent history, project context, memory controls, attachments, streaming and real web research are connected to the backend." icon={<MessagesSquare className="h-5 w-5" />} /></div> : messages.map((message: any, index: number) => <article key={message.id} className={cn("group rounded-xl border p-4 text-sm leading-relaxed", message.role === "user" ? "ml-3 border-primary/20 bg-primary/5 sm:ml-12" : "mr-3 border-border/70 bg-elevated/30 sm:mr-12")}><div className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground"><span>{message.role === "user" ? "You" : activeModel.display_name}</span>{message.metadata?.webResearch && <Tag tone="primary">Web research</Tag>}<span className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">{message.role === "assistant" && <><button type="button" onClick={() => void saveMemory(message.id, message.content)} className="mr-2 inline-flex items-center gap-1 hover:text-primary"><Save className="h-3 w-3" />Save memory</button><button type="button" onClick={() => void regenerate(messages[index - 1]?.id)} className="inline-flex items-center gap-1 hover:text-primary"><RefreshCw className="h-3 w-3" />Regenerate</button></>}</span></div><div className="whitespace-pre-wrap break-words">{message.content}</div>{message.role === "assistant" && sources.filter((s: any) => s.message_id === message.id).length > 0 && <div className="mt-4 border-t border-border/60 pt-3"><div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sources</div><div className="grid gap-2">{sources.filter((s: any) => s.message_id === message.id).map((s: any) => <a key={s.id} href={s.url} target="_blank" rel="noreferrer" className="rounded-md border border-border/70 p-2.5 hover:bg-muted/40"><div className="flex items-center gap-2 text-xs font-medium"><ExternalLink className="h-3 w-3" />{s.title ?? s.domain ?? s.url}</div><div className="mt-1 truncate text-[10px] text-muted-foreground">{s.domain ?? s.url}</div>{s.snippet && <div className="mt-1 text-[11px] text-muted-foreground">{s.snippet}</div>}</a>)}</div></div>}</article>)}{attachments.length > 0 && <div className="border-t border-border/60 pt-3"><div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"><Paperclip className="h-3 w-3" />Attachments</div><div className="flex flex-wrap gap-2">{attachments.map((a: any) => <button key={a.id} type="button" onClick={() => void downloadAttachment(a.id)} className="rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-muted/40">{a.filename} · {a.extraction_status}</button>)}</div></div>}</div></main>
+    <footer className="border-t border-border px-3 py-3 sm:px-5"><div className="mx-auto max-w-3xl">{attachmentNames.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{attachmentNames.map((n) => <span key={n} className="rounded-md border border-border px-2 py-1 text-[11px]">{n}</span>)}</div>}<div className="panel-elevated flex items-end gap-2 p-2"><label className="cursor-pointer rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground" title="Attach file"><Paperclip className="h-4 w-4" /><input type="file" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void attach(f); e.currentTarget.value = ""; }} /></label><textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void submit(); } }} placeholder={activeModel ? `Message ${activeModel.display_name}…` : "No released AAX model available"} rows={1} disabled={!activeModel || generating} className="max-h-40 min-h-[42px] flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50" />{generating ? <Button size="icon" variant="outline" className="h-9 w-9 shrink-0" onClick={() => void stop()}><Square className="h-3.5 w-3.5" /></Button> : <Button size="icon" className="h-9 w-9 shrink-0" disabled={!input.trim() || !activeModel} onClick={() => void submit()}><Send className="h-4 w-4" /></Button>}</div>{status && <p className="mt-2 text-center text-xs text-muted-foreground">{status}</p>}{error && <div className="mt-2 flex items-center justify-center gap-2 text-xs text-destructive"><span>{error}</span><button type="button" className="inline-flex items-center gap-1 underline" onClick={() => void submit()}><RefreshCw className="h-3 w-3" />Retry</button></div>}{!status && !error && <PhaseNote><FolderKanban className="mr-1 inline h-3 w-3" />Server-enforced project context, memory, secure attachments and real web research. Internal agent chains stay hidden.</PhaseNote>}</div></footer>
+    </section></div></div></AppShell>;
 }
