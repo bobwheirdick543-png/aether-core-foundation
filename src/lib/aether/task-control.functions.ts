@@ -30,18 +30,13 @@ export const cancelTask = createServerFn({ method: "POST" })
   })
   .handler(async ({ context, data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const admin = await isAdmin(context);
-    const task = await loadOwnedTask(supabaseAdmin, data.taskId, context.userId, admin);
+    const task = await loadOwnedTask(supabaseAdmin, data.taskId, context.userId, await isAdmin(context));
     const status = task.status as TaskStatus;
-    if (!["queued", "running", "paused", "retrying", "scheduled", "waiting_approval"].includes(status)) {
-      return { ok: false as const, message: `Cannot cancel a task in status "${status}"` };
-    }
+    if (!["queued", "running", "paused", "retrying", "scheduled", "waiting_approval"].includes(status)) return { ok: false as const, message: `Cannot cancel a task in status "${status}"` };
 
     if (status === "running") {
       const now = new Date().toISOString();
-      const { error } = await supabaseAdmin.from("tasks").update({
-        cancel_requested_at: now, cancellation_reason: data.reason, updated_at: now,
-      }).eq("id", data.taskId).eq("user_id", task.user_id);
+      const { error } = await supabaseAdmin.from("tasks").update({ cancel_requested_at: now, cancellation_reason: data.reason, updated_at: now }).eq("id", data.taskId).eq("user_id", task.user_id);
       if (error) throw new Error(error.message);
       const { data: runs } = await supabaseAdmin.from("task_runs").select("id").eq("task_id", data.taskId).eq("status", "running");
       for (const run of runs ?? []) await supabaseAdmin.from("task_runs").update({ cancel_requested_at: now, cancellation_reason: data.reason, updated_at: now }).eq("id", run.id);
@@ -67,8 +62,12 @@ export const pauseTask = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const task = await loadOwnedTask(supabaseAdmin, data.taskId, context.userId, await isAdmin(context));
     const status = task.status as TaskStatus;
-    if (status !== "queued" && status !== "running" && status !== "waiting_approval" && status !== "scheduled") return { ok: false as const, message: `Cannot pause a task in status "${status}"` };
+    if (!["queued", "running", "waiting_approval", "scheduled"].includes(status)) return { ok: false as const, message: `Cannot pause a task in status "${status}"` };
     await transitionTaskStatus(supabaseAdmin, data.taskId, status, "paused", { actorId: context.userId });
+    const { data: runs } = await supabaseAdmin.from("task_runs").select("id, status").eq("task_id", data.taskId).in("status", ["queued", "running", "waiting_approval", "scheduled"]);
+    for (const run of runs ?? []) {
+      try { await transitionRunStatus(supabaseAdmin, run.id, run.status as TaskStatus, "paused", { actorId: context.userId }); } catch { /* state may have changed concurrently */ }
+    }
     return { ok: true as const, message: "Task paused" };
   });
 
@@ -83,6 +82,10 @@ export const resumeTask = createServerFn({ method: "POST" })
     const task = await loadOwnedTask(supabaseAdmin, data.taskId, context.userId, await isAdmin(context));
     if (task.status !== "paused") return { ok: false as const, message: `Cannot resume a task in status "${task.status}"` };
     await transitionTaskStatus(supabaseAdmin, data.taskId, "paused", "queued", { actorId: context.userId });
+    const { data: runs } = await supabaseAdmin.from("task_runs").select("id, status").eq("task_id", data.taskId).eq("status", "paused");
+    for (const run of runs ?? []) {
+      try { await transitionRunStatus(supabaseAdmin, run.id, "paused", "queued", { actorId: context.userId }); } catch { /* state may have changed concurrently */ }
+    }
     return { ok: true as const, message: "Task resumed" };
   });
 
@@ -99,10 +102,11 @@ export const retryTask = createServerFn({ method: "POST" })
     const { data: latestRuns } = await supabaseAdmin.from("task_runs").select("id, attempt, inputs, agent_key, timeout_ms, max_retries").eq("task_id", data.taskId).order("attempt", { ascending: false }).limit(1);
     const previous = latestRuns?.[0];
     const nextAttempt = (previous?.attempt ?? 0) + 1;
-    await supabaseAdmin.from("tasks").update({ status: "queued", progress: 0, completed_at: null, dead_lettered_at: null,
+    const { error: resetError } = await supabaseAdmin.from("tasks").update({ status: "queued", progress: 0, completed_at: null, dead_lettered_at: null,
       cancel_requested_at: null, cancellation_reason: null, retry_count: nextAttempt - 1, next_attempt_at: null,
       last_error_code: null, last_error_message: null, updated_at: new Date().toISOString(),
       detail: { ...(task.detail as object), last_retry: { previous_run_id: previous?.id ?? null, reason: data.reason ?? null, requested_by: context.userId } } }).eq("id", data.taskId);
+    if (resetError) throw new Error(resetError.message);
     const run = await createRun(supabaseAdmin, { task_id: data.taskId, owner_id: task.user_id, agent_key: previous?.agent_key ?? undefined,
       inputs: previous?.inputs ?? {}, attempt: nextAttempt, retry_of: previous?.id ?? null, timeout_ms: previous?.timeout_ms ?? task.timeout_ms,
       max_retries: previous?.max_retries ?? task.max_retries });
