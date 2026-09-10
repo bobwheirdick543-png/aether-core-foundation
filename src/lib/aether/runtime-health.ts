@@ -13,7 +13,7 @@ export interface RuntimeHealth {
 export async function getRuntimeHealth(admin: SupabaseClient): Promise<RuntimeHealth> {
   const now = Date.now();
   const staleBefore = new Date(now - 90_000).toISOString();
-  const [{ count: queued }, { count: running }, { count: retrying }, { count: expiredLeases }, { count: workers }, { count: activeWorkers }, { count: staleWorkers }] = await Promise.all([
+  const queries = await Promise.all([
     admin.from("tasks").select("id", { count: "exact", head: true }).in("status", ["queued", "scheduled"]),
     admin.from("task_runs").select("id", { count: "exact", head: true }).eq("status", "running"),
     admin.from("task_runs").select("id", { count: "exact", head: true }).eq("status", "retrying"),
@@ -22,9 +22,12 @@ export async function getRuntimeHealth(admin: SupabaseClient): Promise<RuntimeHe
     admin.from("runtime_workers").select("worker_id", { count: "exact", head: true }).eq("status", "running"),
     admin.from("runtime_workers").select("worker_id", { count: "exact", head: true }).neq("status", "offline").lt("last_heartbeat_at", staleBefore),
   ]);
+  const failed = queries.find((q) => q.error);
+  if (failed?.error) throw new Error(`Runtime health query failed: ${failed.error.message}`);
+  const [queued, running, retrying, expiredLeases, workers, activeWorkers, staleWorkers] = queries;
   return {
-    status: (expiredLeases ?? 0) > 0 || (staleWorkers ?? 0) > 0 ? "degraded" : "healthy",
-    checkedAt: new Date(now).toISOString(), queued: queued ?? 0, running: running ?? 0, retrying: retrying ?? 0, expiredLeases: expiredLeases ?? 0,
-    workers: { total: workers ?? 0, active: activeWorkers ?? 0, stale: staleWorkers ?? 0 },
+    status: (expiredLeases.count ?? 0) > 0 || (staleWorkers.count ?? 0) > 0 ? "degraded" : "healthy",
+    checkedAt: new Date(now).toISOString(), queued: queued.count ?? 0, running: running.count ?? 0, retrying: retrying.count ?? 0, expiredLeases: expiredLeases.count ?? 0,
+    workers: { total: workers.count ?? 0, active: activeWorkers.count ?? 0, stale: staleWorkers.count ?? 0 },
   };
 }
