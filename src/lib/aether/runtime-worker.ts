@@ -11,7 +11,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { appendTaskEvent, heartbeatRuntimeRun, transitionRunStatus, transitionTaskStatus } from "./task-service";
+import { appendTaskEvent, heartbeatRuntimeRun, recoverExpiredRuntimeWork, transitionRunStatus, transitionTaskStatus } from "./task-service";
 import { isDeadlineExceeded, isRetryableFailure, type TaskStatus } from "./task-runtime";
 import { executeResearchStep } from "./executor";
 
@@ -33,12 +33,13 @@ export interface ClaimedRuntimeWork {
 export interface RuntimeWorkerOptions {
   workerId: string;
   leaseSeconds?: number;
+  recoveryLimit?: number;
 }
 
 function errorCode(error: unknown): string {
   if (error instanceof Error && /permission|forbidden/i.test(error.message)) return "permission_denied";
   if (error instanceof Error && /invalid|required|validation/i.test(error.message)) return "invalid_input";
-  if (error instanceof Error && /timeout|timed out|deadline/i.test(error.message)) return "timeout";
+  if (error instanceof Error && /timeout|timed out|deadline/i.test(error.message)) return "timeout_budget_exhausted";
   return "worker_execution_failed";
 }
 
@@ -56,16 +57,27 @@ export async function claimNextRuntimeWork(admin: SupabaseClient, options: Runti
   return (row as ClaimedRuntimeWork | undefined) ?? null;
 }
 
-async function cancellationRequested(admin: SupabaseClient, taskId: string, runId: string): Promise<boolean> {
-  const { data: task } = await admin.from("tasks").select("cancel_requested_at, deadline_at").eq("id", taskId).single();
-  const { data: run } = await admin.from("task_runs").select("cancel_requested_at, deadline_at").eq("id", runId).single();
-  return Boolean(task?.cancel_requested_at || run?.cancel_requested_at || isDeadlineExceeded(task?.deadline_at) || isDeadlineExceeded(run?.deadline_at));
+async function cancellationState(admin: SupabaseClient, taskId: string, runId: string): Promise<"none" | "cancelled" | "timeout"> {
+  const [{ data: task }, { data: run }] = await Promise.all([
+    admin.from("tasks").select("cancel_requested_at, deadline_at").eq("id", taskId).single(),
+    admin.from("task_runs").select("cancel_requested_at, deadline_at").eq("id", runId).single(),
+  ]);
+  if (task?.cancel_requested_at || run?.cancel_requested_at) return "cancelled";
+  if (isDeadlineExceeded(task?.deadline_at) || isDeadlineExceeded(run?.deadline_at)) return "timeout";
+  return "none";
 }
 
 async function executeClaimedWork(admin: SupabaseClient, work: ClaimedRuntimeWork, workerId: string): Promise<void> {
-  if (await cancellationRequested(admin, work.task_id, work.run_id)) {
+  const initialState = await cancellationState(admin, work.task_id, work.run_id);
+  if (initialState === "cancelled") {
     await transitionRunStatus(admin, work.run_id, "running", "cancelled", { failureCode: "cancelled", retryable: false, workerId });
     await transitionTaskStatus(admin, work.task_id, "running", "cancelled", { workerId });
+    return;
+  }
+  if (initialState === "timeout") {
+    await transitionRunStatus(admin, work.run_id, "running", "failed", { failureCode: "timeout_budget_exhausted", retryable: false, workerId });
+    await transitionTaskStatus(admin, work.task_id, "running", "failed", { workerId });
+    await admin.from("tasks").update({ last_error_code: "timeout_budget_exhausted", last_error_message: "Task runtime deadline exceeded", dead_lettered_at: new Date().toISOString() }).eq("id", work.task_id);
     return;
   }
 
@@ -83,13 +95,8 @@ async function executeClaimedWork(admin: SupabaseClient, work: ClaimedRuntimeWor
       const urls = Array.isArray(work.task_detail.urls) ? work.task_detail.urls.filter((v): v is string => typeof v === "string") : [];
       const topic = typeof work.task_detail.topic === "string" ? work.task_detail.topic : undefined;
       const result = await executeResearchStep(admin, {
-        taskId: work.task_id,
-        runId: work.run_id,
-        ownerId: work.owner_id,
-        urls,
-        topic,
-        deadlineAt: work.deadline_at ?? undefined,
-        workerId,
+        taskId: work.task_id, runId: work.run_id, ownerId: work.owner_id, urls, topic,
+        deadlineAt: work.deadline_at ?? undefined, workerId,
       });
       if (result.status === "cancelled") return;
       return;
@@ -125,15 +132,12 @@ async function executeClaimedWork(admin: SupabaseClient, work: ClaimedRuntimeWor
   }
 }
 
-export async function runNextRuntimeWork(admin: SupabaseClient, options: RuntimeWorkerOptions): Promise<{ claimed: boolean; taskId?: string; runId?: string }> {
+export async function runNextRuntimeWork(admin: SupabaseClient, options: RuntimeWorkerOptions): Promise<{ claimed: boolean; taskId?: string; runId?: string; recovered?: number }> {
+  const recovered = await recoverExpiredRuntimeWork(admin, options.recoveryLimit ?? 100);
   const work = await claimNextRuntimeWork(admin, options);
-  if (!work) return { claimed: false };
+  if (!work) return { claimed: false, recovered };
   await executeClaimedWork(admin, work, options.workerId);
-  return { claimed: true, taskId: work.task_id, runId: work.run_id };
+  return { claimed: true, taskId: work.task_id, runId: work.run_id, recovered };
 }
 
-export async function recoverExpiredRuntimeWork(admin: SupabaseClient, limit = 100): Promise<number> {
-  const { data, error } = await admin.rpc("requeue_expired_runtime_work", { p_limit: limit });
-  if (error) throw new Error(error.message);
-  return Number(data ?? 0);
-}
+export { recoverExpiredRuntimeWork };
