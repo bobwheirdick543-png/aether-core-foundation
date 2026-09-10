@@ -11,6 +11,7 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { writeAdminSessionCookies } from "@/lib/auth/admin.session.server";
 
 function normalizeEmail(value: string): string {
   return String(value ?? "").trim().toLowerCase();
@@ -122,6 +123,11 @@ export const signInWithConfiguredAdminCredentials = createServerFn({ method: "PO
     if (signInError || !sessionData.session) {
       return { ok: false as const, reason: "supabase_signin_failed" as const };
     }
+
+    writeAdminSessionCookies(
+      sessionData.session.access_token,
+      sessionData.session.refresh_token,
+    );
 
     const { error: auditError } = await supabaseAdmin.from("audit_logs").insert({
       actor_id: user.id,
