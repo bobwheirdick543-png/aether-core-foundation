@@ -1,10 +1,9 @@
 import type { AgentKey } from "./agents";
 
 /**
- * Canonical knowledge-evolution chain.
- * Orchestrator coordinates the workflow; it does not replace specialist analysis.
- * Every downstream understanding receives the original source and the full
- * accumulated understanding package. The target AAX performs its own final analysis.
+ * Canonical pre-target knowledge-evolution pipeline.
+ * The Orchestrator owns scheduling/dependencies; specialist agents own analysis.
+ * Every specialist receives the original source plus the complete accumulated package.
  */
 export const AAX_KNOWLEDGE_CHAIN: AgentKey[] = [
   "knowledge-acquisition",
@@ -13,7 +12,19 @@ export const AAX_KNOWLEDGE_CHAIN: AgentKey[] = [
   "curator",
 ];
 
+/** Security runs as a parallel provenance/authorization audit before curation can complete. */
 export const AAX_KNOWLEDGE_PARALLEL_AUDIT: AgentKey[] = ["security"];
+
+/** Work that happens after the target AAX has performed its own analysis. */
+export const AAX_POST_TARGET_CHAIN: AgentKey[] = ["report", "notification"];
+
+export const AAX_KNOWLEDGE_FLOW = {
+  intake: "knowledge-acquisition" as AgentKey,
+  parallelBranches: ["research", "verification", "security"] as AgentKey[],
+  curator: "curator" as AgentKey,
+  targetSelfAnalysis: "target-aax",
+  postTarget: AAX_POST_TARGET_CHAIN,
+} as const;
 
 export interface UnderstandingArtifact {
   understandingId: string;
@@ -73,20 +84,10 @@ export interface AaxSelfAnalysisResult {
   confidence?: number;
 }
 
-export function appendUnderstanding(
-  pkg: AaxKnowledgePackage,
-  artifact: UnderstandingArtifact,
-): AaxKnowledgePackage {
-  return {
-    ...pkg,
-    understandings: [...pkg.understandings, artifact],
-  };
+export function appendUnderstanding(pkg: AaxKnowledgePackage, artifact: UnderstandingArtifact): AaxKnowledgePackage {
+  return { ...pkg, understandings: [...pkg.understandings, artifact] };
 }
 
 export function buildDownstreamContext(pkg: AaxKnowledgePackage): AaxKnowledgePackage {
-  // Preserve the original source and append-only collective understanding.
-  return {
-    ...pkg,
-    understandings: [...pkg.understandings],
-  };
+  return { ...pkg, understandings: [...pkg.understandings] };
 }
