@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
-import { verifyAdminAccessToken } from "@/lib/auth/admin.functions";
+import { signInWithConfiguredAdminCredentials } from "@/lib/auth/admin.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ export const Route = createFileRoute("/admin/login")({
 
 function AdminLogin() {
   const navigate = useNavigate();
-  const verifyWithToken = useServerFn(verifyAdminAccessToken);
+  const signIn = useServerFn(signInWithConfiguredAdminCredentials);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -34,51 +34,29 @@ function AdminLogin() {
     setBusy(true);
     try {
       await supabase.auth.signOut();
-
-      const { data: signInData, error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
-        password,
+      const result = await signIn({ data: { email: email.trim().toLowerCase(), password } });
+      if (!result.ok) {
+        const messages: Record<string, string> = {
+          admin_credentials_not_configured: "Aether administrator credentials are not configured on the server.",
+          invalid_credentials: "Invalid administrator email or password.",
+          supabase_not_configured: "Aether Supabase authentication is not configured on the server.",
+          supabase_signin_failed: "Administrator credentials were accepted, but the Supabase session could not be created. Try again.",
+        };
+        toast.error(messages[result.reason] ?? "Administrator sign-in failed.");
+        return;
+      }
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: result.session.access_token,
+        refresh_token: result.session.refresh_token,
       });
-
-      if (error) {
-        toast.error(error.message || "Sign-in failed. Check the email and password.");
+      if (sessionError) {
+        toast.error("Administrator authentication succeeded, but the local session could not be established. Try again.");
         return;
       }
-
-      const accessToken = signInData.session?.access_token;
-      if (!accessToken) {
-        toast.error("Sign-in succeeded but no session token was returned. Try again.");
-        return;
-      }
-
-      if (signInData.session) {
-        await supabase.auth.setSession({
-          access_token: signInData.session.access_token,
-          refresh_token: signInData.session.refresh_token,
-        });
-      }
-
-      const result = await verifyWithToken({ data: { accessToken } });
-
-      if (result.ok) {
-        navigate({ to: "/admin" });
-        return;
-      }
-
-      await supabase.auth.signOut().catch(() => {});
-
-      if (result.reason === "email_not_confirmed") {
-        toast.error("Confirm the administrator email from your inbox before signing in.");
-      } else if (result.reason === "not_designated_admin") {
-        toast.error("This account is not the designated Aether administrator.");
-      } else if (result.reason === "role_assignment_failed") {
-        toast.error("The administrator account was verified, but its admin role could not be assigned. Try again.");
-      } else {
-        toast.error("Could not verify administrator access. Try again.");
-      }
+      navigate({ to: "/admin" });
     } catch (err) {
       await supabase.auth.signOut().catch(() => {});
-      toast.error(err instanceof Error ? err.message : "Access denied.");
+      toast.error(err instanceof Error ? err.message : "Administrator access denied.");
     } finally {
       setBusy(false);
     }
@@ -87,48 +65,25 @@ function AdminLogin() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-5 py-16">
       <div className="w-full max-w-sm">
-        <Link to="/" className="mx-auto flex w-fit">
-          <Logo />
-        </Link>
+        <Link to="/" className="mx-auto flex w-fit"><Logo /></Link>
         <div className="panel mt-8 p-6">
           <h1 className="text-lg font-semibold">Administrator sign-in</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            This area is restricted. Your identity and administrator privileges are verified on the server.
+            Sign in with the Aether administrator credentials configured securely on the server.
           </p>
-
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+              <Input id="email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <Input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
-            <Button type="submit" className="w-full" disabled={busy}>
-              {busy ? "Verifying…" : "Sign in"}
-            </Button>
+            <Button type="submit" className="w-full" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button>
           </form>
-
           <p className="mt-6 text-xs text-muted-foreground">
-            Need to create the designated administrator account?{" "}
-            <Link to="/admin/signup" className="text-primary hover:underline">
-              Administrator signup
-            </Link>
+            Administrator access is controlled by the server-configured Aether credentials. No administrator signup is required.
           </p>
         </div>
       </div>
