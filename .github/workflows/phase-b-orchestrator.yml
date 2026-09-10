@@ -1,27 +1,11 @@
 name: Phase C AAX Validation
-
 on:
   push:
     branches: [main]
-    paths:
-      - "src/lib/aether/**"
-      - "src/lib/admin/**"
-      - "src/routes/**"
-      - "supabase/migrations/**"
-      - "package.json"
-      - ".github/workflows/phase-b-orchestrator.yml"
+    paths: ["src/lib/aether/**", "src/lib/admin/**", "src/routes/**", "supabase/migrations/**", "package.json", "tsconfig.phase-c.json", ".github/workflows/phase-b-orchestrator.yml"]
   pull_request:
-    paths:
-      - "src/lib/aether/**"
-      - "src/lib/admin/**"
-      - "src/routes/**"
-      - "supabase/migrations/**"
-      - "package.json"
-      - ".github/workflows/phase-b-orchestrator.yml"
-
-permissions:
-  contents: read
-
+    paths: ["src/lib/aether/**", "src/lib/admin/**", "src/routes/**", "supabase/migrations/**", "package.json", "tsconfig.phase-c.json", ".github/workflows/phase-b-orchestrator.yml"]
+permissions: { contents: read }
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -29,9 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+        with: { node-version: 22, registry-url: https://registry.npmjs.org }
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - name: ESLint report
         run: |
@@ -39,7 +21,7 @@ jobs:
           npx eslint . --format compact || true
       - name: Production build and route generation
         run: npm run build
-      - name: TypeScript validation
-        run: npx tsc --noEmit --pretty false
+      - name: Phase C TypeScript validation
+        run: npx tsc -p tsconfig.phase-c.json --noEmit --pretty false
       - name: AAX unit tests
         run: npx vitest run src/lib/aether/aax.test.ts
