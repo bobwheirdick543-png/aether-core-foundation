@@ -1,11 +1,40 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createTask } from "@/lib/aether/task-service";
 
 async function assertAdmin(supabase: SupabaseClient, userId: string) {
   const { data } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
   if (!data) throw new Response("Forbidden", { status: 403 });
 }
+
+export const createAaxTrainingJob = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context, data }) => {
+    await assertAdmin(context.supabase as unknown as SupabaseClient, context.userId);
+    const input = data as { targetModelId: string; sourceType: string; originalSource: string; sourceHash?: string; sourceId?: string; sourceMetadata?: Record<string, unknown>; timeoutMs?: number; };
+    if (!input.targetModelId || !input.sourceType || !input.originalSource?.trim()) throw new Response("Target AAX and original source are required", { status: 400 });
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: model, error: modelError } = await supabaseAdmin.from("aax_models").select("id, model_key, release_status, provider, provider_model").eq("id", input.targetModelId).single();
+    if (modelError || !model) throw new Response("Target AAX model not found", { status: 404 });
+    if (!model.provider || !model.provider_model) throw new Response("Target AAX is not provider-configured", { status: 409 });
+    const { data: job, error: jobError } = await supabaseAdmin.from("aax_training_jobs").insert({ target_model_id: input.targetModelId, source_type: input.sourceType, source_id: input.sourceId ?? null, source_hash: input.sourceHash ?? null, original_source_ref: input.sourceMetadata ?? {}, original_source_content: input.originalSource, source_metadata: input.sourceMetadata ?? {}, pipeline_status: "queued", current_stage: "queued", timeout_ms: input.timeoutMs ?? 1800000, completed_agents: [] }).select("id").single();
+    if (jobError || !job) throw new Response(jobError?.message ?? "Could not create AAX training job", { status: 500 });
+    const task = await createTask(supabaseAdmin, { owner_id: context.userId, title: `AAX knowledge evolution — ${model.model_key}`, kind: "aax-training", detail: { training_job_id: job.id }, timeout_ms: input.timeoutMs ?? 1800000, idempotency_key: `aax-training:${job.id}` });
+    const { data: run, error: runError } = await supabaseAdmin.from("task_runs").insert({ task_id: task.id, owner_id: context.userId, status: "queued", attempt: 1, inputs: { training_job_id: job.id }, outputs: {}, timeout_ms: input.timeoutMs ?? 1800000, deadline_at: new Date(Date.now() + (input.timeoutMs ?? 1800000)).toISOString(), max_retries: 3, retry_count: 0, idempotency_key: `aax-training-run:${job.id}` }).select("id").single();
+    if (runError || !run) throw new Response(runError?.message ?? "Could not queue AAX training run", { status: 500 });
+    return { trainingJobId: job.id, taskId: task.id, runId: run.id };
+  });
+
+export const getAdminAaxTrainingJobs = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase as unknown as SupabaseClient, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.from("aax_training_jobs").select("id, target_model_id, source_type, source_hash, pipeline_status, current_stage, completed_agents, target_self_analysis, report_delivery, started_at, completed_at, last_event_at, created_at, updated_at").order("created_at", { ascending: false }).limit(100);
+    if (error) throw new Response("Could not load AAX training jobs", { status: 500 });
+    return { jobs: data ?? [] };
+  });
 
 export const getAdminAaxIntelligence = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -19,15 +48,8 @@ export const getAdminAaxIntelligence = createServerFn({ method: "GET" })
     ]);
     if (modelError) throw new Response("Could not load AAX intelligence", { status: 500 });
     const byModel = new Map<string, Array<{ metric_key: string; value: string; updated_at: string }>>();
-    for (const row of stats ?? []) {
-      const list = byModel.get(row.entity_id) ?? [];
-      list.push({ metric_key: row.metric_key, value: String(row.value), updated_at: row.updated_at });
-      byModel.set(row.entity_id, list);
-    }
-    return {
-      models: (models ?? []).map((model) => ({ ...model, statistics: byModel.get(model.id) ?? [], registerEntries: (register ?? []).filter((entry) => entry.entity_id === model.id) })),
-      registerCount: register?.length ?? 0,
-    };
+    for (const row of stats ?? []) { const list = byModel.get(row.entity_id) ?? []; list.push({ metric_key: row.metric_key, value: String(row.value), updated_at: row.updated_at }); byModel.set(row.entity_id, list); }
+    return { models: (models ?? []).map((model) => ({ ...model, statistics: byModel.get(model.id) ?? [], registerEntries: (register ?? []).filter((entry) => entry.entity_id === model.id) })), registerCount: register?.length ?? 0 };
   });
 
 export const getAdminAgentIntelligence = createServerFn({ method: "GET" })
@@ -42,10 +64,6 @@ export const getAdminAgentIntelligence = createServerFn({ method: "GET" })
     ]);
     if (error) throw new Response("Could not load agent intelligence", { status: 500 });
     const byAgent = new Map<string, Array<{ metric_key: string; value: string; updated_at: string }>>();
-    for (const row of stats ?? []) {
-      const list = byAgent.get(row.entity_id) ?? [];
-      list.push({ metric_key: row.metric_key, value: String(row.value), updated_at: row.updated_at });
-      byAgent.set(row.entity_id, list);
-    }
+    for (const row of stats ?? []) { const list = byAgent.get(row.entity_id) ?? []; list.push({ metric_key: row.metric_key, value: String(row.value), updated_at: row.updated_at }); byAgent.set(row.entity_id, list); }
     return { agents: (agents ?? []).map((agent) => ({ ...agent, statistics: byAgent.get(agent.id) ?? [], registerEntries: (register ?? []).filter((entry) => entry.entity_id === agent.id) })) };
   });
