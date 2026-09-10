@@ -18,18 +18,6 @@ drop policy if exists "admins can create aax evaluations" on public.aax_evaluati
 drop policy if exists aax_evaluations_admin_all on public.aax_evaluations;
 create policy aax_evaluations_admin_all on public.aax_evaluations for all to authenticated using (public.has_role(auth.uid(),'admin')) with check (public.has_role(auth.uid(),'admin'));
 
-create table if not exists public.aax_model_health (
-  model_id uuid primary key references public.aax_models(id) on delete cascade,
-  state text not null default 'healthy' check (state in ('healthy','degraded','unavailable','cooldown','disabled')),
-  consecutive_failures integer not null default 0, consecutive_successes integer not null default 0,
-  total_requests bigint not null default 0, total_failures bigint not null default 0, total_fallbacks bigint not null default 0,
-  cooldown_until timestamptz, last_error text, last_error_at timestamptz, last_success_at timestamptz, updated_at timestamptz not null default now()
-);
-create index if not exists aax_model_health_state_idx on public.aax_model_health(state,cooldown_until);
-alter table public.aax_model_health enable row level security;
-drop policy if exists aax_model_health_admin_read on public.aax_model_health;
-create policy aax_model_health_admin_read on public.aax_model_health for select to authenticated using (public.has_role(auth.uid(),'admin'));
-
 alter table public.aax_models add column if not exists parent_model_id uuid references public.aax_models(id);
 alter table public.aax_models add column if not exists improvements jsonb not null default '[]'::jsonb;
 alter table public.aax_models add column if not exists specialization_profile jsonb not null default '{}'::jsonb;
@@ -65,3 +53,17 @@ begin
 end; $$;
 revoke all on function public.get_available_aax_model(text) from public;
 grant execute on function public.get_available_aax_model(text) to authenticated, service_role;
+
+create or replace function public.compute_aax_usage_cost()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare cfg jsonb; input_rate numeric; output_rate numeric;
+begin
+  if new.cost is not null or new.aax_model_id is null then return new; end if;
+  select config into cfg from public.aax_models where id=new.aax_model_id;
+  input_rate := nullif((cfg->>'input_cost_per_1k')::numeric,0); output_rate := nullif((cfg->>'output_cost_per_1k')::numeric,0);
+  if input_rate is not null or output_rate is not null then new.cost := (coalesce(new.tokens_in,0)/1000.0)*coalesce(input_rate,0)+(coalesce(new.tokens_out,0)/1000.0)*coalesce(output_rate,0); end if;
+  return new;
+exception when others then return new;
+end; $$;
+drop trigger if exists trg_compute_aax_usage_cost on public.usage_logs;
+create trigger trg_compute_aax_usage_cost before insert on public.usage_logs for each row execute function public.compute_aax_usage_cost();
