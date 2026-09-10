@@ -18,7 +18,6 @@ async function countOf(admin: any, table: string, filter?: (q: any) => any) {
   return count ?? 0;
 }
 
-/** Real platform counters + real audit trail. No fabricated numbers. */
 export const getAdminOverview = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -51,20 +50,8 @@ export const getAdminOverview = createServerFn({ method: "GET" })
 
     return {
       counts: {
-        users,
-        admins,
-        projects,
-        conversations,
-        tasks,
-        activeTasks,
-        runs,
-        research,
-        knowledge,
-        approvedKnowledge,
-        reports,
-        apiKeys,
-        agents,
-        models,
+        users, admins, projects, conversations, tasks, activeTasks, runs, research,
+        knowledge, approvedKnowledge, reports, apiKeys, agents, models,
       },
       audit: audit ?? [],
     };
@@ -89,19 +76,15 @@ export const getAdminUsers = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     await assertAdmin(context.supabase as unknown as SupabaseClient, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
     const { data: profiles } = await supabaseAdmin
       .from("profiles")
       .select("id, display_name, created_at, onboarding_completed")
       .order("created_at", { ascending: false })
       .limit(200);
-
     const { data: roles } = await supabaseAdmin.from("user_roles").select("user_id, role");
     const { data: list } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
-
     const emailById = new Map((list?.users ?? []).map((u) => [u.id, u.email ?? ""]));
     const lastSignIn = new Map((list?.users ?? []).map((u) => [u.id, u.last_sign_in_at ?? null]));
-
     return (profiles ?? []).map((p) => ({
       id: p.id,
       displayName: p.display_name,
@@ -113,50 +96,90 @@ export const getAdminUsers = createServerFn({ method: "GET" })
     }));
   });
 
-/** TEAM: the internal agent workforce with real permissions and real telemetry. */
 export const getTeamOverview = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await assertAdmin(context.supabase as unknown as SupabaseClient, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
     const [{ data: agents }, { data: permissions }, { data: runs }] = await Promise.all([
-      supabaseAdmin
-        .from("agents")
-        .select("id, agent_key, name, description, purpose, status, tools, last_activity_at")
-        .order("name"),
+      supabaseAdmin.from("agents").select("id, agent_key, name, description, purpose, status, tools, last_activity_at").order("name"),
       supabaseAdmin.from("agent_permissions").select("agent_id, permission, allowed, requires_approval"),
       supabaseAdmin.from("task_runs").select("agent_id, status, started_at, ended_at").limit(1000),
     ]);
-
     const team = (agents ?? []).map((a) => {
       const mine = (runs ?? []).filter((r) => r.agent_id === a.id);
       const finished = mine.filter((r) => r.ended_at && r.started_at);
       const succeeded = mine.filter((r) => r.status === "completed").length;
       const failed = mine.filter((r) => r.status === "failed").length;
-      const avgMs =
-        finished.length > 0
-          ? Math.round(
-              finished.reduce(
-                (sum, r) => sum + (new Date(r.ended_at!).getTime() - new Date(r.started_at!).getTime()),
-                0,
-              ) / finished.length,
-            )
-          : null;
+      const avgMs = finished.length > 0
+        ? Math.round(finished.reduce((sum, r) => sum + (new Date(r.ended_at!).getTime() - new Date(r.started_at!).getTime()), 0) / finished.length)
+        : null;
       return {
         ...a,
         permissions: (permissions ?? []).filter((p) => p.agent_id === a.id),
-        telemetry: {
-          totalRuns: mine.length,
-          succeeded,
-          failed,
-          avgDurationMs: avgMs,
-          hasData: mine.length > 0,
-        },
+        telemetry: { totalRuns: mine.length, succeeded, failed, avgDurationMs: avgMs, hasData: mine.length > 0 },
       };
     });
-
     return { team, totalRuns: (runs ?? []).length };
+  });
+
+/** One real workstation view for one internal agent. No fabricated analysis is created. */
+export const getAgentWorkspace = createServerFn({ method: "GET" })
+  .inputValidator((data: { agentKey: string }) => {
+    const agentKey = String(data?.agentKey ?? "").trim().slice(0, 100);
+    if (!agentKey) throw new Error("Agent key is required.");
+    return { agentKey };
+  })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context, data }) => {
+    await assertAdmin(context.supabase as unknown as SupabaseClient, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: agent, error: agentError } = await supabaseAdmin
+      .from("agents")
+      .select("id, agent_key, name, description, purpose, status, tools, config, last_activity_at, created_at, updated_at")
+      .eq("agent_key", data.agentKey)
+      .maybeSingle();
+    if (agentError || !agent) throw new Response("Agent not found", { status: 404 });
+
+    const [{ data: permissions }, { data: runs }, { data: tasks }] = await Promise.all([
+      supabaseAdmin
+        .from("agent_permissions")
+        .select("permission, allowed, requires_approval")
+        .eq("agent_id", agent.id)
+        .order("permission"),
+      supabaseAdmin
+        .from("task_runs")
+        .select("id, task_id, owner_id, attempt, status, started_at, ended_at, inputs, outputs, error, retry_of, created_at, updated_at, agent_key")
+        .eq("agent_id", agent.id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabaseAdmin
+        .from("tasks")
+        .select("id, user_id, project_id, title, kind, status, progress, detail, started_at, completed_at, created_at, updated_at, agent_key")
+        .eq("agent_key", agent.agent_key)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    ]);
+
+    const finishedRuns = (runs ?? []).filter((r) => r.ended_at && r.started_at);
+    const avgDurationMs = finishedRuns.length
+      ? Math.round(finishedRuns.reduce((sum, r) => sum + (new Date(r.ended_at!).getTime() - new Date(r.started_at!).getTime()), 0) / finishedRuns.length)
+      : null;
+
+    return {
+      agent,
+      permissions: permissions ?? [],
+      tasks: tasks ?? [],
+      runs: runs ?? [],
+      telemetry: {
+        totalRuns: runs?.length ?? 0,
+        succeeded: (runs ?? []).filter((r) => r.status === "completed").length,
+        failed: (runs ?? []).filter((r) => r.status === "failed").length,
+        waiting: (runs ?? []).filter((r) => r.status === "waiting_approval").length,
+        avgDurationMs,
+      },
+    };
   });
 
 export const getAdminActivity = createServerFn({ method: "GET" })
