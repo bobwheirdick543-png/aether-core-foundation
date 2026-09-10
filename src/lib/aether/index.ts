@@ -1,6 +1,7 @@
 /**
  * AETHER CORE — public surface for the internal platform runtime.
  * Import from "@/lib/aether" instead of deep paths when possible.
+ * Server-only worker modules are intentionally not re-exported here.
  */
 
 export * from "./agents";
@@ -9,8 +10,6 @@ export * from "./task-runtime";
 export * from "./task-service";
 export * from "./task.functions";
 export * from "./task-control.functions";
-export * from "./runtime-worker";
-export * from "./runtime.functions";
 export * from "./scheduler";
 export * from "./approvals";
 export * from "./notifications";
