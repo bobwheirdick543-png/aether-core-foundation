@@ -25,7 +25,7 @@ export const getAdminOverview = createServerFn({ method: "GET" })
     await assertAdmin(context.supabase as unknown as SupabaseClient, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const [users, admins, projects, conversations, tasks, activeTasks, runs, research, knowledge, approvedKnowledge, reports, apiKeys, agents] =
+    const [users, admins, projects, conversations, tasks, activeTasks, runs, research, knowledge, approvedKnowledge, reports, apiKeys, agents, models] =
       await Promise.all([
         countOf(supabaseAdmin, "profiles"),
         countOf(supabaseAdmin, "user_roles", (q: any) => q.eq("role", "admin")),
@@ -40,6 +40,7 @@ export const getAdminOverview = createServerFn({ method: "GET" })
         countOf(supabaseAdmin, "reports"),
         countOf(supabaseAdmin, "api_keys", (q: any) => q.eq("status", "active")),
         countOf(supabaseAdmin, "agents"),
+        countOf(supabaseAdmin, "model_configs"),
       ]);
 
     const { data: audit } = await supabaseAdmin
@@ -63,9 +64,24 @@ export const getAdminOverview = createServerFn({ method: "GET" })
         reports,
         apiKeys,
         agents,
+        models,
       },
       audit: audit ?? [],
     };
+  });
+
+export const getAdminModels = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase as unknown as SupabaseClient, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("model_configs")
+      .select("role_key, display_name, description, provider, provider_model, capabilities, context_window, speed, status, sort_order")
+      .order("sort_order", { ascending: true })
+      .order("role_key", { ascending: true });
+    if (error) throw new Response("Could not load model catalog", { status: 500 });
+    return { models: data ?? [] };
   });
 
 export const getAdminUsers = createServerFn({ method: "GET" })
