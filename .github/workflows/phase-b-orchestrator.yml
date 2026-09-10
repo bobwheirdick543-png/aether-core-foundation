@@ -32,6 +32,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - run: npx eslint . --fix
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build
