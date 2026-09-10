@@ -1,0 +1,23 @@
+import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { prepareNextOrchestrationSteps } from "./orchestration-runtime";
+
+function required(value: string, label: string) { const result = String(value ?? "").trim(); if (!result) throw new Error(`${label} is required`); return result; }
+
+export const prepareOrchestrationExecution = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { planId: string }) => ({ planId: required(data?.planId, "Plan ID") })).handler(async ({ context, data }) => {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return prepareNextOrchestrationSteps(supabaseAdmin, data.planId, context.userId);
+});
+
+export const requestOrchestrationApproval = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { planId: string; decision: "approve" | "reject"; reason?: string }) => ({ planId: required(data?.planId, "Plan ID"), decision: data.decision, reason: String(data.reason ?? "").trim().slice(0, 2000) })).handler(async ({ context, data }) => {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: plan } = await supabaseAdmin.from("orchestration_plans").select("id, task_id, owner_id, approval_status").eq("id", data.planId).maybeSingle();
+  if (!plan || plan.owner_id !== context.userId) throw new Error("Plan not found or access denied");
+  if (plan.approval_status !== "pending") throw new Error("Plan is not awaiting approval");
+  const next = data.decision === "approve" ? "approved" : "rejected";
+  const status = data.decision === "approve" ? "validated" : "rejected";
+  const { error } = await supabaseAdmin.from("orchestration_plans").update({ approval_status: next, status }).eq("id", data.planId).eq("approval_status", "pending");
+  if (error) throw new Error(error.message);
+  await supabaseAdmin.rpc("append_orchestration_event", { p_plan_id: plan.id, p_event_type: data.decision === "approve" ? "approval.granted" : "approval.rejected", p_actor_type: "user", p_actor_id: context.userId, p_task_id: plan.task_id, p_action: data.decision === "approve" ? "approve_plan" : "reject_plan", p_reason: data.reason || null, p_decision: next, p_data: {} });
+  return { planId: plan.id, approvalStatus: next, status };
+});
