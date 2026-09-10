@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { appendTaskEvent, heartbeatRuntimeRun, recoverExpiredRuntimeWork, transitionRunStatus, transitionTaskStatus } from "./task-service";
 import { isDeadlineExceeded, isRetryableFailure, type TaskStatus } from "./task-runtime";
 import { executeResearchStep } from "./executor";
+import { executeAaxTrainingJob } from "./aax-training-runtime";
 
 export interface ClaimedRuntimeWork { task_id: string; run_id: string; owner_id: string; project_id: string | null; task_status: TaskStatus; run_status: TaskStatus; attempt: number; task_kind: string; task_detail: Record<string, unknown>; inputs: Record<string, unknown>; timeout_ms: number; deadline_at: string | null; }
 export interface RuntimeWorkerOptions { workerId: string; leaseSeconds?: number; recoveryLimit?: number; }
@@ -31,6 +32,7 @@ async function executeClaimedWork(admin: SupabaseClient, work: ClaimedRuntimeWor
     heartbeatTimer = setInterval(() => { void heartbeatRuntimeRun(admin, work.run_id, workerId, 60).catch(() => undefined); }, 20_000);
     if (work.task_kind === "orchestration") { await executeOrchestrationPlanning(admin, work, workerId); return; }
     if (work.task_kind === "research") { const urls = Array.isArray(work.task_detail.urls) ? work.task_detail.urls.filter((v): v is string => typeof v === "string") : []; const topic = typeof work.task_detail.topic === "string" ? work.task_detail.topic : undefined; const result = await executeResearchStep(admin, { taskId: work.task_id, runId: work.run_id, ownerId: work.owner_id, urls, topic, deadlineAt: work.deadline_at ?? undefined, workerId }); if (result.status === "cancelled") return; return; }
+    if (work.task_kind === "aax-training") { const trainingJobId = typeof work.inputs.training_job_id === "string" ? work.inputs.training_job_id : typeof work.task_detail.training_job_id === "string" ? work.task_detail.training_job_id : null; if (!trainingJobId) throw new Error("AAX training run is missing training_job_id"); const result = await executeAaxTrainingJob(admin, { taskId: work.task_id, runId: work.run_id, ownerId: work.owner_id, trainingJobId }); await transitionRunStatus(admin, work.run_id, "running", "completed", { outputs: result, workerId }); await transitionTaskStatus(admin, work.task_id, "running", "completed", { progress: 100, detail: { phase: "aax_training_complete", ...result }, workerId }); return; }
     throw new Error(`No runtime handler registered for task kind "${work.task_kind}"`);
   } catch (error) {
     const code = errorCode(error); const message = errorMessage(error); const retryable = isRetryableFailure(code); const elapsed = Date.now() - started;
