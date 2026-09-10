@@ -49,8 +49,6 @@ async function getOrCreateDesignatedAdmin() {
     }
     user = data.user;
   } else {
-    // The Vercel environment is authoritative. Keep the Supabase Auth account
-    // synchronized with it and remove the confirmation-email dependency.
     const { data, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
       password: configured.password,
       email_confirm: true,
@@ -66,7 +64,6 @@ async function getOrCreateDesignatedAdmin() {
     .upsert({ user_id: user.id, role: "admin" }, { onConflict: "user_id,role" });
   if (roleError) throw new Error("Could not assign the Aether administrator role.");
 
-  // Single controlling admin identity: any older admin loses admin authority.
   await supabaseAdmin.from("user_roles").delete().eq("role", "admin").neq("user_id", user.id);
 
   await supabaseAdmin.from("profiles").upsert(
@@ -105,18 +102,11 @@ export const signInWithConfiguredAdminCredentials = createServerFn({ method: "PO
     }
 
     const user = await getOrCreateDesignatedAdmin();
-
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: config } = await supabaseAdmin.from("app_config").select("key,value").limit(1);
-    void config;
 
-    // Use a server-side Supabase Auth client only to exchange the verified
-    // environment credentials for a normal Supabase session.
     const { createClient } = await import("@supabase/supabase-js");
-    const { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } = {
-      SUPABASE_URL: process.env["SUPABASE_URL"],
-      SUPABASE_PUBLISHABLE_KEY: process.env["SUPABASE_PUBLISHABLE_KEY"],
-    };
+    const SUPABASE_URL = process.env["SUPABASE_URL"];
+    const SUPABASE_PUBLISHABLE_KEY = process.env["SUPABASE_PUBLISHABLE_KEY"];
     if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
       return { ok: false as const, reason: "supabase_not_configured" as const };
     }
@@ -155,7 +145,6 @@ export const signInWithConfiguredAdminCredentials = createServerFn({ method: "PO
     };
   });
 
-/** Server-side role check. Never trust the client for this. */
 export const getMyRoles = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -168,10 +157,6 @@ export const getMyRoles = createServerFn({ method: "GET" })
     return { userId: context.userId, roles, isAdmin: roles.includes("admin") };
   });
 
-/**
- * Compatibility verifier for existing authenticated admin sessions. The
- * configured Vercel email remains authoritative and the role is synchronized.
- */
 export const verifyAdminSignIn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
