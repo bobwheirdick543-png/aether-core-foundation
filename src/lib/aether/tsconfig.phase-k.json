@@ -1,0 +1,5 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": { "skipLibCheck": true, "noEmit": true },
+  "include": ["./notification-delivery.ts", "./notification-delivery.functions.ts", "./notifications.ts", "./notification.functions.ts", "./__tests__/notification-delivery.test.ts"]
+}
