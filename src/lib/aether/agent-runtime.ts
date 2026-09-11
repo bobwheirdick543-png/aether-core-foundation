@@ -1,70 +1,30 @@
 /** Phase M: provider-independent, policy-governed agent runtime primitives. */
 import { AGENTS, type AgentKey, type AgentDefinition } from "@/lib/aether/agents";
 import { createFullAgentDefinition, type FullAgentDefinition, type AgentTaskContext, type AgentResult, type AgentMessage } from "@/lib/aether/agent-sdk";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { makeVersionHash, validateAgentDefinition as validateContract } from "./agent-registry";
 
-export type AgentLifecycle = "draft" | "validated" | "tested" | "active" | "disabled" | "maintenance";
+export type AgentLifecycle = "draft" | "validated" | "tested" | "active" | "disabled" | "maintenance" | "rolled_back";
 export interface AgentVersion extends FullAgentDefinition { lifecycle: AgentLifecycle; configurationHash: string; }
 export interface AgentRegistryEntry { key: AgentKey; definition: FullAgentDefinition; lifecycle: AgentLifecycle; }
 export interface AgentHandler { execute(context: AgentTaskContext): Promise<AgentResult>; }
+const db = supabaseAdmin as any;
 
 function lifecycleForStatus(status: AgentDefinition["status"]): AgentLifecycle { return status === "enabled" ? "active" : status; }
-export function buildAgentVersion(base: AgentDefinition, overrides?: Partial<FullAgentDefinition>): AgentVersion {
-  const definition = createFullAgentDefinition(base, overrides);
-  return { ...definition, lifecycle: lifecycleForStatus(base.status), configurationHash: stableConfigurationHash(definition) };
-}
+export function buildAgentVersion(base: AgentDefinition, overrides?: Partial<FullAgentDefinition>): AgentVersion { const definition = createFullAgentDefinition(base, overrides); return { ...definition, lifecycle: lifecycleForStatus(base.status), configurationHash: stableConfigurationHash(definition) }; }
+export function stableConfigurationHash(definition: FullAgentDefinition): string { const json = JSON.stringify(definition); let hash = 2166136261; for (let i = 0; i < json.length; i += 1) { hash ^= json.charCodeAt(i); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(16).padStart(8, "0"); }
+export function validateAgentDefinition(definition: FullAgentDefinition): string[] { const errors: string[] = []; const contract = validateContract(definition); if (!contract.ok) errors.push(contract.message); if (!/^\d+\.\d+\.\d+$/.test(definition.version)) errors.push("Version must use semver"); if (!definition.allowed_inputs.length) errors.push("allowed_inputs must not be empty"); if (!definition.expected_outputs.length) errors.push("expected_outputs must not be empty"); if (!definition.quality_requirements.length) errors.push("quality_requirements must not be empty"); for (const policy of [definition.timeout_policy,definition.retry_policy,definition.escalation_policy]) { if (!Number.isInteger(policy.timeoutMs)||policy.timeoutMs<=0||policy.timeoutMs>18_000_000) errors.push("Policy timeoutMs must be 1ms–5h"); if (!Number.isInteger(policy.maxRetries)||policy.maxRetries<0||policy.maxRetries>20) errors.push("Policy maxRetries must be 0–20"); } if (!Number.isInteger(definition.telemetry_configuration.retainDays)||definition.telemetry_configuration.retainDays<1) errors.push("Telemetry retention must be positive"); if (definition.schedule_configuration.type === "interval"&&(!definition.schedule_configuration.intervalMinutes||definition.schedule_configuration.intervalMinutes<1)) errors.push("Interval schedule requires positive intervalMinutes"); if (definition.schedule_configuration.type === "recurring"&&definition.schedule_configuration.cron&&definition.schedule_configuration.cron.trim().split(/\s+/).length!==5) errors.push("Recurring schedule cron must contain five fields"); return [...new Set(errors)]; }
+export function buildRegistry(): Map<AgentKey, AgentRegistryEntry> { const registry=new Map<AgentKey,AgentRegistryEntry>(); for(const base of AGENTS){const definition=createFullAgentDefinition(base);const errors=validateAgentDefinition(definition);if(errors.length)throw new Error(`Invalid agent ${base.key}: ${errors.join(", ")}`);registry.set(base.key,{key:base.key,definition,lifecycle:lifecycleForStatus(base.status)});}return registry; }
+export function assertLifecycleTransition(from: AgentLifecycle,to: AgentLifecycle): void { const allowed:Record<AgentLifecycle,AgentLifecycle[]>={draft:["validated","disabled"],validated:["tested","draft","disabled"],tested:["active","draft","disabled"],active:["maintenance","disabled"],disabled:["draft","validated"],maintenance:["active","disabled"],rolled_back:["tested","active"]}; if(!allowed[from]?.includes(to))throw new Error(`Invalid agent lifecycle transition: ${from} -> ${to}`); }
+export function authorizeAgentExecution(entry: AgentRegistryEntry,permission:string): void { if(entry.lifecycle!=="active")throw new Error(`Agent ${entry.key} is not active`);const grant=entry.definition.permissions.find((item)=>item.permission===permission);if(!grant?.allowed)throw new Error(`Agent ${entry.key} is not permitted to use ${permission}`);if(permission==="roles.modify"||permission==="permissions.self_modify"||permission.includes("self_modify"))throw new Error("Agent permission-boundary mutation is prohibited"); }
+export function validateAgentMessage(message:AgentMessage):void{if(!message.runId||!message.taskId||!message.type)throw new Error("Agent message requires task/run/type");if(message.fromAgent===message.toAgent)throw new Error("Self-directed agent messages are not allowed");}
+export function registrySnapshot():AgentRegistryEntry[]{return [...buildRegistry().values()];}
 
-export function stableConfigurationHash(definition: FullAgentDefinition): string {
-  const json = JSON.stringify(definition, Object.keys(definition).sort());
-  let hash = 2166136261;
-  for (let i = 0; i < json.length; i += 1) { hash ^= json.charCodeAt(i); hash = Math.imul(hash, 16777619); }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-export function validateAgentDefinition(definition: FullAgentDefinition): string[] {
-  const errors: string[] = [];
-  if (!definition.agent_id || !/^agent_[a-z0-9-]+$/.test(definition.agent_id)) errors.push("Invalid agent_id");
-  if (!/^\d+\.\d+\.\d+$/.test(definition.version)) errors.push("Version must use semver");
-  if (!definition.allowed_inputs.length) errors.push("allowed_inputs must not be empty");
-  if (!definition.expected_outputs.length) errors.push("expected_outputs must not be empty");
-  if (!definition.quality_requirements.length) errors.push("quality_requirements must not be empty");
-  for (const policy of [definition.timeout_policy, definition.retry_policy, definition.escalation_policy]) {
-    if (!Number.isInteger(policy.timeoutMs) || policy.timeoutMs <= 0) errors.push("Policy timeoutMs must be positive");
-    if (!Number.isInteger(policy.maxRetries) || policy.maxRetries < 0) errors.push("Policy maxRetries must be non-negative");
-  }
-  if (!Number.isInteger(definition.telemetry_configuration.retainDays) || definition.telemetry_configuration.retainDays < 1) errors.push("Telemetry retention must be positive");
-  if (definition.schedule_configuration.type === "interval" && (!definition.schedule_configuration.intervalMinutes || definition.schedule_configuration.intervalMinutes < 1)) errors.push("Interval schedule requires positive intervalMinutes");
-  if (definition.schedule_configuration.type === "recurring" && definition.schedule_configuration.cron && definition.schedule_configuration.cron.trim().split(/\s+/).length !== 5) errors.push("Recurring schedule cron must contain five fields");
-  return [...new Set(errors)];
-}
-
-export function buildRegistry(): Map<AgentKey, AgentRegistryEntry> {
-  const registry = new Map<AgentKey, AgentRegistryEntry>();
-  for (const base of AGENTS) {
-    const definition = createFullAgentDefinition(base);
-    const errors = validateAgentDefinition(definition);
-    if (errors.length) throw new Error(`Invalid agent ${base.key}: ${errors.join(", ")}`);
-    registry.set(base.key, { key: base.key, definition, lifecycle: lifecycleForStatus(base.status) });
-  }
-  return registry;
-}
-
-export function assertLifecycleTransition(from: AgentLifecycle, to: AgentLifecycle): void {
-  const allowed: Record<AgentLifecycle, AgentLifecycle[]> = {
-    draft: ["validated", "disabled"], validated: ["tested", "draft", "disabled"], tested: ["active", "draft", "disabled"], active: ["maintenance", "disabled"], disabled: ["draft", "validated"], maintenance: ["active", "disabled"],
-  };
-  if (!allowed[from].includes(to)) throw new Error(`Invalid agent lifecycle transition: ${from} -> ${to}`);
-}
-
-export function authorizeAgentExecution(entry: AgentRegistryEntry, permission: string): void {
-  if (entry.lifecycle !== "active") throw new Error(`Agent ${entry.key} is not active`);
-  const grant = entry.definition.permissions.find((item) => item.permission === permission);
-  if (!grant?.allowed) throw new Error(`Agent ${entry.key} is not permitted to use ${permission}`);
-  if (permission === "roles.modify" || permission === "permissions.self_modify") throw new Error("Agent permission-boundary mutation is prohibited");
-}
-
-export function validateAgentMessage(message: AgentMessage): void {
-  if (!message.runId || !message.taskId || !message.type) throw new Error("Agent message requires task/run/type");
-  if (message.fromAgent === message.toAgent) throw new Error("Self-directed agent messages are not allowed");
-}
-
-export function registrySnapshot(): AgentRegistryEntry[] { return [...buildRegistry().values()]; }
+export interface AgentActionContext { agentKey: AgentKey; permission: string; action: string; taskId?: string|null; runId?: string|null; actorId?: string|null; metadata?: Record<string,unknown>; }
+async function resolveAgentId(agentKey:AgentKey):Promise<string>{const {data,error}=await db.from("agents").select("id").eq("agent_key",agentKey).maybeSingle();if(error||!data)throw new Error(`Agent not found: ${agentKey}`);return data.id;}
+export async function authorizeAgentAction(input:AgentActionContext):Promise<{allowed:true;requiresApproval:boolean}|{allowed:false;requiresApproval:boolean;reason:string}>{const {data,error}=await db.rpc("agent_permission_check",{p_agent_key:input.agentKey,p_permission:input.permission});if(error)throw new Error(`Agent permission lookup failed: ${error.message}`);const result=Array.isArray(data)?data[0]:data;const decision=result?.requires_approval?"approval_required":result?.allowed?"allowed":"denied";await db.from("agent_action_audit").insert({agent_id:await resolveAgentId(input.agentKey),agent_key:input.agentKey,task_id:input.taskId??null,run_id:input.runId??null,actor_id:input.actorId??null,action:input.action,permission:input.permission,decision,reason:result?.reason??null,metadata:input.metadata??{}});if(decision==="allowed")return{allowed:true,requiresApproval:false};return{allowed:false,requiresApproval:decision==="approval_required",reason:result?.reason??(decision==="approval_required"?"Human approval is required":"Permission denied")};}
+export async function assertTaskOwner(taskId:string,actorId:string,allowAdmin=false):Promise<any>{const {data:task,error}=await db.from("tasks").select("*").eq("id",taskId).maybeSingle();if(error||!task)throw new Error("Task not found");if(task.user_id!==actorId){if(!allowAdmin)throw new Error("Forbidden: task does not belong to the current actor");const {data:admin}=await db.rpc("has_role",{_user_id:actorId,_role:"admin"});if(!admin)throw new Error("Forbidden: task does not belong to the current actor");}return task;}
+export async function appendAgentMessage(input:{taskId:string;runId?:string|null;fromAgent:AgentKey;toAgent:AgentKey;type:string;payload?:Record<string,unknown>;correlationId?:string|null;actorId?:string|null}){if(input.fromAgent===input.toAgent)throw new Error("Self-directed agent messages are not allowed");await assertTaskOwner(input.taskId,input.actorId??"",true);const authorization=await authorizeAgentAction({agentKey:input.fromAgent,permission:"agent.message.send",action:"agent.message.send",taskId:input.taskId,runId:input.runId,actorId:input.actorId});if(!authorization.allowed)throw new Error(authorization.reason);const {data,error}=await db.rpc("append_agent_message",{p_task_id:input.taskId,p_run_id:input.runId??null,p_from_agent:input.fromAgent,p_to_agent:input.toAgent,p_message_type:input.type,p_payload:input.payload??{},p_correlation_id:input.correlationId??null});if(error||!data)throw new Error(error?.message??"Could not append agent message");return data;}
+export async function requestAgentHandoff(input:{taskId:string;runId?:string|null;fromAgent:AgentKey;toAgent:AgentKey;payload?:Record<string,unknown>;actorId?:string|null}){const message=await appendAgentMessage({...input,type:"handoff.request"});const {data,error}=await db.from("agent_handoffs").insert({task_id:input.taskId,run_id:input.runId??null,from_agent:input.fromAgent,to_agent:input.toAgent,status:"requested",message_id:message.id,payload:input.payload??{}}).select("*").single();if(error||!data)throw new Error(error?.message??"Could not create agent handoff");return data;}
+export async function openAgentSandbox(input:{taskId:string;runId?:string|null;agentKey:AgentKey;actorId:string;ttlSeconds?:number}){const task=await assertTaskOwner(input.taskId,input.actorId);const authorization=await authorizeAgentAction({agentKey:input.agentKey,permission:"sandbox.open",action:"sandbox.open",taskId:input.taskId,runId:input.runId,actorId:input.actorId});if(!authorization.allowed)throw new Error(authorization.reason);const agentId=await resolveAgentId(input.agentKey);const ttl=Math.min(3600,Math.max(60,Math.floor(input.ttlSeconds??900)));const rootPath=`agent-sandbox/${task.id}/${input.runId??"unbound"}/${input.agentKey}`;const {data,error}=await db.from("agent_sandbox_sessions").insert({task_id:task.id,run_id:input.runId??null,agent_id:agentId,owner_id:input.actorId,status:"active",root_path:rootPath,expires_at:new Date(Date.now()+ttl*1000).toISOString()}).select("*").single();if(error||!data)throw new Error(error?.message??"Could not open agent sandbox");return data;}
+export async function createDraftAgentVersion(input:{agentKey:AgentKey;version:string;definition:Record<string,unknown>;actorId:string;reason?:string}){const validation=validateContract(input.definition);if(!validation.ok)throw new Error(validation.message);const agentId=await resolveAgentId(input.agentKey);const {data:parent}=await db.from("agent_versions").select("id,version").eq("agent_id",agentId).order("created_at",{ascending:false}).limit(1).maybeSingle();const hash=makeVersionHash(input.definition);const {data,error}=await db.from("agent_versions").insert({agent_id:agentId,version:input.version.trim(),lifecycle_state:"draft",definition:input.definition,config_hash:hash,parent_version_id:parent?.id??null,created_by:input.actorId}).select("*").single();if(error||!data)throw new Error(error?.message??"Could not create agent version");await db.from("agent_config_history").insert({agent_id:agentId,version_id:data.id,action:"created",after_config:input.definition,actor_id:input.actorId,reason:input.reason??null});return data;}
