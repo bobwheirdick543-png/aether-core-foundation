@@ -1,0 +1,38 @@
+name: Phase I Validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/retrieval-engine.ts'
+      - 'src/lib/aether/phase-i-retrieval.functions.ts'
+      - 'src/lib/aether/__tests__/retrieval-engine.test.ts'
+      - 'src/routes/_authenticated/retrieval.tsx'
+      - 'supabase/migrations/20260911140000_phase_i_retrieval_rag_knowledge_graph.sql'
+      - 'supabase/migrations/20260911140100_phase_i_retrieval_stale_rebuild_trigger.sql'
+      - 'docs/architecture/phase-i-completion-record.md'
+      - '.github/workflows/phase-i-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/retrieval-engine.ts'
+      - 'src/lib/aether/phase-i-retrieval.functions.ts'
+      - 'src/lib/aether/__tests__/retrieval-engine.test.ts'
+      - 'src/routes/_authenticated/retrieval.tsx'
+      - 'supabase/migrations/20260911140000_phase_i_retrieval_rag_knowledge_graph.sql'
+      - 'supabase/migrations/20260911140100_phase_i_retrieval_stale_rebuild_trigger.sql'
+      - 'docs/architecture/phase-i-completion-record.md'
+      - '.github/workflows/phase-i-validation.yml'
+permissions:
+  contents: read
+jobs:
+  phase-i:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc -p src/lib/aether/tsconfig.phase-i.json --noEmit --pretty false
+      - run: bunx vitest run src/lib/aether/__tests__/retrieval-engine.test.ts
+      - run: bun run build
