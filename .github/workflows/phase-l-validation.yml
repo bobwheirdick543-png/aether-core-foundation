@@ -10,6 +10,7 @@ on:
       - 'src/lib/aether/__tests__/scheduler-runtime.test.ts'
       - 'src/lib/aether/tsconfig.phase-l.json'
       - 'supabase/migrations/*phase_l*'
+      - 'docs/architecture/phase-l-completion-record.md'
   pull_request:
     paths:
       - 'src/lib/aether/scheduler.ts'
@@ -19,6 +20,7 @@ on:
       - 'src/lib/aether/__tests__/scheduler-runtime.test.ts'
       - 'src/lib/aether/tsconfig.phase-l.json'
       - 'supabase/migrations/*phase_l*'
+      - 'docs/architecture/phase-l-completion-record.md'
 jobs:
   phase-l:
     runs-on: ubuntu-latest
