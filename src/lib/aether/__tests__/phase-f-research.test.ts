@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { createResearchPlan, compareResearchSources } from "../research-planner";
-import { isHttpUrl, normalizeUrl, sourceQualityScore } from "../research-engine";
+import { isHttpUrl, normalizeUrl, retrievePage, sourceQualityScore } from "../research-engine";
 import { ResearchAccessLimiter, classifyRetryableStatus, contentChangeState, retryBackoffMs, unmetSourceRequirements } from "../research-policy";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("Phase F native research contracts", () => {
   it("normalizes tracking parameters without changing the resource identity", () => {
@@ -95,5 +99,29 @@ describe("Phase F native research contracts", () => {
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     limiter.finish();
+  });
+
+  it("returns a durable cancellation result instead of retrying an aborted retrieval", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    }) as Promise<Response>);
+    const controller = new AbortController();
+    const pending = retrievePage("https://example.com/slow", { respectRobots: false, maxRetries: 3, timeoutMs: 1000, signal: controller.signal });
+    controller.abort();
+    const result = await pending;
+    expect(result.failureClass).toBe("timeout");
+    expect(result.error).toBe("Research cancelled");
+    expect(result.attempts).toBe(1);
+  });
+
+  it("detects redirect loops before they can consume the redirect budget", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      const next = url.includes("/a") ? "https://example.com/b" : "https://example.com/a";
+      return new Response(null, { status: 302, headers: { location: next } });
+    });
+    const result = await retrievePage("https://example.com/a", { respectRobots: false, maxRetries: 0, maxRedirects: 5, timeoutMs: 1000 });
+    expect(result.failureClass).toBe("blocked");
+    expect(result.error).toBe("Redirect loop detected");
   });
 });
