@@ -1,5 +1,6 @@
 name: Phase H Validation
 
+# Final Phase H gate: focused contract typecheck + H tests + production build.
 on:
   push:
     branches: [main]
