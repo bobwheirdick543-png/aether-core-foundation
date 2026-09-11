@@ -1,115 +1,18 @@
-/**
- * AETHER REPORT / PDF ARCHIVE SERVER FUNCTIONS
- * Registers generated reports and lists them with strict ownership.
- * Actual PDF bytes are expected to be uploaded to Supabase Storage separately.
- */
-
+/** Phase J — authenticated Report/PDF Agent boundary. */
 import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { buildReportFileName, buildStoragePath, type ReportType } from "./pdf-report";
-
-export const listMyReports = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("reports")
-      .select("id, title, topic, source_count, verification_status, approval_status, file_path, created_at, updated_at, run_id, project_id")
-      .eq("owner_id", context.userId)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (error) throw new Error(error.message);
-    return data ?? [];
-  });
-
-export const registerReport = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: {
-    title: string;
-    topic?: string;
-    reportType?: ReportType;
-    runId?: string;
-    projectId?: string;
-    sourceCount?: number;
-    verificationStatus?: string;
-    approvalStatus?: string;
-    storagePath?: string;
-  }) => {
-    const title = String(data?.title ?? "").trim();
-    if (!title) throw new Error("Title is required");
-    return {
-      title: title.slice(0, 300),
-      topic: data?.topic?.trim().slice(0, 300) || null,
-      reportType: (data?.reportType || "research") as ReportType,
-      runId: data?.runId || null,
-      projectId: data?.projectId || null,
-      sourceCount: data?.sourceCount ?? 0,
-      verificationStatus: data?.verificationStatus || "pending",
-      approvalStatus: data?.approvalStatus || "pending",
-      storagePath: data?.storagePath || null,
-    };
-  })
-  .handler(async ({ context, data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-    const generatedAt = new Date();
-    const fileName = buildReportFileName({
-      type: data.reportType,
-      topic: data.topic || data.title,
-      generatedAt,
-      runId: data.runId || undefined,
-      version: 1,
-    });
-    const storagePath = data.storagePath || buildStoragePath(context.userId, fileName);
-
-    const { data: row, error } = await supabaseAdmin
-      .from("reports")
-      .insert({
-        owner_id: context.userId,
-        run_id: data.runId,
-        project_id: data.projectId,
-        title: data.title,
-        topic: data.topic,
-        source_count: data.sourceCount,
-        verification_status: data.verificationStatus,
-        approval_status: data.approvalStatus,
-        file_path: storagePath,
-      })
-      .select("id, file_path, created_at")
-      .single();
-
-    if (error || !row) throw new Error(error?.message || "Failed to register report");
-
-    await supabaseAdmin.from("audit_logs").insert({
-      actor_id: context.userId,
-      action: "report.registered",
-      target_type: "reports",
-      target_id: row.id,
-      metadata: { file_name: fileName, storage_path: storagePath },
-    });
-
-    return {
-      reportId: row.id,
-      fileName,
-      storagePath: row.file_path,
-      createdAt: row.created_at,
-    };
-  });
-
-export const listAdminReports = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId,
-      _role: "admin",
-    });
-    if (!isAdmin) throw new Response("Forbidden", { status: 403 });
-
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
-      .from("reports")
-      .select("id, title, topic, source_count, verification_status, approval_status, file_path, owner_id, created_at, run_id, project_id")
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    return data ?? [];
-  });
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { buildReportDataFingerprint, buildReportPdf, slugifyReportFilename, type ReportData, type ReportFinding, type ReportSource, type ReportVerificationStatus } from "./report-engine";
+const BUCKET="aether-reports";
+type Session={id:string;topic:string;owner_id:string;project_id:string|null;run_id:string|null}; type Claim={id:string;claim:string;verification_state:ReportVerificationStatus;confidence:number|null}; type Stored={id:string;owner_id:string;title:string;topic:string|null;current_version:number;verification_status:string;approval_status:string;archived_at:string|null}; const cOf=(x:unknown)=>x as SupabaseClient;
+async function isAdmin(c:SupabaseClient,u:string){const {data,error}=await c.rpc("has_role",{_user_id:u,_role:"admin"});if(error)throw new Response(error.message,{status:500});return !!data;}
+async function access(c:SupabaseClient,id:string,u:string){const {data,error}=await c.from("reports").select("id,owner_id,title,topic,current_version,verification_status,approval_status,archived_at").eq("id",id).maybeSingle();if(error)throw new Response(error.message,{status:500});const r=data as Stored|null;if(!r)throw new Response("Report not found",{status:404});if(r.owner_id!==u&&!await isAdmin(c,u))throw new Response("Report access denied",{status:403});return r;}
+async function researchData(c:SupabaseClient,u:string,sid:string){const {data:s,error:se}=await c.from("aether_research_sessions").select("id,topic,owner_id,project_id,run_id").eq("id",sid).eq("owner_id",u).maybeSingle();if(se)throw new Response(se.message,{status:500});const session=s as Session|null;if(!session)throw new Response("Research session not found or access denied",{status:404});const {data:ss,error:sse}=await c.from("aether_research_sources").select("title,url,published_at,retrieved_at,quality_score").eq("session_id",sid).eq("owner_id",u).order("retrieved_at",{ascending:true});if(sse)throw new Response(sse.message,{status:500});const sources:ReportSource[]=(ss??[]).map(x=>({title:String(x.title??x.url??"Untitled source"),url:x.url??null,publishedAt:x.published_at??null,retrievedAt:x.retrieved_at??null,authority:x.quality_score==null?null:Number(x.quality_score)}));const {data:vr,error:ve}=await c.from("verification_runs").select("id,run_id").eq("research_session_id",sid).eq("owner_id",u).order("created_at",{ascending:false}).limit(1).maybeSingle();if(ve)throw new Response(ve.message,{status:500});if(!vr)return {session,verificationRunId:null,verificationStatus:"pending" as const,sources,verifiedFindings:[],unresolvedClaims:[]};const {data:cd,error:ce}=await c.from("verification_claims").select("id,claim,verification_state,confidence").eq("verification_run_id",vr.id).eq("owner_id",u).order("created_at",{ascending:true});if(ce)throw new Response(ce.message,{status:500});const claims=(cd??[]) as Claim[],ids=claims.map(x=>x.id);const {data:ed,error:ee}=ids.length?await c.from("verification_evidence").select("claim_id,excerpt").eq("owner_id",u).in("claim_id",ids).order("created_at",{ascending:true}):{data:[],error:null};if(ee)throw new Response(ee.message,{status:500});const ev=new Map<string,string>();for(const x of (ed??[]) as Array<{claim_id:string;excerpt:string}>){if(!ev.has(x.claim_id))ev.set(x.claim_id,x.excerpt);}const vf:ReportFinding[]=[],uf:ReportFinding[]=[],states=new Set<ReportVerificationStatus>();for(const x of claims){states.add(x.verification_state);const f={claim:x.claim,evidence:ev.get(x.id)??null,verificationStatus:x.verification_state,confidence:x.confidence==null?null:Number(x.confidence)};if(x.verification_state==="verified")vf.push(f);else uf.push(f);}let status:ReportVerificationStatus="pending";if(states.has("conflicting"))status="conflicting";else if(states.has("needs_review"))status="needs_review";else if(states.has("unsupported"))status="unsupported";else if(states.has("outdated"))status="outdated";else if(claims.length&&claims.every(x=>x.verification_state==="verified"))status="verified";return {session,verificationRunId:vr.id,verificationStatus:status,sources,verifiedFindings:vf,unresolvedClaims:uf};}
+async function runtime(u:string,p:string|null,title:string,rid:string){const now=new Date().toISOString();const {data:t,error:te}=await supabaseAdmin.from("tasks").insert({user_id:u,project_id:p,title:`Generate report: ${title}`.slice(0,200),kind:"report",status:"running",progress:10,detail:{phase:"J",agent:"report",report_id:rid},started_at:now}).select("id").single();if(te||!t)throw new Error(te?.message??"task creation failed");const {data:r,error:re}=await supabaseAdmin.from("task_runs").insert({task_id:t.id,owner_id:u,agent_key:"report",status:"running",attempt:1,inputs:{report_id:rid},started_at:now,timeout_ms:300000,max_retries:2}).select("id").single();if(re||!r){await supabaseAdmin.from("tasks").update({status:"failed",last_error_message:re?.message??"run creation failed"}).eq("id",t.id);throw new Error(re?.message??"task run creation failed");}return {taskId:t.id,runId:r.id};}
+async function finish(t:string,r:string,ok:boolean,error?:string){const now=new Date().toISOString();await supabaseAdmin.from("task_runs").update({status:ok?"completed":"failed",outputs:ok?{phase:"J",artifact:"report"}:{},error:ok?null:error?.slice(0,2000),ended_at:now}).eq("id",r);await supabaseAdmin.from("tasks").update({status:ok?"completed":"failed",progress:100,completed_at:now,last_error_message:ok?null:error?.slice(0,2000),updated_at:now}).eq("id",t);}
+export const generateReport=createServerFn({method:"POST"}).middleware([requireSupabaseAuth]).inputValidator((x:{reportId?:string|null;researchSessionId?:string|null;title?:string|null;topic?:string|null;reportData?:Omit<ReportData,"version"|"generatedAt"|"approvalStatus">|null;idempotencyKey?:string|null})=>{const key=String(x?.idempotencyKey??"").trim().slice(0,200);if(!x?.reportId&&!x?.researchSessionId&&!x?.reportData)throw new Error("A reportId, researchSessionId or reportData is required");return {reportId:x?.reportId?String(x.reportId).trim():null,researchSessionId:x?.researchSessionId?String(x.researchSessionId).trim():null,title:x?.title?.trim().slice(0,240)||null,topic:x?.topic?.trim().slice(0,240)||null,reportData:x?.reportData??null,idempotencyKey:key||null};}).handler(async({context,data})=>{const c=cOf(context.supabase);let report:Stored|null=data.reportId?await access(c,data.reportId,context.userId):null;if(data.idempotencyKey){const {data:v}=await c.from("report_versions").select("report_id,version,status").eq("owner_id",context.userId).eq("idempotency_key",data.idempotencyKey).maybeSingle();if(v?.status==="ready")return {ok:true as const,reused:true,reportId:v.report_id,version:v.version};}let d:ReportData,projectId:string|null=null,verificationRunId:string|null=null;if(data.reportData)d={...data.reportData,title:data.title||data.reportData.title,topic:data.topic??data.reportData.topic??null,generatedAt:new Date().toISOString(),approvalStatus:"pending",version:Math.max(1,(report?.current_version??0)+1)};else if(data.researchSessionId){const q=await researchData(c,context.userId,data.researchSessionId);projectId=q.session.project_id;verificationRunId=q.verificationRunId;d={title:data.title||`Research Report — ${q.session.topic}`,topic:data.topic??q.session.topic,sessionId:q.session.id,runId:q.session.run_id,generatedAt:new Date().toISOString(),verificationStatus:q.verificationStatus,approvalStatus:"pending",version:Math.max(1,(report?.current_version??0)+1),sources:q.sources,verifiedFindings:q.verifiedFindings,unresolvedClaims:q.unresolvedClaims};}else{if(!report)throw new Response("Report not found",{status:404});const {data:v}=await c.from("report_versions").select("report_data").eq("report_id",report.id).eq("version",report.current_version).maybeSingle();if(!v?.report_data)throw new Response("No structured data available for regeneration",{status:409});d={...(v.report_data as ReportData),generatedAt:new Date().toISOString(),approvalStatus:"pending",version:report.current_version+1};}if(!report){const {data:r,error:e}=await supabaseAdmin.from("reports").insert({owner_id:context.userId,project_id:projectId,run_id:d.runId??null,verification_run_id:verificationRunId,title:d.title,topic:d.topic??null,source_count:d.sources.length,verification_status:d.verificationStatus,approval_status:"pending",metadata:{phase:"J",generator:"deterministic",fingerprint:buildReportDataFingerprint(d)}}).select("id,owner_id,title,topic,current_version,verification_status,approval_status,archived_at").single();if(e||!r)throw new Response(e?.message??"Could not create report",{status:500});report=r as Stored;d.version=1;}else{const {data:rp}=await c.from("reports").select("project_id").eq("id",report.id).maybeSingle();projectId=rp?.project_id??null;await supabaseAdmin.from("reports").update({title:d.title,topic:d.topic??null,source_count:d.sources.length,verification_status:d.verificationStatus,approval_status:"pending",verification_run_id:verificationRunId,updated_at:new Date().toISOString()}).eq("id",report.id).eq("owner_id",report.owner_id);}const rt=await runtime(context.userId,projectId,d.title,report.id),file=slugifyReportFilename(d.title,report.id,d.version),path=`${context.userId}/${report.id}/${file}`;const {data:v,error:ve}=await supabaseAdmin.from("report_versions").insert({report_id:report.id,owner_id:context.userId,version:d.version,status:"generating",file_path:path,report_data:d,task_id:rt.taskId,task_run_id:rt.runId,idempotency_key:data.idempotencyKey}).select("id,version").single();if(ve||!v){await finish(rt.taskId,rt.runId,false,ve?.message??"version creation failed");throw new Response(ve?.message??"Could not create report version",{status:500});}try{const bytes=buildReportPdf(d),hash=await crypto.subtle.digest("SHA-256",bytes),sha=Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("");const up=await supabaseAdmin.storage.from(BUCKET).upload(path,new Blob([bytes],{type:"application/pdf"}),{contentType:"application/pdf",upsert:false});if(up.error)throw new Error(`Storage upload failed: ${up.error.message}`);const {error:fe}=await supabaseAdmin.from("report_versions").update({status:"ready",file_sha256:sha,byte_size:bytes.byteLength,error:null}).eq("id",v.id).eq("owner_id",context.userId);if(fe)throw new Error(fe.message);await supabaseAdmin.from("audit_logs").insert({actor_id:context.userId,action:"report.generated",target_type:"reports",target_id:report.id,metadata:{version:d.version,file_sha256:sha,bytes:bytes.byteLength,verification_status:d.verificationStatus}});await finish(rt.taskId,rt.runId,true);return {ok:true as const,reused:false,reportId:report.id,version:d.version,filename:file};}catch(e){const m=e instanceof Error?e.message:String(e);await supabaseAdmin.storage.from(BUCKET).remove([path]).catch(()=>null);await supabaseAdmin.from("report_versions").update({status:"failed",error:m.slice(0,2000)}).eq("id",v.id).eq("owner_id",context.userId);await finish(rt.taskId,rt.runId,false,m);throw new Response("Report generation failed; the failed version remains auditable.",{status:500});}});
+export const listReports=createServerFn({method:"GET"}).middleware([requireSupabaseAuth]).inputValidator((x:{search?:string;includeArchived?:boolean}={})=>({search:String(x?.search??"").trim().slice(0,200),includeArchived:!!x?.includeArchived})).handler(async({context,data})=>{const c=cOf(context.supabase),a=await isAdmin(c,context.userId);let q=c.from("reports").select("id,title,topic,current_version,source_count,verification_status,approval_status,created_at,updated_at,archived_at,owner_id").order("updated_at",{ascending:false}).limit(a?200:100);if(!a)q=q.eq("owner_id",context.userId);if(!data.includeArchived)q=q.is("archived_at",null);if(data.search){const term=data.search.replace(/[%_,]/g," ").trim();if(term)q=q.or(`title.ilike.%${term}%,topic.ilike.%${term}%`);}const {data:r,error}=await q;if(error)throw new Response(error.message,{status:500});return r??[];});
+export const getReport=createServerFn({method:"GET"}).middleware([requireSupabaseAuth]).inputValidator((x:{reportId:string})=>({reportId:String(x?.reportId??"").trim()})).handler(async({context,data})=>{const c=cOf(context.supabase),report=await access(c,data.reportId,context.userId);const {data:v,error}=await c.from("report_versions").select("id,version,status,file_sha256,byte_size,generated_at,report_data,error,archived_at").eq("report_id",report.id).order("version",{ascending:false});if(error)throw new Response(error.message,{status:500});return {report,versions:v??[]};});
+export const getReportDownloadUrl=createServerFn({method:"POST"}).middleware([requireSupabaseAuth]).inputValidator((x:{reportId:string;version?:number})=>({reportId:String(x?.reportId??"").trim(),version:x?.version==null?null:Math.max(1,Math.floor(Number(x.version)))})).handler(async({context,data})=>{const c=cOf(context.supabase),r=await access(c,data.reportId,context.userId),n=data.version??r.current_version;const {data:v,error}=await c.from("report_versions").select("version,status,file_path").eq("report_id",r.id).eq("version",n).maybeSingle();if(error)throw new Response(error.message,{status:500});if(!v||v.status!=="ready"||!v.file_path)throw new Response("Report artifact is not available",{status:404});const {data:s,error:se}=await supabaseAdmin.storage.from(BUCKET).createSignedUrl(v.file_path,3600);if(se||!s?.signedUrl)throw new Response(se?.message??"Could not create secure URL",{status:500});return {ok:true as const,url:s.signedUrl,expiresInSeconds:3600,version:n};});
+export const archiveReport=createServerFn({method:"POST"}).middleware([requireSupabaseAuth]).inputValidator((x:{reportId:string})=>({reportId:String(x?.reportId??"").trim()})).handler(async({context,data})=>{const c=cOf(context),r=await access(c,data.reportId,context.userId),at=new Date().toISOString();const {error}=await supabaseAdmin.from("reports").update({archived_at:at,updated_at:at}).eq("id",r.id).eq("owner_id",r.owner_id);if(error)throw new Response(error.message,{status:500});await supabaseAdmin.from("report_versions").update({status:"archived",archived_at:at}).eq("report_id",r.id).eq("owner_id",r.owner_id).eq("status","ready");await supabaseAdmin.from("audit_logs").insert({actor_id:context.userId,action:"report.archived",target_type:"reports",target_id:r.id,metadata:{owner_id:r.owner_id}});return {ok:true as const,reportId:r.id,archivedAt:at};});
