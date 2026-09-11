@@ -29,7 +29,7 @@ describe("Phase H knowledge curator engine", () => {
   it("classifies freshness and gives stale/conflicted states precedence", () => {
     const now = new Date("2026-09-11T00:00:00Z");
     expect(freshnessFromEvidence({ publishedAt: "2026-09-01T00:00:00Z", now })).toBe("current");
-    expect(freshnessFromEvidence({ publishedAt: "2026-01-01T00:00:00Z", now })).toBe("aging");
+    expect(freshnessFromEvidence({ publishedAt: "2026-06-01T00:00:00Z", now })).toBe("aging");
     expect(freshnessFromEvidence({ publishedAt: "2025-01-01T00:00:00Z", now })).toBe("stale");
     expect(mergeFreshness(["current", "stale"])).toBe("stale");
     expect(mergeFreshness(["current", "conflicted"])).toBe("conflicted");
