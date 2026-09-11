@@ -1,4 +1,4 @@
 {
   "extends":"./tsconfig.json",
-  "include":["src/lib/aether/agents.ts","src/lib/aether/agent-runtime.ts","src/lib/aether/security-runtime.ts","src/lib/aether/task-runtime.ts","src/lib/aether/task-service.ts","src/lib/aether/battleversia-runtime.ts","src/lib/aether/battleversia.functions.ts","src/lib/aether/battleversia-game.functions.ts","src/lib/aether/battleversia-admin.functions.ts","src/lib/aether/__tests__/battleversia-runtime.test.ts"]
+  "include":["src/lib/aether/agents.ts","src/lib/aether/agent-runtime.ts","src/lib/aether/security-runtime.ts","src/lib/aether/task-runtime.ts","src/lib/aether/task-service.ts","src/lib/aether/battleversia-runtime.ts","src/lib/aether/battleversia.functions.ts","src/lib/aether/battleversia-game.functions.ts","src/lib/aether/battleversia-admin.functions.ts","src/lib/aether/battleversia-ranking.functions.ts","src/lib/aether/__tests__/battleversia-runtime.test.ts"]
 }
