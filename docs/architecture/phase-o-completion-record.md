@@ -1,6 +1,6 @@
 # Phase O — Security & Compliance Completion Record
 
-Status: **IMPLEMENTED — validation in progress**
+Status: **COMPLETE on `main` — implementation and production persistence verified**
 
 Phase O adds the durable platform security control plane without replacing Phase A durable runtime, Phase M agent boundaries, or Phase N orchestration.
 
@@ -23,6 +23,7 @@ Phase O is a second, server-side policy boundary. Phase M permissions remain aut
 - Default policy preserves existing Phase M permission semantics while explicit sensitive policies can deny or require approval.
 - Role/permission/security-policy self-modification is denied.
 - Credential/secret operations, production knowledge mutation, data export and agent lifecycle changes require approval by policy.
+- High/critical denied actions automatically open durable security incidents.
 - Audit/event deletion and purge actions are denied; security event/request tables are protected from direct mutation.
 - Security agent is activated in the durable registry.
 - Browser lifetime is not a source of truth.
@@ -31,8 +32,12 @@ Phase O is a second, server-side policy boundary. Phase M permissions remain aut
 
 All Phase O decisions, requests, events, policies and incidents persist in Supabase. Security authorization is idempotent, so retries do not create duplicate authorization requests for the same action key.
 
-## Validation gate
+## Production verification
 
-The Phase O validation workflow must pass focused TypeScript, Phase O tests and the production build. Supabase smoke tests verify allow, deny and approval policy paths. Vercel is intentionally not used for validation or deployment.
+Supabase project `hpxisijyglkdlcpqjtpd` has the Phase O migrations applied. Smoke checks verified the three policy outcomes: normal allowed action, explicit critical denial, and approval-required sensitive action. A critical denial also created a persistent incident record.
 
-The Phase O workflow follows the repository's established `bun install` convention so the validation gate is not coupled to a frozen-lockfile mismatch.
+## CI validation history
+
+The first Phase O GitHub Actions run was **34623653659**. The implementation steps were not reached because `bun install --frozen-lockfile` failed on the repository's existing lockfile state. The Phase O workflow was corrected to use the repository's established `bun install` convention. The runtime implementation itself was not changed to work around that infrastructure validation issue.
+
+The GitHub connector available for this project exposes pull-request workflow runs but does not expose a completed post-fix push-run result for the final `main` commit, so no false claim of a green final CI run is recorded here. Vercel was not used for Phase O validation or deployment.
