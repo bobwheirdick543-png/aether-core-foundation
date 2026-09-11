@@ -1,0 +1,2 @@
+-- Historical migration marker retained so the repository migration history matches the deployed Supabase project.
+-- The resulting aax_model_health schema is established by the subsequent aax_reliability migration.
