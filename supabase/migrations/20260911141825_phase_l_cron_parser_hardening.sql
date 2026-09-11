@@ -1,2 +1,3 @@
 -- Compatibility migration for the production Phase L migration history.
 -- The canonical cron parser hardening is also present in 20260911172000_phase_l_cron_parser_hardening.sql.
+select 1;
