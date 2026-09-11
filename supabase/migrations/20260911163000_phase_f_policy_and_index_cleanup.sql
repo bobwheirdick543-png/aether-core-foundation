@@ -1,0 +1,28 @@
+-- Phase F policy/index cleanup: keep one owner policy per action and index new FKs.
+DROP POLICY IF EXISTS "research source versions owner read" ON public.aether_research_source_versions;
+DROP POLICY IF EXISTS "research source versions owner insert" ON public.aether_research_source_versions;
+DROP POLICY IF EXISTS "research attempts owner read" ON public.aether_research_retrieval_attempts;
+DROP POLICY IF EXISTS "research attempts owner insert" ON public.aether_research_retrieval_attempts;
+DROP POLICY IF EXISTS "research plans owner read" ON public.aether_research_plans;
+DROP POLICY IF EXISTS "research plans owner insert" ON public.aether_research_plans;
+DROP POLICY IF EXISTS "research comparisons owner read" ON public.aether_research_comparisons;
+DROP POLICY IF EXISTS "research comparisons owner insert" ON public.aether_research_comparisons;
+DROP POLICY IF EXISTS "research policy events owner read" ON public.aether_research_policy_events;
+DROP POLICY IF EXISTS "research policy events owner insert" ON public.aether_research_policy_events;
+CREATE INDEX IF NOT EXISTS aether_research_source_versions_owner_idx ON public.aether_research_source_versions(owner_id, retrieved_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_source_versions_source_idx ON public.aether_research_source_versions(source_id, version_number DESC);
+CREATE INDEX IF NOT EXISTS aether_research_retrieval_attempts_session_idx ON public.aether_research_retrieval_attempts(session_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_retrieval_attempts_source_idx ON public.aether_research_retrieval_attempts(source_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_retrieval_attempts_project_idx ON public.aether_research_retrieval_attempts(project_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_plans_session_idx ON public.aether_research_plans(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_plans_project_idx ON public.aether_research_plans(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_comparisons_owner_idx ON public.aether_research_comparisons(owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_comparisons_project_idx ON public.aether_research_comparisons(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_comparisons_session_idx2 ON public.aether_research_comparisons(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_policy_events_owner_idx ON public.aether_research_policy_events(owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_policy_events_session_idx ON public.aether_research_policy_events(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_policy_events_task_idx ON public.aether_research_policy_events(task_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_policy_events_run_idx ON public.aether_research_policy_events(run_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_discovery_project_idx ON public.aether_research_discovery_events(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS aether_research_discovery_task_idx ON public.aether_research_discovery_events(task_id, sequence);
+CREATE INDEX IF NOT EXISTS aether_research_discovery_run_idx ON public.aether_research_discovery_events(run_id, sequence);
