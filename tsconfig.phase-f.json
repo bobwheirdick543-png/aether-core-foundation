@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/lib/aether/research-engine.ts",
+    "src/lib/aether/research-policy.ts",
+    "src/lib/aether/aax-web-intelligence.ts",
+    "src/lib/aether/research-planner.ts",
+    "src/lib/aether/research-network.server.ts",
+    "src/lib/aether/executor.ts",
+    "src/lib/aether/runtime-worker.ts",
+    "src/lib/aether/task-runtime.ts",
+    "src/lib/aether/task-service.ts",
+    "src/lib/aether/task-service-compat.ts",
+    "src/lib/aether/security.ts",
+    "src/lib/aether/hooks.ts",
+    "src/lib/aether/agent-sdk.ts",
+    "src/lib/aether/aax-training-runtime.ts",
+    "src/lib/aether/__tests__/phase-f-research.test.ts",
+    "src/lib/aether/__tests__/phase-f-completion-gate.test.ts"
+  ]
+}
