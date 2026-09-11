@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/lib/aether/verification-engine.ts",
+    "src/lib/aether/verification-engine.test.ts",
+    "src/lib/aether/verification.functions.ts",
+    "src/lib/aether/verification-sessions.functions.ts",
+    "src/lib/aether/agent-sdk.ts",
+    "src/lib/aether/agents.ts",
+    "src/components/research/VerificationPanel.tsx",
+    "src/routes/_authenticated/research.tsx"
+  ]
+}
