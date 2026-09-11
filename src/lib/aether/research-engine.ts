@@ -32,7 +32,13 @@ export interface RetrievedPage {
   publishedAt?: string | null;
   updatedAt?: string | null;
   description?: string | null;
+  author?: string | null;
+  headings?: string[];
+  links?: string[];
   language?: string | null;
+  encoding?: string | null;
+  parserVersion?: string;
+  parserWarnings?: string[];
   contentType?: string | null;
   contentLength?: number | null;
   redirectCount?: number;
@@ -65,6 +71,7 @@ export interface RetrieveOptions {
   signal?: AbortSignal;
 }
 
+const PARSER_VERSION = "aether-html-text-v2";
 const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_MAX_BYTES = 2_000_000;
 const DEFAULT_MAX_REDIRECTS = 5;
@@ -117,6 +124,31 @@ function extractCanonical(html: string, baseUrl: string): string | null {
     ?? html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["'][^"']*canonical[^"']*["']/i);
   if (!m?.[1]) return null;
   try { return normalizeUrl(new URL(m[1], baseUrl).toString()); } catch { return null; }
+}
+
+function extractHeadings(html: string): string[] {
+  return [...html.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi)]
+    .map((match) => stripTags(match[1] ?? "").slice(0, 300))
+    .filter(Boolean)
+    .slice(0, 100);
+}
+
+function extractLinks(html: string, baseUrl: string): string[] {
+  const links: string[] = [];
+  for (const match of html.matchAll(/<a[^>]+href=["']([^"']+)["']/gi)) {
+    try {
+      const candidate = normalizeUrl(new URL(match[1], baseUrl).toString());
+      if (isHttpUrl(candidate) && !links.includes(candidate)) links.push(candidate);
+      if (links.length >= 100) break;
+    } catch { /* ignore malformed links */ }
+  }
+  return links;
+}
+
+function extractEncoding(contentType: string, html: string): string | null {
+  const header = contentType.match(/charset=([^;\s]+)/i)?.[1];
+  if (header) return header.toLowerCase();
+  return html.match(/<meta[^>]+charset=["']?([^\s"'>;]+)/i)?.[1]?.toLowerCase() ?? null;
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -324,10 +356,18 @@ export async function retrievePage(url: string, optionsOrTimeout: RetrieveOption
       if (!ALLOWED_CONTENT_TYPES.includes(contentType)) return { url, finalUrl, status: response.status, title: null, text: "", contentHash: "", retrievedAt, contentType, redirectCount, attempts: attempt, failureClass: "unsupported_content_type", error: `Unsupported content type: ${contentType || "unknown"}` };
       const raw = await readBoundedBody(response, options.maxBytes, options.signal);
       const title = extractTitle(raw);
-      const text = stripTags(raw).slice(0, 80_000);
-      if (!text) return { url, finalUrl, status: response.status, title, text: "", contentHash: "", retrievedAt, contentType, contentLength: new TextEncoder().encode(raw).byteLength, redirectCount, attempts: attempt, failureClass: "parse_error", error: "No readable text extracted" };
-      const contentHash = await sha256Hex(text);
       const canonicalUrl = extractCanonical(raw, finalUrl);
+      const author = extractMeta(raw, "author") || extractMeta(raw, "article:author") || extractMeta(raw, "og:author");
+      const headings = extractHeadings(raw);
+      const links = extractLinks(raw, finalUrl);
+      const encoding = extractEncoding(contentType, raw);
+      const parserWarnings: string[] = [];
+      if (!title) parserWarnings.push("missing_title");
+      if (!canonicalUrl) parserWarnings.push("missing_canonical_url");
+      if (!headings.length && contentType !== "application/json") parserWarnings.push("no_headings_extracted");
+      const text = stripTags(raw).slice(0, 80_000);
+      if (!text) return { url, finalUrl, status: response.status, title, text: "", contentHash: "", retrievedAt, contentType, contentLength: new TextEncoder().encode(raw).byteLength, redirectCount, attempts: attempt, parserVersion: PARSER_VERSION, parserWarnings: [...parserWarnings, "no_readable_text"], failureClass: "parse_error", error: "No readable text extracted" };
+      const contentHash = await sha256Hex(text);
       const staleBase = extractMeta(raw, "article:published_time") || extractMeta(raw, "datePublished") || null;
       const staleDate = staleBase ? Date.parse(staleBase) : Date.parse(retrievedAt);
       const stale = Number.isFinite(staleDate) && staleDate < Date.now() - options.staleAfterDays * 86_400_000;
@@ -343,7 +383,13 @@ export async function retrievePage(url: string, optionsOrTimeout: RetrieveOption
         publishedAt: staleBase,
         updatedAt: extractMeta(raw, "article:modified_time") || extractMeta(raw, "dateModified") || null,
         description: extractMeta(raw, "description") || extractMeta(raw, "og:description"),
+        author,
+        headings,
+        links,
         language: extractMeta(raw, "language") || null,
+        encoding,
+        parserVersion: PARSER_VERSION,
+        parserWarnings,
         contentType,
         contentLength: new TextEncoder().encode(raw).byteLength,
         redirectCount,
