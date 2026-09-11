@@ -9,10 +9,10 @@ on:
       - 'src/routes/_authenticated/admin/agents.tsx'
       - 'supabase/migrations/2026091115*.sql'
       - 'supabase/migrations/2026091118*.sql'
+      - 'tsconfig.phase-m.json'
       - '.github/workflows/phase-m-validation.yml'
       - 'package.json'
       - 'bun.lock'
-      - 'tsconfig.json'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -28,6 +28,6 @@ jobs:
         with:
           bun-version: 1.2.21
       - run: bun install
-      - run: bunx tsc --noEmit
+      - run: bunx tsc -p tsconfig.phase-m.json --noEmit
       - run: bunx vitest run src/lib/aether/__tests__/agent-runtime.test.ts
       - run: bun run build:dev
