@@ -22,8 +22,8 @@ jobs:
           bun-version: 1.2.21
       - name: Install dependencies
         run: bun install
-      - name: Generate TanStack route tree
-        run: bunx tsr generate
+      - name: Production build and route generation
+        run: bun run build:dev
       - name: Typecheck
         run: bunx tsc --noEmit
       - name: Phase F tests
