@@ -4,7 +4,8 @@
     "strict": false,
     "strictNullChecks": false,
     "noImplicitAny": false,
-    "noUncheckedIndexedAccess": false
+    "noUncheckedIndexedAccess": false,
+    "types": ["node"]
   },
   "include": [
     "src/lib/aether/aax-gateway.ts",
