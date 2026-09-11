@@ -31,7 +31,7 @@ Supabase production project `hpxisijyglkdlcpqjtpd` contains the Phase M migratio
 
 ## CI validation
 
-Final Phase M workflow: `34617630038`.
+Final functional Phase M workflow: `34617630038`.
 
 All stages passed:
 
@@ -39,7 +39,7 @@ All stages passed:
 - Agent SDK/lifecycle Vitest suite: 4/4 tests passed
 - production build (`bun run build:dev`)
 
-Final `main` commit: `3346b038f32f1acf2bbab804b77b53344001cb1f`.
+The validated functional implementation commit was `3346b038f32f1acf2bbab804b77b53344001cb1f`. Subsequent `main` commits only updated the completion record, CI path coverage, and a non-functional test comment; no Phase M runtime behavior was changed after the successful validation.
 
 ## Files
 
