@@ -7,6 +7,7 @@ on:
       - 'src/lib/aether/agents.ts'
       - 'src/lib/aether/__tests__/agent-runtime.test.ts'
       - 'src/routes/_authenticated/admin/agents.tsx'
+      - 'supabase/migrations/2026091115*.sql'
       - 'supabase/migrations/2026091118*.sql'
       - '.github/workflows/phase-m-validation.yml'
       - 'package.json'
