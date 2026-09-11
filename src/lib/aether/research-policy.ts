@@ -69,8 +69,6 @@ export class ResearchAccessLimiter {
     if (!decision.allowed) return decision;
     this.active += 1;
     const domain = domainOf(url);
-    // Refresh insertion order when a domain is reused so trimming evicts the
-    // least recently started domains rather than a frequently used domain.
     this.lastStarted.delete(domain);
     this.lastStarted.set(domain, now);
     this.trimDomains();
@@ -119,7 +117,7 @@ export function classifyRetryableStatus(status: number): boolean {
   return [408, 425, 429, 500, 502, 503, 504].includes(status);
 }
 
-export function retryBackoffMs(attempt: number, random = Math.random): number {
+export function retryBackoffMs(attempt: number, random = Math.random()): number {
   const boundedAttempt = Math.max(0, Math.floor(attempt));
   const base = Math.min(8_000, 400 * 2 ** boundedAttempt);
   const jitter = Math.floor(Math.max(0, Math.min(1, random)) * Math.max(1, base * 0.25));
