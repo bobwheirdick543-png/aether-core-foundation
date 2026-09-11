@@ -1,8 +1,8 @@
 /**
- * AETHER AI TEAM — agent contracts (architecture only).
+ * AETHER AI TEAM — agent contracts.
  *
- * These are internal platform workers, NOT user-facing bots.
- * No autonomous execution in this build. Metrics must come from real runs later.
+ * Internal platform workers, not user-facing bots. Phase G activates the
+ * Verification Agent only for bounded research/evidence evaluation.
  */
 
 export type AgentKey =
@@ -86,11 +86,11 @@ export const AGENTS: AgentDefinition[] = [
     description: "Checks claims, sources, dates, contradictions and evidence quality.",
     purpose: "Evaluate evidence before anything becomes production knowledge.",
     mission: "Raise confidence and flag contradictions; never publish.",
-    responsibilities: ["Evidence evaluation", "Contradiction detection", "Confidence scoring"],
-    prohibited: ["Production writes", "Credential access", "User permission changes"],
-    status: "disabled",
-    tools: ["research.read", "sources.compare"],
-    lastActivity: "No activity yet",
+    responsibilities: ["Evidence evaluation", "Contradiction detection", "Confidence scoring", "Human review routing"],
+    prohibited: ["Production writes", "Credential access", "User permission changes", "Knowledge publication"],
+    status: "enabled",
+    tools: ["research.read", "sources.compare", "evidence.evaluate"],
+    lastActivity: "Phase G activated",
     openTasks: 0,
     permissions: [
       { permission: "research.read", label: "Can read research", allowed: true },
@@ -131,12 +131,7 @@ export const AGENTS: AgentDefinition[] = [
     openTasks: 0,
     permissions: [
       { permission: "knowledge.transform", label: "Can transform approved information", allowed: true },
-      {
-        permission: "knowledge.publish",
-        label: "Can publish to production knowledge",
-        allowed: true,
-        requiresApproval: true,
-      },
+      { permission: "knowledge.publish", label: "Can publish to production knowledge", allowed: true, requiresApproval: true },
     ],
   },
   {
