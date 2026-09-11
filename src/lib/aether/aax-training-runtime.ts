@@ -4,7 +4,7 @@ import { runAaxKnowledgeEvolution } from "./aax-knowledge-evolution-engine";
 /** Executes one durable AAX training job claimed by the universal runtime. */
 export async function executeAaxTrainingJob(admin: SupabaseClient, input: { taskId: string; runId: string; ownerId: string; trainingJobId: string; signal?: AbortSignal }): Promise<Record<string, unknown>> {
   const { data: job, error: jobError } = await admin.from("aax_training_jobs")
-    .select("id, task_id, target_model_id, source_type, source_id, source_hash, original_source_ref, original_source_content, source_metadata, timeout_ms, pipeline_status")
+    .select("id, task_id, target_model_id, source_type, source_id, source_hash, original_source_ref, original_source_content, source_metadata, timeout_ms, pipeline_status, started_at")
     .eq("id", input.trainingJobId).single();
   if (jobError || !job) throw new Error(jobError?.message ?? "AAX training job not found");
   if (!job.original_source_content) throw new Error("AAX training job has no preserved original source content");
