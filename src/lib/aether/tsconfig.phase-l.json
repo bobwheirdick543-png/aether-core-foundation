@@ -1,5 +1,5 @@
 {
   "extends": "../../../tsconfig.json",
   "compilerOptions": { "skipLibCheck": true, "noEmit": true },
-  "include": ["./scheduler.ts", "./scheduler-runtime.ts", "./scheduler.functions.ts", "./__tests__/scheduler-runtime.test.ts"]
+  "include": ["./scheduler.ts", "./scheduler-runtime.ts", "./scheduler.functions.ts", "./scheduler-worker.ts", "./__tests__/scheduler-runtime.test.ts"]
 }
