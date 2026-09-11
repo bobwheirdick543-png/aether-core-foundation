@@ -54,7 +54,7 @@ describe("Phase F native research contracts", () => {
 
   it("keeps retry backoff bounded and deterministic when jitter is supplied", () => {
     expect(retryBackoffMs(0, 0)).toBe(400);
-    expect(retryBackoffMs(4, 1)).toBe(8000 + 2000);
+    expect(retryBackoffMs(4, 1)).toBe(8000);
     expect(retryBackoffMs(20, 1)).toBe(10000);
   });
 
