@@ -1,0 +1,5 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": { "skipLibCheck": true, "noEmit": true },
+  "include": ["./report-engine.ts", "./report.functions.ts", "./__tests__/report-engine.test.ts"]
+}
