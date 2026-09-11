@@ -1,32 +1,34 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { Brain, Check, Plus, Trash2, X } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
-import { PageHeader, PhaseNote, Panel } from "@/components/common/Primitives";
+import { EmptyState, PageHeader, Panel, StatCard, Tag } from "@/components/common/Primitives";
+import { Button } from "@/components/ui/button";
+import { listAetherProjects } from "@/lib/aether/aether-project.functions";
+import { createAetherMemory, deleteAetherMemory, listAetherMemoryCandidates, listAetherMemories, promoteAetherMemoryCandidate, rejectAetherMemoryCandidate, setAetherMemoryPreference, updateAetherMemory } from "@/lib/aether/aether-memory.functions";
 
-export const Route = createFileRoute("/_authenticated/memory")({
-  head: () => ({
-    meta: [
-      { title: "Memory — Aether" },
-      { name: "description", content: "User and project memory scopes." },
-      { property: "og:title", content: "Memory — Aether" },
-      { property: "og:description", content: "User and project memory scopes." },
-    ],
-  }),
-  component: Page,
-});
+export const Route = createFileRoute("/_authenticated/memory")({ head: () => ({ meta: [{ title: "Memory — Aether" }, { name: "description", content: "Manage durable Aether memory and governed learning candidates." }] }), component: Page });
+type Memory = { id: string; project_id: string | null; scope: string; memory_type: string; content: string; status: string; persistence_mode: string; reason: string; confidence: number | null; importance: number; version: number; created_at: string; updated_at: string };
+type Candidate = { id: string; project_id: string | null; scope: string; memory_type: string; content: string; status: string; reason: string; confidence: number | null; created_at: string };
 
 function Page() {
-  return (
-    <AppShell>
-      <PageHeader title="Memory" description="User and project memory scopes." />
-      <div className="mt-6 space-y-4">
-        <PhaseNote>Interface only — backend behaviour lands in a later phase.</PhaseNote>
-        <Panel>
-          <p className="text-sm text-muted-foreground">
-            This surface is part of the Aether foundation build. Data and actions arrive with the
-            matching platform phase.
-          </p>
-        </Panel>
-      </div>
-    </AppShell>
-  );
+  const qc = useQueryClient(); const getProjects = useServerFn(listAetherProjects); const getMemories = useServerFn(listAetherMemories); const getCandidates = useServerFn(listAetherMemoryCandidates); const createMemory = useServerFn(createAetherMemory); const updateMemory = useServerFn(updateAetherMemory); const removeMemory = useServerFn(deleteAetherMemory); const promote = useServerFn(promoteAetherMemoryCandidate); const reject = useServerFn(rejectAetherMemoryCandidate); const setPreference = useServerFn(setAetherMemoryPreference);
+  const { data: projects = [] } = useQuery({ queryKey: ["aether-projects-memory"], queryFn: () => getProjects({ data: { includeArchived: false } }) }); const [projectId, setProjectId] = useState<string | null>(null); const { data: memories = [] } = useQuery({ queryKey: ["aether-memories", projectId], queryFn: () => getMemories({ data: { projectId } }) as Promise<Memory[]> }); const { data: candidates = [] } = useQuery({ queryKey: ["aether-memory-candidates", projectId], queryFn: () => getCandidates({ data: { projectId, status: "candidate" } }) as Promise<Candidate[]> });
+  const [content, setContent] = useState(""); const [scope, setScope] = useState<"global" | "project">("global"); const [memoryType, setMemoryType] = useState("fact"); const [reason, setReason] = useState(""); const [editing, setEditing] = useState<Memory | null>(null); const [enabled, setEnabled] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const selectedProject = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
+  async function refresh() { await Promise.all([qc.invalidateQueries({ queryKey: ["aether-memories"] }), qc.invalidateQueries({ queryKey: ["aether-memory-candidates"] })]); }
+  async function submitMemory() { if (!content.trim()) return; setBusy(true); setError(""); try { if (editing) await updateMemory({ data: { memoryId: editing.id, content, reason, memoryType } }); else await createMemory({ data: { content, scope, projectId: scope === "project" ? projectId : null, memoryType, reason } }); setContent(""); setReason(""); setEditing(null); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : "Could not save memory."); } finally { setBusy(false); } }
+  function startEdit(m: Memory) { setEditing(m); setContent(m.content); setReason(m.reason); setMemoryType(m.memory_type); setScope(m.scope === "project" ? "project" : "global"); setProjectId(m.project_id); }
+  async function remove(id: string) { if (!window.confirm("Delete this memory? Its provenance history will remain.")) return; await removeMemory({ data: { memoryId: id } }); await refresh(); }
+  async function approve(id: string) { setBusy(true); try { await promote({ data: { candidateId: id } }); await refresh(); } catch (e) { setError(e instanceof Error ? e.message : "Could not promote candidate."); } finally { setBusy(false); } }
+  async function decline(id: string) { await reject({ data: { candidateId: id } }); await refresh(); }
+  async function toggle(value: boolean) { setEnabled(value); try { await setPreference({ data: { enabled: value } }); } catch (e) { setEnabled(!value); setError(e instanceof Error ? e.message : "Could not update memory preference."); } }
+  return <AppShell><PageHeader title="Memory" description="Durable user memory is explicit, scoped, governed and traceable." actions={<div className="flex items-center gap-2"><select value={projectId ?? ""} onChange={(e) => { const v = e.target.value || null; setProjectId(v); setScope(v ? "project" : "global"); }} className="rounded-md border border-border bg-background px-3 py-2 text-xs"><option value="">Global memory</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select><Button size="sm" onClick={() => { setEditing(null); setContent(""); setReason(""); setScope(projectId ? "project" : "global"); }}><Plus className="mr-1.5 h-4 w-4" />New memory</Button></div>} />
+  <div className="mt-6 grid gap-4 sm:grid-cols-3"><StatCard label="Active memories" value={String(memories.length)} hint={selectedProject ? `Scoped to ${selectedProject.name}` : "Global scope"} tone="primary" /><StatCard label="Candidates" value={String(candidates.length)} hint="Awaiting approval" tone="warning" /><StatCard label="Memory use" value={enabled ? "ON" : "OFF"} hint="User-level preference" tone={enabled ? "success" : "neutral"} /></div>
+  {error ? <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
+  <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><div className="space-y-4"><Panel><div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Memory control</h2><p className="mt-1 text-xs text-muted-foreground">Turning memory off stops retrieval; it does not delete stored memories.</p></div><button type="button" onClick={() => void toggle(!enabled)} className={`rounded-full border px-3 py-1.5 text-xs ${enabled ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>{enabled ? "Enabled" : "Disabled"}</button></div></Panel>
+  {memories.length ? memories.map((m) => <Panel key={m.id}><div className="flex items-start gap-3"><div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-primary"><Brain className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><Tag tone={m.scope === "project" ? "primary" : "neutral"}>{m.scope === "project" ? "PROJECT" : "GLOBAL"}</Tag><Tag>{m.memory_type}</Tag><Tag>v{m.version}</Tag></div><p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed">{m.content}</p>{m.reason ? <p className="mt-2 text-xs text-muted-foreground">Reason: {m.reason}</p> : null}<p className="mt-2 text-[11px] text-muted-foreground">Updated {new Date(m.updated_at).toLocaleString()} · {m.persistence_mode === "approved_candidate" ? "approved candidate" : "explicit"}</p></div><div className="flex shrink-0 gap-1"><Button size="sm" variant="ghost" onClick={() => startEdit(m)}>Edit</Button><Button size="icon" variant="ghost" onClick={() => void remove(m.id)}><Trash2 className="h-4 w-4" /></Button></div></div></Panel>) : <EmptyState title="No active memories" description={selectedProject ? "This project has no active project memories yet." : "No global memories have been saved yet."} icon={<Brain className="h-5 w-5" />} />}</div>
+  <div className="space-y-4"><Panel><h2 className="text-sm font-semibold">{editing ? "Edit memory" : "Add memory"}</h2><div className="mt-4 space-y-3"><select value={scope} disabled={Boolean(editing)} onChange={(e) => setScope(e.target.value as "global" | "project")} className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs"><option value="global">Global</option><option value="project" disabled={!projectId}>Project</option></select><select value={memoryType} onChange={(e) => setMemoryType(e.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs"><option value="fact">Fact</option><option value="preference">Preference</option><option value="context">Context</option><option value="instruction">Instruction</option><option value="goal">Goal</option></select><textarea value={content} onChange={(e) => setContent(e.target.value)} rows={7} maxLength={12000} placeholder="What should Aether remember?" className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"/><input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} placeholder="Why should this be remembered?" className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs"/><div className="flex gap-2"><Button disabled={busy || !content.trim()} onClick={() => void submitMemory()}>{editing ? "Create new version" : "Save memory"}</Button>{editing ? <Button variant="ghost" onClick={() => { setEditing(null); setContent(""); setReason(""); }}>Cancel</Button> : null}</div></div></Panel>
+  <Panel><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Learning candidates</h2><p className="mt-1 text-xs text-muted-foreground">Candidates are not retrieved until promoted.</p></div><Tag tone="warning">{candidates.length}</Tag></div>{candidates.length ? <div className="mt-4 space-y-3">{candidates.map((c) => <div key={c.id} className="rounded-lg border border-border p-3"><div className="flex items-center gap-1.5"><Tag>{c.memory_type}</Tag><Tag>{c.scope}</Tag></div><p className="mt-2 text-sm">{c.content}</p><p className="mt-1 text-[11px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</p><div className="mt-3 flex gap-2"><Button size="sm" onClick={() => void approve(c.id)} disabled={busy}><Check className="mr-1 h-3.5 w-3.5" />Approve</Button><Button size="sm" variant="ghost" onClick={() => void decline(c.id)}><X className="mr-1 h-3.5 w-3.5" />Reject</Button></div></div>)}</div> : <p className="mt-4 text-xs text-muted-foreground">No candidates waiting for review.</p>}</Panel></div></div></AppShell>;
 }
