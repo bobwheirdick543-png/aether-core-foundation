@@ -1,29 +1,39 @@
 # Phase N — Orchestrator Agent Completion Record
 
-Status: implementation and validation target for `main`.
+Status: **COMPLETE** on `main`.
 
-Phase N integrates the Phase B cognitive orchestration boundary with the Phase M Agent SDK/runtime and Phase A durable task foundation. It adds durable orchestration plans, dependency-aware steps, approval/verification/policy gates, atomic step claims, result aggregation, idempotency and lease recovery.
+Phase N integrates the existing Phase B cognitive orchestration boundary with the Phase M Agent SDK/runtime and Phase A durable task foundation. It adds a durable execution layer rather than replacing the existing Phase B plan model.
 
 ## Architecture integration
 
-`request → auth/permission → durable task (A) → orchestrator plan (N) → bounded registered agent (M) → agent handoff/message → step result/gate → aggregation → durable task completion → notifications/reports/telemetry`
+`request → auth/permission → durable task (A) → orchestration plan (B/N) → dependency-aware runtime step (N) → bounded registered agent (M) → handoff/message → gate/result → aggregation → durable task completion → notifications/reports/telemetry`
 
-The Orchestrator does not become a second task queue. It stores orchestration state and delegates execution through the existing durable runtime. Agents remain bounded by their registered permissions and cannot select themselves as workers.
+The Orchestrator does not become a second task queue. Existing Phase B `orchestration_plans` and `orchestration_steps` remain the canonical planning records. Phase N adds `orchestration_step_runtime` and durable gates for execution state, leases, retry budgets and recovery.
 
-## Durability and safety
+## Implemented
 
-- Plans and steps persist in Supabase.
-- Plan creation is idempotent.
-- Dependency readiness is checked server-side.
-- Step claims are locked atomically and receive a lease.
-- Expired leases are recoverable within the step retry budget.
-- Critical step failure fails the plan; successful completion aggregates step results.
-- Approval/verification/policy gates are durable records.
-- Ownership is checked server-side; admin access is explicit.
-- Agent execution authorization is delegated to the Phase M permission boundary.
+- Typed multi-agent plan validation with dependency-cycle detection.
+- Agent selection constrained to the Phase M registry; the Orchestrator cannot select itself as a worker.
+- Durable plan creation with idempotency.
+- Dependency-aware runtime steps.
+- Atomic server-side step claims with ten-minute leases.
+- Phase M permission authorization before worker dispatch.
+- Durable approval, verification and policy gates.
+- Structured agent handoff through the existing Phase M message boundary.
+- Result aggregation and plan terminal-state transitions.
+- Critical-step failure handling.
+- Lease expiry recovery with bounded retry budgets.
+- Server-side ownership and administrator enforcement.
+- Service-role-safe worker RPCs for background execution.
+- Orchestrator execution permission seeded for registered agents.
+- Orchestrator lifecycle activated in the production registry.
 - No browser state is the source of truth.
 - No provider-specific model dependency is introduced.
 
+## Persistence
+
+Supabase production project `hpxisijyglkdlcpqjtpd` has the Phase N runtime schema and RPCs applied, including `orchestration_step_runtime`, `orchestration_gates`, durable claims, completion and recovery functions, plus the Phase N execution permission.
+
 ## Validation
 
-The Phase N workflow must pass focused TypeScript, orchestration unit tests and the production build. Supabase migration review is part of the phase gate. Vercel deployment is intentionally not used for validation.
+Phase N validation run **34621780973**, job **103337257730**, completed successfully. TypeScript, focused orchestration tests and the production build all passed. Vercel deployment was intentionally not used for validation.
