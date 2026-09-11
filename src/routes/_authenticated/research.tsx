@@ -9,6 +9,7 @@ import { PageHeader, Panel, Tag, EmptyState } from "@/components/common/Primitiv
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { VerificationPanel } from "@/components/research/VerificationPanel";
 import {
   createMyResearchRun,
   getMyResearchRuns,
@@ -169,6 +170,8 @@ function Page() {
             ))}
           </div>
         )}
+
+        <VerificationPanel />
       </div>
     </AppShell>
   );
