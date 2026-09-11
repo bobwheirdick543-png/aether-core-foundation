@@ -2,12 +2,12 @@
 
 This document describes the **real** modular foundation implemented under `src/lib/aether`.
 
-No external AI provider is required. No fabricated agent activity or analytics.
+No external AI provider is required for Aether's base web discovery/retrieval layer. No fabricated agent activity or analytics.
 
 ## Layers
 
 ```
-User / Admin request
+User / Admin / API / Agent request
         ↓
 Server functions (auth + ownership)
         ↓
@@ -17,9 +17,14 @@ Task / Run engine (state machine)
         ↓
 Agent boundary checks (security.ts)
         ↓
-Controlled Executor (research retrieval today)
+Aether Web Intelligence
+   ├── Wikipedia
+   ├── Reddit
+   ├── DuckDuckGo discovery
+   ├── dictionary/lexical lookup
+   └── direct URL retrieval
         ↓
-Native Research Engine (fetch + extract)
+Native Research Engine (fetch + extract + provenance)
         ↓
 Knowledge pipeline / Report builder / Notifications
         ↓
@@ -38,6 +43,8 @@ Audit log + optional Optimization scan
 | `task-control.functions.ts` | Cancel + Retry |
 | `executor.ts` | Controlled single-step research execution |
 | `research-engine.ts` | Native URL retrieval + metadata extraction |
+| `aax-web-intelligence.ts` | Provider-independent concurrent multi-source discovery, retrieval, deduplication and research persistence |
+| `aax-web-research.ts` | AAX chat web-research adapter; native web intelligence by default, optional provider fallback |
 | `orchestrator.ts` | Workflow planning |
 | `approvals.ts` | Approve / reject / retry contracts |
 | `knowledge-pipeline.ts` | Acquisition → production stages |
@@ -51,23 +58,33 @@ Audit log + optional Optimization scan
 | `scheduler.ts` | Schedule definitions + next-fire |
 | `agent-registry.ts` | Sync static agents into DB |
 
+## Native Web Intelligence
+
+Aether separates **web access** from **model reasoning**. Search providers run concurrently and their results are deduplicated before page retrieval. Retrieved pages retain URL, canonical URL, title, domain, provider, timestamps, content hash and evidence text. The base discovery layer uses public web endpoints and therefore does not require a search-provider API key.
+
+AAX web research uses this layer by default. A provider-native search path remains available only as an explicit fallback configuration; it is not the foundation of Aether web access.
+
+During AAX knowledge evolution, Knowledge Acquisition, Research, Verification, Curator and Security each receive an independent native research pass. Web evidence is appended to that agent's identifiable understanding artifact and persisted with the research session, while the original source remains preserved. The target AAX then receives the collective package and performs its own self-analysis.
+
+The native layer is deliberately provider-independent. Additional search indexes or commercial providers can be added behind the same capability contract later without changing agents, models, chat, or the public API.
+
 ## Critical rules enforced
 
 - No agent can grant itself permissions
 - No silent production knowledge publishes
 - No cross-user notifications
 - No fabricated findings or analytics
+- Web content is evidence, not executable instructions
+- Search results are not treated as automatically true; multiple sources and source diversity are retained for later verification
 - Retries create new runs (history preserved)
 - Admin routes and functions re-check `has_role('admin')` server-side
 - Bootstrap secret never leaves the server
 
 ## Database
 
-See `supabase/migrations/002_aether_runtime_extensions.sql` for:
-- `notifications` table + RLS
-- `task_runs.idempotency_key`, `agent_key`, `retry_of`
-- knowledge approval columns
-- report metadata columns
+The Phase D native web migration adds:
+- `aether_research_sessions` for durable research-run provenance
+- `aether_research_sources` for retrieved source records, hashes, metadata and ownership-safe access
 
 ## What is intentionally not here yet
 
@@ -75,3 +92,4 @@ See `supabase/migrations/002_aether_runtime_extensions.sql` for:
 - Binary PDF rendering library
 - External email transport
 - Full Admin Team UI sub-pages (UI was left unchanged by request)
+- A proprietary global search index/crawler; current native discovery combines public source endpoints with direct retrieval and is designed to accept additional provider/index adapters later
