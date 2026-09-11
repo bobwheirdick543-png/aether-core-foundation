@@ -1,0 +1,32 @@
+name: Phase N Validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/orchestrator.ts'
+      - 'src/lib/aether/orchestrator.functions.ts'
+      - 'src/lib/aether/__tests__/orchestrator.test.ts'
+      - 'supabase/migrations/2026091119*.sql'
+      - 'tsconfig.phase-n.json'
+      - '.github/workflows/phase-n-validation.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+      - run: bun install
+      - name: Phase N focused typecheck
+        run: bunx tsc -p tsconfig.phase-n.json --noEmit
+      - name: Phase N orchestration tests
+        run: bunx vitest run src/lib/aether/__tests__/orchestrator.test.ts
+      - name: Phase N production build
+        run: bun run build:dev

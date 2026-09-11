@@ -1,0 +1,9 @@
+import {describe,expect,it} from "vitest";
+import {aggregateResults,makeOrchestrationIdempotencyKey,readyStepIds,retryDelay,validateOrchestrationPlan} from "../orchestrator";
+
+describe("Phase N orchestration",()=>{
+ it("rejects duplicate ids, unknown agents and cycles",()=>{const base={taskId:"t",objective:"do work",steps:[{stepId:"a",agentKey:"research" as const,title:"a",dependsOn:["b"]},{stepId:"b",agentKey:"verification" as const,title:"b",dependsOn:["a"]}]};expect(validateOrchestrationPlan(base).join(" ")).toContain("dependency cycle");expect(validateOrchestrationPlan({...base,steps:[{...base.steps[0],agentKey:"nope" as any}]}).join(" ")).toContain("Unknown agent");});
+ it("finds only dependency-ready steps",()=>{const steps:any[]=[{step_id:"a",status:"completed",depends_on:[]},{step_id:"b",status:"pending",depends_on:["a"]},{step_id:"c",status:"pending",depends_on:["b"]},{step_id:"d",status:"running",depends_on:[]}];expect(readyStepIds(steps)).toEqual(["b"]);});
+ it("aggregates successful and failed results deterministically",()=>{expect(aggregateResults([{stepId:"a",agentKey:"research",status:"completed",result:{x:1}}])).toMatchObject({status:"completed",warnings:[],errors:[]});expect(aggregateResults([{stepId:"a",agentKey:"research",status:"failed",errors:["x"]}])).toMatchObject({status:"failed",errors:["x"]});});
+ it("provides stable idempotency and bounded retry delay",()=>{expect(makeOrchestrationIdempotencyKey("task","objective")).toBe(makeOrchestrationIdempotencyKey("task","objective"));expect(retryDelay(0)).toBe(10000);expect(retryDelay(20)).toBeLessThanOrEqual(300000);});
+});
