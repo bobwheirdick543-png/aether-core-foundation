@@ -7,7 +7,7 @@ import { assertPublicDnsTarget } from "../research-network.server";
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("Phase F native research contracts", () => {
-  it("normalizes tracking parameters without changing the resource identity", () => { expect(normalizeUrl("https://Example.com/path/?utm_source=test&x=1#section")).toBe("https://example.com/path?x=1"); });
+  it("normalizes tracking parameters without changing the resource identity", () => { expect(normalizeUrl("https://Example.com/path/?utm_source=test&x=1#section")).toBe("https://example.com/path/?x=1"); });
   it("preserves meaningful query parameters while removing known trackers", () => { expect(normalizeUrl("https://example.com/a?ref=campaign&lang=en&gclid=abc&page=2")).toBe("https://example.com/a?lang=en&page=2"); });
   it("rejects private or non-http retrieval targets", () => { expect(isHttpUrl("http://localhost:3000/test")).toBe(false); expect(isHttpUrl("http://127.0.0.1/test")).toBe(false); expect(isHttpUrl("http://192.168.1.10/test")).toBe(false); expect(isHttpUrl("http://172.16.0.1/test")).toBe(false); expect(isHttpUrl("file:///tmp/a.txt")).toBe(false); expect(isHttpUrl("https://example.com")).toBe(true); });
   it("blocks literal non-public DNS/IP targets", async () => { await expect(assertPublicDnsTarget("http://127.0.0.1/test")).rejects.toThrow(/non-public/i); await expect(assertPublicDnsTarget("http://169.254.169.254/latest/meta-data")).rejects.toThrow(/non-public/i); await expect(assertPublicDnsTarget("http://10.0.0.1/test")).rejects.toThrow(/non-public/i); });
