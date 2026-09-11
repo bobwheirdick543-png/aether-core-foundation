@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { domainFromUrl, isHttpUrl, retrievePage, type RetrievedPage } from "./research-engine";
 
-export type WebSearchProvider = "wikipedia" | "reddit" | "duckduckgo" | "dictionary";
+export type WebSearchProvider = "wikipedia" | "reddit" | "duckduckgo" | "dictionary" | (string & {});
 export type AetherWebSource = {
   url: string;
   canonicalUrl: string;
@@ -38,7 +38,7 @@ async function searchWikipedia(query: string, signal?: AbortSignal): Promise<Sea
   const response = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encode(query)}&srlimit=5&format=json&origin=*`, { headers: { "User-Agent": USER_AGENT }, signal });
   if (!response.ok) throw new Error(`Wikipedia search failed (${response.status})`);
   const payload = await response.json() as { query?: { search?: Array<{ title?: string; snippet?: string }> } };
-  return (payload.query?.search ?? []).map((item) => ({ provider: "wikipedia", title: item.title ?? "Wikipedia", snippet: (item.snippet ?? "").replace(/<[^>]+>/g, ""), url: `https://en.wikipedia.org/wiki/${encodeURIComponent((item.title ?? "").replace(/ /g, "_"))}` })).filter((item) => item.url.endsWith("/" ) === false);
+  return (payload.query?.search ?? []).map((item) => ({ provider: "wikipedia", title: item.title ?? "Wikipedia", snippet: (item.snippet ?? "").replace(/<[^>]+>/g, ""), url: `https://en.wikipedia.org/wiki/${encodeURIComponent((item.title ?? "").replace(/ /g, "_"))}` })).filter((item) => item.url.endsWith("/") === false);
 }
 
 async function searchReddit(query: string, signal?: AbortSignal): Promise<SearchHit[]> {
@@ -80,7 +80,7 @@ async function lookupDictionary(query: string, signal?: AbortSignal): Promise<Se
   return [{ provider: "dictionary", url: `https://api.dictionaryapi.dev/api/v2/entries/en/${encode(term)}`, title: `${term} — dictionary`, snippet: definitions.join(" | ") }];
 }
 
-const PROVIDERS: Record<WebSearchProvider, (query: string, signal?: AbortSignal) => Promise<SearchHit[]>> = { wikipedia: searchWikipedia, reddit: searchReddit, duckduckgo: searchDuckDuckGo, dictionary: lookupDictionary };
+const PROVIDERS: Record<string, (query: string, signal?: AbortSignal) => Promise<SearchHit[]>> = { wikipedia: searchWikipedia, reddit: searchReddit, duckduckgo: searchDuckDuckGo, dictionary: lookupDictionary };
 
 function dedupeHits(hits: SearchHit[]): SearchHit[] {
   const seen = new Set<string>();
@@ -95,16 +95,14 @@ async function retrieveHit(hit: SearchHit, signal?: AbortSignal): Promise<Aether
   return { url: hit.url, canonicalUrl: page.canonicalUrl || page.finalUrl, title: page.title || hit.title, domain: domainFromUrl(page.finalUrl || hit.url), provider: hit.provider, snippet: hit.snippet, text: page.text.slice(0, 80_000), status: page.status, contentHash: page.contentHash, retrievedAt: page.retrievedAt, publishedAt: page.publishedAt, updatedAt: page.updatedAt };
 }
 
-/**
- * Provider-independent Aether web intelligence. Search is multi-source and concurrent.
- * The base implementation requires no search API key. Optional providers can be added
- * behind this interface without changing agents, models, chat, or the public API.
- */
 export async function runAetherWebResearch(input: { query: string; providers?: WebSearchProvider[]; maxSources?: number; signal?: AbortSignal }): Promise<AetherWebResearchResult> {
   const query = input.query.trim().slice(0, MAX_QUERY);
   if (!query) throw new Error("Research query is required");
-  const providers = [...new Set(input.providers ?? ["duckduckgo", "wikipedia", "reddit", "dictionary"])] as WebSearchProvider[];
-  const searches = await Promise.allSettled(providers.map((provider) => PROVIDERS[provider](query, input.signal)));
+  const providerKeys = [...new Set(input.providers ?? ["duckduckgo", "wikipedia", "reddit", "dictionary"])] as string[];
+  const searches = await Promise.allSettled(providerKeys.map((provider) => {
+    const search = PROVIDERS[provider];
+    return search ? search(query, input.signal) : Promise.resolve([] as SearchHit[]);
+  }));
   const hits = dedupeHits(searches.flatMap((result) => result.status === "fulfilled" ? result.value : []));
   const selected = hits.slice(0, Math.min(Math.max(1, input.maxSources ?? MAX_SOURCES), MAX_SOURCES));
   const retrieved = await Promise.allSettled(selected.map((hit) => retrieveHit(hit, input.signal)));
