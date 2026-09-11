@@ -7,7 +7,18 @@
     "noUncheckedIndexedAccess": false
   },
   "include": [
-    "src/lib/aether/aax*.ts",
-    "src/lib/admin/aax*.ts"
+    "src/lib/aether/aax-gateway.ts",
+    "src/lib/aether/aax-capabilities.ts",
+    "src/lib/aether/aax-media.ts",
+    "src/lib/aether/aax-reliability.ts",
+    "src/lib/aether/aax-release-control.ts",
+    "src/lib/aether/aax-evaluation.ts",
+    "src/lib/aether/aax-release-notifications.ts",
+    "src/lib/aether/aax-training-runtime.ts",
+    "src/lib/aether/aax-knowledge-evolution.ts",
+    "src/lib/aether/aax-knowledge-evolution-engine.ts",
+    "src/lib/aether/aax-web-intelligence.ts",
+    "src/lib/aether/aax-web-research.ts",
+    "src/lib/admin/aax-model-lab.types.ts"
   ]
 }
