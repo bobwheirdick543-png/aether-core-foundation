@@ -35,6 +35,8 @@ export type SourceComparison = {
   contradictionSignals: string[];
   dateMismatches: string[];
   freshnessSignals: string[];
+  missingEvidence: string[];
+  uncertainty: string[];
   quality: Array<{ sourceId: string; score: number; factors: Record<string, number> }>;
 };
 
@@ -44,6 +46,8 @@ export function compareResearchSources(subject: string, sources: Array<{ id: str
   const terms = normalized.map((source) => new Set((source.content ?? "").toLowerCase().split(/\W+/).filter((term) => term.length > 5)));
   const agreementSignals: string[] = [];
   const contradictionSignals: string[] = [];
+  const missingEvidence: string[] = [];
+  const uncertainty: string[] = [];
   if (terms.length > 1) {
     const intersection = [...terms[0]].filter((term) => terms.slice(1).every((set) => set.has(term)));
     if (intersection.length) agreementSignals.push(`Shared terminology across ${intersection.length} content terms`);
@@ -54,6 +58,15 @@ export function compareResearchSources(subject: string, sources: Array<{ id: str
   const dates = normalized.flatMap((source) => [source.publishedAt, source.updatedAt].filter(Boolean).map((value) => ({ id: source.id, value: String(value) })));
   const dateMismatches = dates.length > 1 ? [`${dates.length} source dates available for comparison`] : [];
   const freshnessSignals = normalized.map((source) => `${source.domain}: ${source.updatedAt ?? source.publishedAt ?? "no publication date"}`);
+  if (!normalized.length) {
+    missingEvidence.push("No retrieved sources were available for comparison");
+    uncertainty.push("Comparison cannot establish evidence without retrieved sources");
+  } else {
+    const undated = normalized.filter((source) => !source.updatedAt && !source.publishedAt).length;
+    if (undated) missingEvidence.push(`${undated} source(s) have no publication or update date`);
+    if (domains.length < 2) uncertainty.push("Only one source domain is represented; cross-source agreement is limited");
+    if (contradictionSignals.length) uncertainty.push("Source terminology differs; contradictions require verification");
+  }
   return {
     subject,
     sourceIds: normalized.map((source) => source.id),
@@ -62,6 +75,8 @@ export function compareResearchSources(subject: string, sources: Array<{ id: str
     contradictionSignals,
     dateMismatches,
     freshnessSignals,
+    missingEvidence,
+    uncertainty,
     quality: normalized.map((source) => {
       const page = source.page ?? ({ status: 200, text: source.content ?? "", error: undefined, stale: false } as RetrievedPage);
       const quality = sourceQualityScore(page);
@@ -117,7 +132,7 @@ export async function persistResearchPlan(admin: SupabaseClient, ownerId: string
 }
 
 export async function persistResearchComparison(admin: SupabaseClient, ownerId: string, sessionId: string, comparison: SourceComparison): Promise<string> {
-  const { data, error } = await admin.from("aether_research_comparisons").insert({ owner_id: ownerId, session_id: sessionId, subject: comparison.subject, source_ids: comparison.sourceIds, comparison, status: "completed" }).select("id").single();
+  const { data, error } = await admin.from("aether_research_comparisons").insert({ owner_id: ownerId, session_id: sessionId, subject: comparison.subject, source_ids: comparison.sourceIds, comparison, missing_evidence: comparison.missingEvidence, uncertainty: comparison.uncertainty, status: "completed" }).select("id").single();
   if (error || !data) throw new Error(`Could not persist research comparison: ${error?.message ?? "unknown error"}`);
   return data.id as string;
 }
