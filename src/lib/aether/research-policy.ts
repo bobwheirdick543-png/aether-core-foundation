@@ -29,6 +29,10 @@ function domainOf(value: string): string {
   }
 }
 
+function abortError(): DOMException {
+  return new DOMException("Research cancelled", "AbortError");
+}
+
 /**
  * Small in-process limiter used by a single durable research worker.
  * Persistence of actual policy events belongs in Supabase; this class only
@@ -65,6 +69,9 @@ export class ResearchAccessLimiter {
     if (!decision.allowed) return decision;
     this.active += 1;
     const domain = domainOf(url);
+    // Refresh insertion order when a domain is reused so trimming evicts the
+    // least recently started domains rather than a frequently used domain.
+    this.lastStarted.delete(domain);
     this.lastStarted.set(domain, now);
     this.trimDomains();
     return decision;
@@ -72,6 +79,28 @@ export class ResearchAccessLimiter {
 
   finish(): void {
     this.active = Math.max(0, this.active - 1);
+  }
+
+  /** Wait until a request is allowed, then claim one concurrency slot. */
+  async acquire(url: string, signal?: AbortSignal): Promise<void> {
+    for (;;) {
+      if (signal?.aborted) throw abortError();
+      const decision = this.start(url);
+      if (decision.allowed) return;
+      await new Promise<void>((resolve, reject) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const onAbort = () => {
+          if (timer) clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
+          reject(abortError());
+        };
+        timer = setTimeout(() => {
+          signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, Math.max(1, decision.waitMs));
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
+    }
   }
 
   get activeCount(): number { return this.active; }
@@ -90,7 +119,7 @@ export function classifyRetryableStatus(status: number): boolean {
   return [408, 425, 429, 500, 502, 503, 504].includes(status);
 }
 
-export function retryBackoffMs(attempt: number, random = Math.random()): number {
+export function retryBackoffMs(attempt: number, random = Math.random): number {
   const boundedAttempt = Math.max(0, Math.floor(attempt));
   const base = Math.min(8_000, 400 * 2 ** boundedAttempt);
   const jitter = Math.floor(Math.max(0, Math.min(1, random)) * Math.max(1, base * 0.25));
