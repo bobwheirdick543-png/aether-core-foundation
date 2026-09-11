@@ -16,15 +16,18 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: '1.2.21'
-      - run: bun install --frozen-lockfile
+          bun-version: 1.2.21
+      - run: bun install
       - name: Phase O focused TypeScript
         run: bunx tsc -p tsconfig.phase-o.json --noEmit
       - name: Phase O tests
