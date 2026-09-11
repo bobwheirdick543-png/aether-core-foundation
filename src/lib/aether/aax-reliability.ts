@@ -33,7 +33,7 @@ export async function recordAaxHealth(
   admin: SupabaseClient,
   modelId: string,
   outcome: "success" | "failure",
-  details: { error?: string; latencyMs?: number; fallback?: boolean } = {},
+  details: { error?: string; latencyMs?: number; fallback?: boolean; webResearch?: boolean; sourceCount?: number; providerSearch?: boolean } = {},
 ) {
   const existing = await getAaxHealth(admin, modelId);
   const now = new Date().toISOString();
