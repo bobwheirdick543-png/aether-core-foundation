@@ -3,6 +3,7 @@ import { AGENTS } from "../agents";
 import { buildAgentVersion, validateAgentDefinition, assertLifecycleTransition } from "../agent-runtime";
 import { mergeStaticContract } from "../agent-registry";
 
+// Phase M final regression gate: contracts, boundaries and lifecycle must stay valid.
 describe("Phase M Agent SDK", () => {
   it("keeps the complete ten-agent registry", () => { expect(AGENTS).toHaveLength(10); expect(new Set(AGENTS.map((agent) => agent.key)).size).toBe(10); });
   it("builds valid strongly typed contracts", () => { for (const agent of AGENTS) { const definition = mergeStaticContract(agent.key); expect(validateAgentDefinition(definition)).toEqual([]); expect(buildAgentVersion(agent).configurationHash).toMatch(/^[0-9a-f]{8}$/); } });
