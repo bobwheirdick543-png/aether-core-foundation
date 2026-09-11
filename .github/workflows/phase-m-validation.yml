@@ -1,0 +1,27 @@
+name: Phase M Validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/agent-*.ts'
+      - 'src/lib/aether/agents.ts'
+      - 'src/lib/aether/__tests__/agent-runtime.test.ts'
+      - 'src/routes/_authenticated/admin/agents.tsx'
+      - 'supabase/migrations/2026091118*.sql'
+      - '.github/workflows/phase-m-validation.yml'
+      - 'package.json'
+      - 'tsconfig.json'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx vitest run src/lib/aether/__tests__/agent-runtime.test.ts
+      - run: npm run build
