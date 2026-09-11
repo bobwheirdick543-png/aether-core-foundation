@@ -5,6 +5,8 @@ on:
     paths:
       - 'src/lib/aether/retrieval-engine.ts'
       - 'src/lib/aether/phase-i-retrieval.functions.ts'
+      - 'src/lib/aether/retrieval.functions.ts'
+      - 'src/lib/aether/tsconfig.phase-i.json'
       - 'src/lib/aether/__tests__/retrieval-engine.test.ts'
       - 'src/routes/_authenticated/retrieval.tsx'
       - 'supabase/migrations/20260911140000_phase_i_retrieval_rag_knowledge_graph.sql'
@@ -16,6 +18,8 @@ on:
     paths:
       - 'src/lib/aether/retrieval-engine.ts'
       - 'src/lib/aether/phase-i-retrieval.functions.ts'
+      - 'src/lib/aether/retrieval.functions.ts'
+      - 'src/lib/aether/tsconfig.phase-i.json'
       - 'src/lib/aether/__tests__/retrieval-engine.test.ts'
       - 'src/routes/_authenticated/retrieval.tsx'
       - 'supabase/migrations/20260911140000_phase_i_retrieval_rag_knowledge_graph.sql'
@@ -32,7 +36,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun install --frozen-lockfile
+      - run: bun install
       - run: bunx tsc -p src/lib/aether/tsconfig.phase-i.json --noEmit --pretty false
       - run: bunx vitest run src/lib/aether/__tests__/retrieval-engine.test.ts
       - run: bun run build
