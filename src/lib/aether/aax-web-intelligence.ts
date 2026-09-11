@@ -109,13 +109,39 @@ export async function runAetherWebResearch(input: { query: string; providers?: W
   return { query, sources, failedSources, sourceDomains: domains, diversity: scoreDiversity(sources), completedAt: new Date().toISOString() };
 }
 
-export async function persistAetherWebResearch(admin: SupabaseClient, input: { ownerId: string; scope: "user" | "admin" | "agent" | "api"; query: string; result: AetherWebResearchResult; taskId?: string | null; runId?: string | null }) {
-  const { data: session, error: sessionError } = await admin.from("aether_research_sessions").insert({ owner_id: input.ownerId, scope: input.scope, query: input.query, status: "completed", source_count: input.result.sources.length, diversity_score: input.result.diversity, task_id: input.taskId ?? null, run_id: input.runId ?? null, completed_at: input.result.completedAt, last_event_at: input.result.completedAt, freshness_policy: { staleAfterDays: 30 }, research_plan: { strategy: "multi_source", query: input.query } }).select("id").single();
+export async function persistAetherWebResearch(admin: SupabaseClient, input: { ownerId: string; scope: "user" | "admin" | "agent" | "api"; query: string; result: AetherWebResearchResult; taskId?: string | null; runId?: string | null; projectId?: string | null }) {
+  const { data: session, error: sessionError } = await admin.from("aether_research_sessions").insert({ owner_id: input.ownerId, project_id: input.projectId ?? null, scope: input.scope, query: input.query, status: "completed", source_count: input.result.sources.length, diversity_score: input.result.diversity, task_id: input.taskId ?? null, run_id: input.runId ?? null, completed_at: input.result.completedAt, last_event_at: input.result.completedAt, freshness_policy: { staleAfterDays: 30 }, research_plan: { strategy: "multi_source", query: input.query } }).select("id").single();
   if (sessionError || !session) throw new Error(`Could not persist research session: ${sessionError?.message ?? "unknown error"}`);
-  if (input.result.sources.length) {
-    const rows = input.result.sources.map((source) => ({ session_id: session.id, owner_id: input.ownerId, url: source.url, canonical_url: source.canonicalUrl, final_url: source.url, title: source.title, domain: source.domain, provider: source.provider, snippet: source.snippet, content: source.text, status: "retrieved", http_status: source.status, content_hash: source.contentHash, published_at: source.publishedAt ?? null, updated_at_source: source.updatedAt ?? null, retrieved_at: source.retrievedAt, content_type: source.contentType ?? null, content_length: source.contentLength ?? null, redirect_count: source.redirectCount ?? 0, retrieval_attempts: source.attempts ?? 1, stale_at: source.stale ? source.retrievedAt : null, last_checked_at: source.retrievedAt, quality_score: source.qualityScore ?? null, quality_factors: source.qualityFactors ?? {}, robots_allowed: true, retrieval_policy: { maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true } }));
-    const { error } = await admin.from("aether_research_sources").insert(rows); if (error) throw new Error(`Could not persist research sources: ${error.message}`);
+
+  const successfulRows = input.result.sources.map((source) => ({ session_id: session.id, owner_id: input.ownerId, project_id: input.projectId ?? null, url: source.url, canonical_url: source.canonicalUrl, final_url: source.url, title: source.title, domain: source.domain, provider: source.provider, snippet: source.snippet, content: source.text, status: "retrieved", http_status: source.status, content_hash: source.contentHash, published_at: source.publishedAt ?? null, updated_at_source: source.updatedAt ?? null, retrieved_at: source.retrievedAt, content_type: source.contentType ?? null, content_length: source.contentLength ?? null, redirect_count: source.redirectCount ?? 0, retrieval_attempts: source.attempts ?? 1, stale_at: source.stale ? source.retrievedAt : null, last_checked_at: source.retrievedAt, quality_score: source.qualityScore ?? null, quality_factors: source.qualityFactors ?? {}, robots_allowed: true, retrieval_policy: { maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true } }));
+  const failedRows = input.result.failedSources.map((failure) => ({ session_id: session.id, owner_id: input.ownerId, project_id: input.projectId ?? null, url: failure.url, canonical_url: (() => { try { return normalizeUrl(failure.url); } catch { return failure.url; } })(), final_url: failure.url, title: null, domain: domainFromUrl(failure.url), provider: failure.provider, snippet: null, content: null, status: failure.failureClass === "robots_denied" || failure.failureClass === "blocked" ? "blocked" : "failed", http_status: null, content_hash: null, published_at: null, updated_at_source: null, retrieved_at: input.result.completedAt, content_type: null, content_length: null, redirect_count: 0, retrieval_attempts: 1, stale_at: null, last_checked_at: input.result.completedAt, quality_score: 0, quality_factors: { retrieval: 0 }, robots_allowed: failure.failureClass === "robots_denied" ? false : null, retrieval_policy: { maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true }, failure_class: failure.failureClass ?? "unknown", error: failure.error }));
+
+  const insertedSources: Array<{ id: string; content_hash: string | null; retrieved_at: string; retrieval_attempts: number; status: string; error?: string | null }> = [];
+  if (successfulRows.length) {
+    const { data, error } = await admin.from("aether_research_sources").insert(successfulRows).select("id,content_hash,retrieved_at,retrieval_attempts,status,error");
+    if (error) throw new Error(`Could not persist research sources: ${error.message}`);
+    insertedSources.push(...((data ?? []) as typeof insertedSources));
   }
+  if (failedRows.length) {
+    const { data, error } = await admin.from("aether_research_sources").insert(failedRows).select("id,content_hash,retrieved_at,retrieval_attempts,status,error");
+    if (error) throw new Error(`Could not persist failed research sources: ${error.message}`);
+    insertedSources.push(...((data ?? []) as typeof insertedSources));
+  }
+
+  if (insertedSources.length) {
+    const versions = insertedSources.filter((source) => source.content_hash).map((source) => ({ source_id: source.id, owner_id: input.ownerId, version_number: 1, content_hash: source.content_hash as string, change_state: "new", retrieved_at: source.retrieved_at, metadata: { sessionId: session.id } }));
+    if (versions.length) {
+      const { data: versionRows, error: versionError } = await admin.from("aether_research_source_versions").insert(versions).select("id,source_id");
+      if (versionError) throw new Error(`Could not persist source versions: ${versionError.message}`);
+      for (const version of (versionRows ?? []) as Array<{ id: string; source_id: string }>) {
+        await admin.from("aether_research_sources").update({ version_id: version.id }).eq("id", version.source_id).eq("owner_id", input.ownerId);
+      }
+    }
+    const attempts = insertedSources.map((source) => ({ session_id: session.id, source_id: source.id, owner_id: input.ownerId, attempt: source.retrieval_attempts || 1, status: source.status === "retrieved" ? "retrieved" : source.status === "blocked" ? "blocked" : "failed", started_at: source.retrieved_at, ended_at: source.retrieved_at, error: source.error ?? null }));
+    const { error: attemptError } = await admin.from("aether_research_retrieval_attempts").insert(attempts);
+    if (attemptError) throw new Error(`Could not persist retrieval attempts: ${attemptError.message}`);
+  }
+
   return session.id as string;
 }
 
