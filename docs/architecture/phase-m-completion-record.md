@@ -1,7 +1,7 @@
 # Aether Phase M — Agent SDK & Ten-Agent Runtime
 
 Date: 2026-09-11
-Status: IMPLEMENTED — durable control plane and runtime boundary pushed to `main`
+Status: COMPLETE — implemented, validated and pushed to `main`
 
 ## Scope delivered
 
@@ -27,7 +27,19 @@ Existing `auth.users`, `profiles`, `user_roles`, `projects`, `tasks` and `task_r
 
 ## Production database validation
 
-Supabase production project `hpxisijyglkdlcpqjtpd` contains the Phase M migration series and reports 10 agents, 84 permission rows, 10 durable agent versions and zero fabricated messages/handoffs/sandbox/audit rows at initialization. Permission checks correctly deny disabled agents and prohibited role/permission mutation paths.
+Supabase production project `hpxisijyglkdlcpqjtpd` contains the Phase M migration series and the durable ten-agent registry. Permission checks were smoke-tested against an executable agent and prohibited role mutation. The registry starts with durable version records and no fabricated messages, handoffs, sandbox sessions or action-audit history.
+
+## CI validation
+
+Final Phase M workflow: `34617630038`.
+
+All stages passed:
+
+- focused Agent SDK TypeScript check
+- Agent SDK/lifecycle Vitest suite: 4/4 tests passed
+- production build (`bun run build:dev`)
+
+Final `main` commit: `3346b038f32f1acf2bbab804b77b53344001cb1f`.
 
 ## Files
 
@@ -38,7 +50,7 @@ Supabase production project `hpxisijyglkdlcpqjtpd` contains the Phase M migratio
 - `src/routes/_authenticated/admin/agents.tsx` — durable Agent SDK admin control surface.
 - `src/lib/aether/__tests__/agent-runtime.test.ts` — contract/lifecycle regression coverage.
 - `.github/workflows/phase-m-validation.yml` — typecheck, Agent SDK tests and production build validation.
-- `supabase/migrations/20260911180000_phase_m_agent_sdk_and_runtime.sql` plus the Phase M hardening/seed migrations — durable schema and security boundary.
+- `supabase/migrations/20260911180000_phase_m_agent_sdk_and_runtime.sql` plus the Phase M hardening/seed/execution migrations — durable schema and security boundary.
 
 ## Architecture relationship
 
@@ -50,4 +62,4 @@ Phase M does not execute work directly from browser state and does not create a 
 
 ## Deployment note
 
-No Vercel deployment or validation is part of Phase M. Validation is performed through repository CI and direct Supabase schema/runtime checks.
+No Vercel deployment or validation is part of Phase M. Validation was performed through repository CI and direct Supabase schema/runtime checks.
