@@ -34,3 +34,5 @@ All Phase O decisions, requests, events, policies and incidents persist in Supab
 ## Validation gate
 
 The Phase O validation workflow must pass focused TypeScript, Phase O tests and the production build. Supabase smoke tests verify allow, deny and approval policy paths. Vercel is intentionally not used for validation or deployment.
+
+Validation workflow installation was aligned with the repository's established `bun install` convention after the first validation attempt exposed an unrelated frozen-lockfile mismatch.
