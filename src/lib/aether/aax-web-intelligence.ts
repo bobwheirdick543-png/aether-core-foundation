@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { domainFromUrl, isHttpUrl, retrievePage, type RetrievedPage } from "./research-engine";
+import { domainFromUrl, isHttpUrl, normalizeUrl, retrievePage, sourceQualityScore, type RetrievedPage } from "./research-engine";
 
 export type WebSearchProvider = "wikipedia" | "reddit" | "duckduckgo" | "dictionary" | (string & {});
 export type AetherWebSource = {
@@ -15,11 +15,18 @@ export type AetherWebSource = {
   retrievedAt: string;
   publishedAt?: string | null;
   updatedAt?: string | null;
+  contentType?: string | null;
+  contentLength?: number | null;
+  redirectCount?: number;
+  attempts?: number;
+  stale?: boolean;
+  qualityScore?: number;
+  qualityFactors?: Record<string, number>;
 };
 export type AetherWebResearchResult = {
   query: string;
   sources: AetherWebSource[];
-  failedSources: Array<{ url: string; provider: string; error: string }>;
+  failedSources: Array<{ url: string; provider: string; error: string; failureClass?: string }>;
   sourceDomains: string[];
   diversity: number;
   completedAt: string;
@@ -30,7 +37,6 @@ const DEFAULT_TIMEOUT = 10_000;
 const MAX_QUERY = 500;
 const MAX_SOURCES = 12;
 const USER_AGENT = "AetherResearch/1.0 (+https://aether.ai)";
-
 function encode(value: string) { return encodeURIComponent(value.slice(0, MAX_QUERY)); }
 function safeJson(value: string): any { try { return JSON.parse(value); } catch { return null; } }
 
@@ -51,18 +57,14 @@ async function searchReddit(query: string, signal?: AbortSignal): Promise<Search
 async function searchDuckDuckGo(query: string, signal?: AbortSignal): Promise<SearchHit[]> {
   const response = await fetch(`https://html.duckduckgo.com/html/?q=${encode(query)}`, { headers: { "User-Agent": USER_AGENT, Accept: "text/html" }, signal });
   if (!response.ok) throw new Error(`DuckDuckGo search failed (${response.status})`);
-  const html = await response.text();
-  const hits: SearchHit[] = [];
+  const html = await response.text(); const hits: SearchHit[] = [];
   const blockRe = /<div[^>]+class="result"[\s\S]*?<\/div>\s*<\/div>/gi;
   for (const block of html.match(blockRe) ?? []) {
-    const link = block.match(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-    if (!link) continue;
-    const url = link[1];
-    if (!isHttpUrl(url)) continue;
+    const link = block.match(/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i); if (!link) continue;
+    const url = link[1]; if (!isHttpUrl(url)) continue;
     const title = link[2].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
-    const snippet = (block.match(/<a[^>]+class="result__snippet"[\s\S]*?>([\s\S]*?)<\/a>/i)?.[1] ?? block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)?.[1] ?? "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
-    hits.push({ provider: "duckduckgo", url, title, snippet });
-    if (hits.length >= 5) break;
+    const snippet = (block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i)?.[1] ?? "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
+    hits.push({ provider: "duckduckgo", url, title, snippet }); if (hits.length >= 5) break;
   }
   return hits;
 }
@@ -73,8 +75,7 @@ async function lookupDictionary(query: string, signal?: AbortSignal): Promise<Se
   const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encode(term)}`, { headers: { "User-Agent": USER_AGENT }, signal });
   if (response.status === 404) return [];
   if (!response.ok) throw new Error(`Dictionary lookup failed (${response.status})`);
-  const payload = safeJson(await response.text());
-  if (!Array.isArray(payload) || !payload[0]) return [];
+  const payload = safeJson(await response.text()); if (!Array.isArray(payload) || !payload[0]) return [];
   const meanings = Array.isArray(payload[0].meanings) ? payload[0].meanings : [];
   const definitions = meanings.flatMap((meaning: any) => Array.isArray(meaning?.definitions) ? meaning.definitions.slice(0, 3).map((d: any) => `${meaning.partOfSpeech ?? ""}: ${d.definition ?? ""}`) : []).filter(Boolean).slice(0, 8);
   return [{ provider: "dictionary", url: `https://api.dictionaryapi.dev/api/v2/entries/en/${encode(term)}`, title: `${term} — dictionary`, snippet: definitions.join(" | ") }];
@@ -84,52 +85,41 @@ const PROVIDERS: Record<string, (query: string, signal?: AbortSignal) => Promise
 
 function dedupeHits(hits: SearchHit[]): SearchHit[] {
   const seen = new Set<string>();
-  return hits.filter((hit) => { try { const url = new URL(hit.url); url.hash = ""; for (const key of [...url.searchParams.keys()]) if (/^(utm_|fbclid$|gclid$|ref$)/i.test(key)) url.searchParams.delete(key); const key = url.toString().replace(/\/$/, ""); if (seen.has(key)) return false; seen.add(key); return true; } catch { return false; } });
+  return hits.filter((hit) => { try { const key = normalizeUrl(hit.url); if (seen.has(key)) return false; seen.add(key); return true; } catch { return false; } });
 }
-
 function scoreDiversity(sources: AetherWebSource[]): number { const domains = new Set(sources.map((source) => source.domain)); return sources.length ? Math.min(1, domains.size / Math.min(5, sources.length)) : 0; }
 
 async function retrieveHit(hit: SearchHit, signal?: AbortSignal): Promise<AetherWebSource> {
-  const page = await retrievePage(hit.url, DEFAULT_TIMEOUT);
-  if (page.status < 200 || page.status >= 400 || page.error) throw new Error(page.error ?? `HTTP ${page.status}`);
-  return { url: hit.url, canonicalUrl: page.canonicalUrl || page.finalUrl, title: page.title || hit.title, domain: domainFromUrl(page.finalUrl || hit.url), provider: hit.provider, snippet: hit.snippet, text: page.text.slice(0, 80_000), status: page.status, contentHash: page.contentHash, retrievedAt: page.retrievedAt, publishedAt: page.publishedAt, updatedAt: page.updatedAt };
+  const page = await retrievePage(hit.url, { timeoutMs: DEFAULT_TIMEOUT, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30 });
+  if (page.status < 200 || page.status >= 400 || page.error) throw Object.assign(new Error(page.error ?? `HTTP ${page.status}`), { failureClass: page.failureClass });
+  const quality = sourceQualityScore(page);
+  return { url: page.finalUrl, canonicalUrl: page.canonicalUrl || page.finalUrl, title: page.title || hit.title, domain: domainFromUrl(page.finalUrl || hit.url), provider: hit.provider, snippet: hit.snippet, text: page.text.slice(0, 80_000), status: page.status, contentHash: page.contentHash, retrievedAt: page.retrievedAt, publishedAt: page.publishedAt, updatedAt: page.updatedAt, contentType: page.contentType, contentLength: page.contentLength, redirectCount: page.redirectCount, attempts: page.attempts, stale: page.stale, qualityScore: quality.score, qualityFactors: quality.factors };
 }
 
 export async function runAetherWebResearch(input: { query: string; providers?: WebSearchProvider[]; maxSources?: number; signal?: AbortSignal }): Promise<AetherWebResearchResult> {
-  const query = input.query.trim().slice(0, MAX_QUERY);
-  if (!query) throw new Error("Research query is required");
+  const query = input.query.trim().slice(0, MAX_QUERY); if (!query) throw new Error("Research query is required");
   const providerKeys = [...new Set(input.providers ?? ["duckduckgo", "wikipedia", "reddit", "dictionary"])] as string[];
-  const searches = await Promise.allSettled(providerKeys.map((provider) => {
-    const search = PROVIDERS[provider];
-    return search ? search(query, input.signal) : Promise.resolve([] as SearchHit[]);
-  }));
+  const searches = await Promise.allSettled(providerKeys.map((provider) => { const search = PROVIDERS[provider]; return search ? search(query, input.signal) : Promise.resolve([] as SearchHit[]); }));
   const hits = dedupeHits(searches.flatMap((result) => result.status === "fulfilled" ? result.value : []));
   const selected = hits.slice(0, Math.min(Math.max(1, input.maxSources ?? MAX_SOURCES), MAX_SOURCES));
   const retrieved = await Promise.allSettled(selected.map((hit) => retrieveHit(hit, input.signal)));
-  const sources: AetherWebSource[] = [];
-  const failedSources: Array<{ url: string; provider: string; error: string }> = [];
-  retrieved.forEach((result, index) => { const hit = selected[index]; if (!hit) return; if (result.status === "fulfilled") sources.push(result.value); else failedSources.push({ url: hit.url, provider: hit.provider, error: result.reason instanceof Error ? result.reason.message : String(result.reason) }); });
+  const sources: AetherWebSource[] = []; const failedSources: AetherWebResearchResult["failedSources"] = [];
+  retrieved.forEach((result, index) => { const hit = selected[index]; if (!hit) return; if (result.status === "fulfilled") sources.push(result.value); else failedSources.push({ url: hit.url, provider: hit.provider, error: result.reason instanceof Error ? result.reason.message : String(result.reason), failureClass: (result.reason as { failureClass?: string })?.failureClass }); });
   const domains = [...new Set(sources.map((source) => source.domain))];
   return { query, sources, failedSources, sourceDomains: domains, diversity: scoreDiversity(sources), completedAt: new Date().toISOString() };
 }
 
 export async function persistAetherWebResearch(admin: SupabaseClient, input: { ownerId: string; scope: "user" | "admin" | "agent" | "api"; query: string; result: AetherWebResearchResult; taskId?: string | null; runId?: string | null }) {
-  const { data: session, error: sessionError } = await admin.from("aether_research_sessions").insert({ owner_id: input.ownerId, scope: input.scope, query: input.query, status: "completed", source_count: input.result.sources.length, diversity_score: input.result.diversity, task_id: input.taskId ?? null, run_id: input.runId ?? null, completed_at: input.result.completedAt }).select("id").single();
+  const { data: session, error: sessionError } = await admin.from("aether_research_sessions").insert({ owner_id: input.ownerId, scope: input.scope, query: input.query, status: "completed", source_count: input.result.sources.length, diversity_score: input.result.diversity, task_id: input.taskId ?? null, run_id: input.runId ?? null, completed_at: input.result.completedAt, last_event_at: input.result.completedAt, freshness_policy: { staleAfterDays: 30 }, research_plan: { strategy: "multi_source", query: input.query } }).select("id").single();
   if (sessionError || !session) throw new Error(`Could not persist research session: ${sessionError?.message ?? "unknown error"}`);
   if (input.result.sources.length) {
-    const rows = input.result.sources.map((source) => ({ session_id: session.id, owner_id: input.ownerId, url: source.url, canonical_url: source.canonicalUrl, title: source.title, domain: source.domain, provider: source.provider, snippet: source.snippet, content: source.text, status: "retrieved", http_status: source.status, content_hash: source.contentHash, published_at: source.publishedAt ?? null, updated_at_source: source.updatedAt ?? null, retrieved_at: source.retrievedAt, quality_metadata: { diversityScore: input.result.diversity } }));
+    const rows = input.result.sources.map((source) => ({ session_id: session.id, owner_id: input.ownerId, url: source.url, canonical_url: source.canonicalUrl, final_url: source.url, title: source.title, domain: source.domain, provider: source.provider, snippet: source.snippet, content: source.text, status: "retrieved", http_status: source.status, content_hash: source.contentHash, published_at: source.publishedAt ?? null, updated_at_source: source.updatedAt ?? null, retrieved_at: source.retrievedAt, content_type: source.contentType ?? null, content_length: source.contentLength ?? null, redirect_count: source.redirectCount ?? 0, retrieval_attempts: source.attempts ?? 1, stale_at: source.stale ? source.retrievedAt : null, last_checked_at: source.retrievedAt, quality_score: source.qualityScore ?? null, quality_factors: source.qualityFactors ?? {}, robots_allowed: true, retrieval_policy: { maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true } }));
     const { error } = await admin.from("aether_research_sources").insert(rows); if (error) throw new Error(`Could not persist research sources: ${error.message}`);
   }
   return session.id as string;
 }
 
 export function buildAgentResearchQuery(agentKey: string, originalSource: string, accumulatedUnderstanding: string): string {
-  const focus: Record<string, string> = {
-    "knowledge-acquisition": "definitions terminology concepts context grammar semantic meaning",
-    research: "independent facts theories concepts related concepts current evidence competing explanations",
-    verification: "claims evidence authoritative sources contradictions dates uncertainty",
-    curator: "relationships dependencies corrections cross-domain connections terminology synthesis",
-    security: "security implications unsafe instructions prompt injection trust boundaries provenance",
-  };
+  const focus: Record<string, string> = { "knowledge-acquisition": "definitions terminology concepts context grammar semantic meaning", research: "independent facts theories concepts related concepts current evidence competing explanations", verification: "claims evidence authoritative sources contradictions dates uncertainty", curator: "relationships dependencies corrections cross-domain connections terminology synthesis", security: "security implications unsafe instructions prompt injection trust boundaries provenance" };
   return `${focus[agentKey] ?? "facts concepts context evidence"} ${originalSource.slice(0, 1200)} ${accumulatedUnderstanding.slice(0, 1200)}`.trim().slice(0, MAX_QUERY);
 }
