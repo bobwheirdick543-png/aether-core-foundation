@@ -1,0 +1,3 @@
+import {createServerFn} from '@tanstack/react-start';import {requireSupabaseAuth} from '@/integrations/supabase/auth-middleware';import {supabaseAdmin} from '@/integrations/supabase/client.server';
+const db=supabaseAdmin as any;
+export const getBattleversiaRankings=createServerFn({method:'GET',strict:false}).middleware([requireSupabaseAuth]).handler(async()=>{const {data,error}=await db.from('bv_matches').select('winner_id,status').eq('status','completed');if(error)throw new Response(error.message,{status:500});const wins=new Map<string,number>();for(const row of data??[])if(row.winner_id)wins.set(row.winner_id,(wins.get(row.winner_id)??0)+1);return [...wins.entries()].map(([playerId,wins])=>({playerId,wins})).sort((a,b)=>b.wins-a.wins).slice(0,100);});
