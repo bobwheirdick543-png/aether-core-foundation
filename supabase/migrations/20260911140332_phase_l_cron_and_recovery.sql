@@ -1,0 +1,2 @@
+-- Compatibility migration for the production Phase L migration history.
+-- Cron/recovery implementation is consolidated in 20260911170000_phase_l_scheduling.sql and its hardening migration.
