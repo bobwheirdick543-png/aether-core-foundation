@@ -8,21 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Panel, Tag } from "@/components/common/Primitives";
 import { listMyVerificationSessions } from "@/lib/aether/verification-sessions.functions";
-import {
-  executeVerificationRun,
-  getMyVerificationRun,
-  reviewVerificationClaim,
-  startVerificationRun,
-} from "@/lib/aether/verification.functions";
+import { executeVerificationRun, getMyVerificationRun, reviewVerificationClaim, startVerificationRun } from "@/lib/aether/verification.functions";
 
 const TONE: Record<string, "success" | "warning" | "primary" | "neutral"> = {
-  verified: "success",
-  conflicting: "warning",
-  unsupported: "warning",
-  outdated: "warning",
-  rejected: "warning",
-  needs_review: "warning",
-  pending: "neutral",
+  verified: "success", conflicting: "warning", unsupported: "warning", outdated: "warning", rejected: "warning", needs_review: "warning", pending: "neutral",
 };
 
 export function VerificationPanel() {
@@ -39,14 +28,14 @@ export function VerificationPanel() {
   const [run, setRun] = useState<any>(null);
   const [busy, setBusy] = useState(false);
 
-  async function verify() {
+  async function verify(): Promise<void> {
     const claims = claimsText.split(/\n+/).map((claim) => claim.trim()).filter(Boolean);
-    if (!sessionId) return toast.error("Select a research session first.");
-    if (!claims.length) return toast.error("Enter at least one claim, one per line.");
+    if (!sessionId) { toast.error("Select a research session first."); return; }
+    if (!claims.length) { toast.error("Enter at least one claim, one per line."); return; }
     setBusy(true);
     try {
       const queued = await start({ data: { sessionId, claims, idempotencyKey: `ui:${sessionId}:${claims.join("|").slice(0, 120)}` } });
-      const currentRunId = queued.runId;
+      const currentRunId = queued.run_id;
       if (!currentRunId) throw new Error("Verification run was not created.");
       setRunId(currentRunId);
       await execute({ data: { verificationRunId: currentRunId } });
@@ -56,9 +45,7 @@ export function VerificationPanel() {
       queryClient.invalidateQueries({ queryKey: ["verification-sessions"] });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Verification failed.");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
   async function decide(claimId: string, decision: "accept" | "reject" | "needs_review" | "reverify") {
@@ -66,19 +53,14 @@ export function VerificationPanel() {
       await review({ data: { claimId, decision } });
       if (runId) setRun(await loadRun({ data: { verificationRunId: runId } }));
       toast.success("Review decision saved.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not save review decision.");
-    }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save review decision."); }
   }
 
   return (
     <Panel className="space-y-5">
       <div className="flex items-start gap-3">
         <div className="rounded-xl border border-border/60 bg-muted/40 p-2"><ShieldCheck className="h-5 w-5" /></div>
-        <div>
-          <h2 className="text-sm font-semibold">Verification</h2>
-          <p className="text-xs text-muted-foreground">Test claims against persisted research evidence. Verification never publishes production knowledge.</p>
-        </div>
+        <div><h2 className="text-sm font-semibold">Verification</h2><p className="text-xs text-muted-foreground">Test claims against persisted research evidence. Verification never publishes production knowledge.</p></div>
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="verification-session">Research session</Label>
@@ -93,13 +75,9 @@ export function VerificationPanel() {
         <p className="text-[11px] text-muted-foreground">Up to 50 claims. The engine records evidence, agreement, contradiction, date mismatch, uncertainty, authority and freshness.</p>
       </div>
       <Button type="button" onClick={verify} disabled={busy || !sessionId}>{busy ? "Verifying…" : "Verify claims"}</Button>
-
       {run ? (
         <div className="space-y-3 border-t border-border/60 pt-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div><p className="text-sm font-medium">{run.run.summary || "Verification result"}</p><p className="text-xs text-muted-foreground">Verifier {run.run.verifier_version}</p></div>
-            <Tag tone={run.run.status === "completed" ? "success" : "warning"}>{run.run.status}</Tag>
-          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">{run.run.summary || "Verification result"}</p><p className="text-xs text-muted-foreground">Verifier {run.run.verifier_version}</p></div><Tag tone={run.run.status === "completed" ? "success" : "warning"}>{run.run.status}</Tag></div>
           {(run.claims ?? []).map((claim: any) => (
             <div key={claim.id} className="rounded-xl border border-border/60 p-3 space-y-2">
               <div className="flex items-start justify-between gap-2"><p className="text-sm">{claim.claim}</p><Tag tone={TONE[claim.verification_state] ?? "neutral"}>{claim.verification_state}</Tag></div>
