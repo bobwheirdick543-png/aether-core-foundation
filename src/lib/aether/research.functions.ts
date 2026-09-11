@@ -8,7 +8,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { isHttpUrl } from "./research-engine";
 import { createTask, createRun } from "./task-service";
-import { executeResearchStep } from "./executor";
 
 export const startResearchRun = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -25,6 +24,22 @@ export const startResearchRun = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+    // A project id is never accepted merely because it is syntactically valid.
+    // The authenticated user's project membership/ownership must be established
+    // before the durable task is created.
+    if (data.projectId) {
+      const { data: project, error: projectError } = await context.supabase
+        .from("projects")
+        .select("id, owner_id")
+        .eq("id", data.projectId)
+        .eq("owner_id", context.userId)
+        .maybeSingle();
+      if (projectError) throw new Error(`Could not validate project access: ${projectError.message}`);
+      if (!project) throw new Error("Project not found or access denied");
+    }
+
+    // Research is queued into the universal runtime. Do not execute inside the
+    // HTTP request: closing the browser must never cancel or orphan the work.
     const task = await createTask(supabaseAdmin, {
       owner_id: context.userId,
       project_id: data.projectId,
@@ -42,45 +57,22 @@ export const startResearchRun = createServerFn({ method: "POST" })
       attempt: 1,
     });
 
-    // Execute through the controlled, permission-checked path
-    const result = await executeResearchStep(supabaseAdmin, {
-      taskId: task.id,
-      runId: run.id,
-      ownerId: context.userId,
-      urls: data.urls,
-      topic: data.topic,
-    });
-
-    // Best-effort research_runs row
-    const sourceCount = (result.result as any)?.source_count ?? 0;
-    const { data: researchRow } = await supabaseAdmin
-      .from("research_runs")
-      .insert({
-        user_id: context.userId,
-        topic: data.topic,
-        status: result.status === "completed" ? "completed" : "failed",
-        sources: (result.result as any)?.sources ?? [],
-        findings: [],
-      })
-      .select("id")
-      .maybeSingle();
-
     await supabaseAdmin.from("audit_logs").insert({
       actor_id: context.userId,
-      action: "research.completed",
+      action: "research.queued",
       target_type: "tasks",
       target_id: task.id,
-      metadata: { run_id: run.id, source_count: sourceCount, status: result.status },
+      metadata: { run_id: run.id, project_id: data.projectId, source_count_requested: data.urls.length },
     });
 
     return {
       taskId: task.id,
       runId: run.id,
-      researchId: researchRow?.id ?? null,
-      sourceCount,
-      status: result.status,
-      warnings: result.warnings ?? [],
-      errors: result.errors ?? [],
+      researchId: null,
+      sourceCount: 0,
+      status: "queued" as const,
+      warnings: [],
+      errors: [],
     };
   });
 
