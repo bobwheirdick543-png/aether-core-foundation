@@ -1,0 +1,35 @@
+name: Phase P Validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/optimization.ts'
+      - 'src/lib/aether/optimization-runtime.ts'
+      - 'src/lib/aether/optimization.functions.ts'
+      - 'src/lib/aether/agents.ts'
+      - 'src/lib/aether/agent-registry.ts'
+      - 'src/lib/aether/security-runtime.ts'
+      - 'src/lib/aether/__tests__/optimization-runtime.test.ts'
+      - 'src/routes/_authenticated/admin/optimization.tsx'
+      - 'supabase/migrations/**phase_p**.sql'
+      - 'tsconfig.phase-p.json'
+      - '.github/workflows/phase-p-validation.yml'
+      - 'docs/architecture/phase-p-completion-record.md'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.21'
+      - run: bun install
+      - name: Phase P focused TypeScript
+        run: bunx tsc -p tsconfig.phase-p.json --noEmit
+      - name: Phase P tests
+        run: bunx vitest run src/lib/aether/__tests__/optimization-runtime.test.ts
+      - name: Production build
+        run: bun run build:dev
