@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { domainFromUrl, isHttpUrl, normalizeUrl, retrievePage, sourceQualityScore, type RetrievedPage } from "./research-engine";
+import { ResearchAccessLimiter } from "./research-policy";
 
 export type WebSearchProvider = "wikipedia" | "reddit" | "duckduckgo" | "dictionary" | (string & {});
 export type AetherWebSource = {
@@ -15,11 +16,18 @@ export type AetherWebSource = {
   retrievedAt: string;
   publishedAt?: string | null;
   updatedAt?: string | null;
+  author?: string | null;
+  headings?: string[];
+  links?: string[];
+  encoding?: string | null;
+  parserVersion?: string;
+  parserWarnings?: string[];
   contentType?: string | null;
   contentLength?: number | null;
   redirectCount?: number;
   attempts?: number;
   stale?: boolean;
+  staleReason?: string | null;
   qualityScore?: number;
   qualityFactors?: Record<string, number>;
 };
@@ -89,20 +97,26 @@ function dedupeHits(hits: SearchHit[]): SearchHit[] {
 }
 function scoreDiversity(sources: AetherWebSource[]): number { const domains = new Set(sources.map((source) => source.domain)); return sources.length ? Math.min(1, domains.size / Math.min(5, sources.length)) : 0; }
 
-async function retrieveHit(hit: SearchHit, signal?: AbortSignal): Promise<AetherWebSource> {
-  const page = await retrievePage(hit.url, { timeoutMs: DEFAULT_TIMEOUT, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30 });
-  if (page.status < 200 || page.status >= 400 || page.error) throw Object.assign(new Error(page.error ?? `HTTP ${page.status}`), { failureClass: page.failureClass });
-  const quality = sourceQualityScore(page);
-  return { url: page.finalUrl, canonicalUrl: page.canonicalUrl || page.finalUrl, title: page.title || hit.title, domain: domainFromUrl(page.finalUrl || hit.url), provider: hit.provider, snippet: hit.snippet, text: page.text.slice(0, 80_000), status: page.status, contentHash: page.contentHash, retrievedAt: page.retrievedAt, publishedAt: page.publishedAt, updatedAt: page.updatedAt, contentType: page.contentType, contentLength: page.contentLength, redirectCount: page.redirectCount, attempts: page.attempts, stale: page.stale, qualityScore: quality.score, qualityFactors: quality.factors };
+async function retrieveHit(hit: SearchHit, signal: AbortSignal | undefined, limiter: ResearchAccessLimiter): Promise<AetherWebSource> {
+  await limiter.acquire(hit.url, signal);
+  try {
+    const page = await retrievePage(hit.url, { timeoutMs: DEFAULT_TIMEOUT, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30, signal });
+    if (page.status < 200 || page.status >= 400 || page.error) throw Object.assign(new Error(page.error ?? `HTTP ${page.status}`), { failureClass: page.failureClass });
+    const quality = sourceQualityScore(page);
+    const staleReason = page.stale ? (page.updatedAt || page.publishedAt ? "source_date_older_than_policy" : "no_recent_date_signal") : null;
+    return { url: page.finalUrl, canonicalUrl: page.canonicalUrl || page.finalUrl, title: page.title || hit.title, domain: domainFromUrl(page.finalUrl || hit.url), provider: hit.provider, snippet: hit.snippet, text: page.text.slice(0, 80_000), status: page.status, contentHash: page.contentHash, retrievedAt: page.retrievedAt, publishedAt: page.publishedAt, updatedAt: page.updatedAt, author: page.author, headings: page.headings, links: page.links, encoding: page.encoding, parserVersion: page.parserVersion, parserWarnings: page.parserWarnings, contentType: page.contentType, contentLength: page.contentLength, redirectCount: page.redirectCount, attempts: page.attempts, stale: page.stale, staleReason, qualityScore: quality.score, qualityFactors: quality.factors };
+  } finally { limiter.finish(); }
 }
 
 export async function runAetherWebResearch(input: { query: string; providers?: WebSearchProvider[]; maxSources?: number; signal?: AbortSignal }): Promise<AetherWebResearchResult> {
   const query = input.query.trim().slice(0, MAX_QUERY); if (!query) throw new Error("Research query is required");
   const providerKeys = [...new Set(input.providers ?? ["duckduckgo", "wikipedia", "reddit", "dictionary"])] as string[];
+  const limiter = new ResearchAccessLimiter({ maxConcurrent: 4, minDomainIntervalMs: 350 });
   const searches = await Promise.allSettled(providerKeys.map((provider) => { const search = PROVIDERS[provider]; return search ? search(query, input.signal) : Promise.resolve([] as SearchHit[]); }));
+  if (input.signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
   const hits = dedupeHits(searches.flatMap((result) => result.status === "fulfilled" ? result.value : []));
   const selected = hits.slice(0, Math.min(Math.max(1, input.maxSources ?? MAX_SOURCES), MAX_SOURCES));
-  const retrieved = await Promise.allSettled(selected.map((hit) => retrieveHit(hit, input.signal)));
+  const retrieved = await Promise.allSettled(selected.map((hit) => retrieveHit(hit, input.signal, limiter)));
   const sources: AetherWebSource[] = []; const failedSources: AetherWebResearchResult["failedSources"] = [];
   retrieved.forEach((result, index) => { const hit = selected[index]; if (!hit) return; if (result.status === "fulfilled") sources.push(result.value); else failedSources.push({ url: hit.url, provider: hit.provider, error: result.reason instanceof Error ? result.reason.message : String(result.reason), failureClass: (result.reason as { failureClass?: string })?.failureClass }); });
   const domains = [...new Set(sources.map((source) => source.domain))];
@@ -113,36 +127,51 @@ export async function persistAetherWebResearch(admin: SupabaseClient, input: { o
   const { data: session, error: sessionError } = await admin.from("aether_research_sessions").insert({ owner_id: input.ownerId, project_id: input.projectId ?? null, scope: input.scope, query: input.query, status: "completed", source_count: input.result.sources.length, diversity_score: input.result.diversity, task_id: input.taskId ?? null, run_id: input.runId ?? null, completed_at: input.result.completedAt, last_event_at: input.result.completedAt, freshness_policy: { staleAfterDays: 30 }, research_plan: { strategy: "multi_source", query: input.query } }).select("id").single();
   if (sessionError || !session) throw new Error(`Could not persist research session: ${sessionError?.message ?? "unknown error"}`);
 
-  const successfulRows = input.result.sources.map((source) => ({ session_id: session.id, owner_id: input.ownerId, project_id: input.projectId ?? null, url: source.url, canonical_url: source.canonicalUrl, final_url: source.url, title: source.title, domain: source.domain, provider: source.provider, snippet: source.snippet, content: source.text, status: "retrieved", http_status: source.status, content_hash: source.contentHash, published_at: source.publishedAt ?? null, updated_at_source: source.updatedAt ?? null, retrieved_at: source.retrievedAt, content_type: source.contentType ?? null, content_length: source.contentLength ?? null, redirect_count: source.redirectCount ?? 0, retrieval_attempts: source.attempts ?? 1, stale_at: source.stale ? source.retrievedAt : null, last_checked_at: source.retrievedAt, quality_score: source.qualityScore ?? null, quality_factors: source.qualityFactors ?? {}, robots_allowed: true, retrieval_policy: { maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true } }));
-  const failedRows = input.result.failedSources.map((failure) => ({ session_id: session.id, owner_id: input.ownerId, project_id: input.projectId ?? null, url: failure.url, canonical_url: (() => { try { return normalizeUrl(failure.url); } catch { return failure.url; } })(), final_url: failure.url, title: null, domain: domainFromUrl(failure.url), provider: failure.provider, snippet: null, content: null, status: failure.failureClass === "robots_denied" || failure.failureClass === "blocked" ? "blocked" : "failed", http_status: null, content_hash: null, published_at: null, updated_at_source: null, retrieved_at: input.result.completedAt, content_type: null, content_length: null, redirect_count: 0, retrieval_attempts: 1, stale_at: null, last_checked_at: input.result.completedAt, quality_score: 0, quality_factors: { retrieval: 0 }, robots_allowed: failure.failureClass === "robots_denied" ? false : null, retrieval_policy: { maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true }, failure_class: failure.failureClass ?? "unknown", error: failure.error }));
+  const successfulRows = input.result.sources.map((source) => ({ session_id: session.id, owner_id: input.ownerId, project_id: input.projectId ?? null, url: source.url, canonical_url: source.canonicalUrl, final_url: source.url, title: source.title, domain: source.domain, provider: source.provider, snippet: source.snippet, content: source.text, status: "retrieved", http_status: source.status, content_hash: source.contentHash, published_at: source.publishedAt ?? null, updated_at_source: source.updatedAt ?? null, retrieved_at: source.retrievedAt, author: source.author ?? null, headings: source.headings ?? [], links: source.links ?? [], encoding: source.encoding ?? null, parser_version: source.parserVersion ?? null, warnings: source.parserWarnings ?? [], content_type: source.contentType ?? null, content_length: source.contentLength ?? null, redirect_count: source.redirectCount ?? 0, retrieval_attempts: source.attempts ?? 1, stale_at: source.stale ? source.retrievedAt : null, stale_reason: source.staleReason ?? null, last_checked_at: source.retrievedAt, quality_score: source.qualityScore ?? null, quality_factors: source.qualityFactors ?? {}, robots_allowed: true, retrieval_policy: { maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true } }));
+  const failedRows = input.result.failedSources.map((failure) => ({ session_id: session.id, owner_id: input.ownerId, project_id: input.projectId ?? null, url: failure.url, canonical_url: (() => { try { return normalizeUrl(failure.url); } catch { return failure.url; } })(), final_url: failure.url, title: null, domain: domainFromUrl(failure.url), provider: failure.provider, snippet: null, content: null, status: failure.failureClass === "robots_denied" || failure.failureClass === "blocked" ? "blocked" : "failed", http_status: null, content_hash: null, published_at: null, updated_at_source: null, retrieved_at: input.result.completedAt, content_type: null, content_length: null, redirect_count: 0, retrieval_attempts: 1, stale_at: null, stale_reason: null, last_checked_at: input.result.completedAt, quality_score: 0, quality_factors: { retrieval: 0 }, robots_allowed: failure.failureClass === "robots_denied" ? false : null, retrieval_policy: { maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true }, failure_class: failure.failureClass ?? "unknown", error: failure.error }));
 
-  const insertedSources: Array<{ id: string; content_hash: string | null; retrieved_at: string; retrieval_attempts: number; status: string; error?: string | null }> = [];
+  const insertedSources: Array<{ id: string; url: string; content_hash: string | null; retrieved_at: string; retrieval_attempts: number; status: string; error?: string | null }> = [];
   if (successfulRows.length) {
-    const { data, error } = await admin.from("aether_research_sources").insert(successfulRows).select("id,content_hash,retrieved_at,retrieval_attempts,status,error");
+    const { data, error } = await admin.from("aether_research_sources").insert(successfulRows).select("id,url,content_hash,retrieved_at,retrieval_attempts,status,error");
     if (error) throw new Error(`Could not persist research sources: ${error.message}`);
     insertedSources.push(...((data ?? []) as typeof insertedSources));
   }
   if (failedRows.length) {
-    const { data, error } = await admin.from("aether_research_sources").insert(failedRows).select("id,content_hash,retrieved_at,retrieval_attempts,status,error");
+    const { data, error } = await admin.from("aether_research_sources").insert(failedRows).select("id,url,content_hash,retrieved_at,retrieval_attempts,status,error");
     if (error) throw new Error(`Could not persist failed research sources: ${error.message}`);
     insertedSources.push(...((data ?? []) as typeof insertedSources));
   }
 
-  if (insertedSources.length) {
-    const versions = insertedSources.filter((source) => source.content_hash).map((source) => ({ source_id: source.id, owner_id: input.ownerId, version_number: 1, content_hash: source.content_hash as string, change_state: "new", retrieved_at: source.retrieved_at, metadata: { sessionId: session.id } }));
-    if (versions.length) {
-      const { data: versionRows, error: versionError } = await admin.from("aether_research_source_versions").insert(versions).select("id,source_id");
-      if (versionError) throw new Error(`Could not persist source versions: ${versionError.message}`);
-      for (const version of (versionRows ?? []) as Array<{ id: string; source_id: string }>) {
-        await admin.from("aether_research_sources").update({ version_id: version.id }).eq("id", version.source_id).eq("owner_id", input.ownerId);
-      }
+  for (const source of insertedSources) {
+    if (!source.content_hash) continue;
+    const projectQuery = admin.from("aether_research_sources").select("id,project_id").eq("owner_id", input.ownerId).eq("canonical_url", normalizeUrl(source.url)).neq("id", source.id).order("retrieved_at", { ascending: false }).limit(1);
+    const { data: previousRows } = input.projectId ? await projectQuery.eq("project_id", input.projectId) : await projectQuery.is("project_id", null);
+    const previous = previousRows?.[0] as { id?: string; project_id?: string | null } | undefined;
+    let previousVersion: { version_number: number; content_hash: string } | undefined;
+    if (previous?.id) {
+      const { data: versions } = await admin.from("aether_research_source_versions").select("version_number,content_hash").eq("source_id", previous.id).order("version_number", { ascending: false }).limit(1);
+      previousVersion = versions?.[0] as typeof previousVersion;
     }
-    const attempts = insertedSources.map((source) => ({ session_id: session.id, source_id: source.id, owner_id: input.ownerId, attempt: source.retrieval_attempts || 1, status: source.status === "retrieved" ? "retrieved" : source.status === "blocked" ? "blocked" : "failed", started_at: source.retrieved_at, ended_at: source.retrieved_at, error: source.error ?? null }));
+    const changeState = !previousVersion ? "new" : previousVersion.content_hash === source.content_hash ? "unchanged" : "changed";
+    const versionNumber = (previousVersion?.version_number ?? 0) + 1;
+    const { data: version, error: versionError } = await admin.from("aether_research_source_versions").insert({ source_id: source.id, owner_id: input.ownerId, project_id: input.projectId ?? null, version_number: versionNumber, content_hash: source.content_hash, change_state: changeState, retrieved_at: source.retrieved_at, metadata: { sessionId: session.id, previousSourceId: previous?.id ?? null, previousHash: previousVersion?.content_hash ?? null } }).select("id").single();
+    if (versionError || !version) throw new Error(`Could not persist source version: ${versionError?.message ?? "unknown error"}`);
+    const { error: sourceUpdateError } = await admin.from("aether_research_sources").update({ version_id: version.id, change_state: changeState }).eq("id", source.id).eq("owner_id", input.ownerId);
+    if (sourceUpdateError) throw new Error(`Could not link source version: ${sourceUpdateError.message}`);
+  }
+
+  if (insertedSources.length) {
+    const attempts = insertedSources.map((source) => ({ session_id: session.id, source_id: source.id, owner_id: input.ownerId, project_id: input.projectId ?? null, attempt: source.retrieval_attempts || 1, status: source.status === "retrieved" ? "retrieved" : source.status === "blocked" ? "blocked" : "failed", started_at: source.retrieved_at, ended_at: source.retrieved_at, error: source.error ?? null, metadata: { aggregate_attempt_count: source.retrieval_attempts || 1 } }));
     const { error: attemptError } = await admin.from("aether_research_retrieval_attempts").insert(attempts);
     if (attemptError) throw new Error(`Could not persist retrieval attempts: ${attemptError.message}`);
   }
 
   return session.id as string;
+}
+
+export async function persistResearchDiscoveryEvent(admin: SupabaseClient, input: { ownerId: string; projectId?: string | null; sessionId?: string | null; taskId?: string | null; runId?: string | null; sequence: number; provider: string; query: string; status: "started" | "completed" | "failed" | "cancelled"; resultCount?: number; data?: Record<string, unknown> }): Promise<void> {
+  const { error } = await admin.from("aether_research_discovery_events").insert({ owner_id: input.ownerId, project_id: input.projectId ?? null, session_id: input.sessionId ?? null, task_id: input.taskId ?? null, run_id: input.runId ?? null, sequence: input.sequence, provider: input.provider, query: input.query, status: input.status, result_count: input.resultCount ?? 0, data: input.data ?? {} });
+  if (error) throw new Error(`Could not persist discovery event: ${error.message}`);
 }
 
 export function buildAgentResearchQuery(agentKey: string, originalSource: string, accumulatedUnderstanding: string): string {
