@@ -4,104 +4,48 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { domainFromUrl, isHttpUrl, retrievePage, sourceQualityScore } from "@/lib/aether/research-engine";
 import { assertAgentPermission } from "@/lib/aether/agent-sdk";
 
-export const getMyResearchRuns = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data: runs } = await context.supabase.from("research_runs").select("id, topic, depth, duration_minutes, source_types, status, created_at, updated_at, task_id").eq("user_id", context.userId).order("created_at", { ascending: false }).limit(100);
-    const ids = (runs ?? []).map((r) => r.id);
-    const sourceCounts: Record<string, number> = {};
-    const findingCounts: Record<string, number> = {};
-    if (ids.length) {
-      const [{ data: sources }, { data: findings }] = await Promise.all([
-        context.supabase.from("research_sources").select("run_id").eq("user_id", context.userId).in("run_id", ids),
-        context.supabase.from("research_findings").select("run_id").eq("user_id", context.userId).in("run_id", ids),
-      ]);
-      for (const source of sources ?? []) sourceCounts[source.run_id] = (sourceCounts[source.run_id] ?? 0) + 1;
-      for (const finding of findings ?? []) findingCounts[finding.run_id] = (findingCounts[finding.run_id] ?? 0) + 1;
-    }
-    return (runs ?? []).map((run) => ({ ...run, sourceCount: sourceCounts[run.id] ?? 0, findingCount: findingCounts[run.id] ?? 0 }));
-  });
+export const getMyResearchRuns = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
+  const { data: runs } = await context.supabase.from("research_runs").select("id, topic, depth, duration_minutes, source_types, status, created_at, updated_at, task_id").eq("user_id", context.userId).order("created_at", { ascending: false }).limit(100);
+  const ids = (runs ?? []).map((r) => r.id); const sourceCounts: Record<string, number> = {}; const findingCounts: Record<string, number> = {};
+  if (ids.length) { const [{ data: sources }, { data: findings }] = await Promise.all([context.supabase.from("research_sources").select("run_id").eq("user_id", context.userId).in("run_id", ids), context.supabase.from("research_findings").select("run_id").eq("user_id", context.userId).in("run_id", ids)]); for (const source of sources ?? []) sourceCounts[source.run_id] = (sourceCounts[source.run_id] ?? 0) + 1; for (const finding of findings ?? []) findingCounts[finding.run_id] = (findingCounts[finding.run_id] ?? 0) + 1; }
+  return (runs ?? []).map((run) => ({ ...run, sourceCount: sourceCounts[run.id] ?? 0, findingCount: findingCounts[run.id] ?? 0 }));
+});
 
-export const createMyResearchRun = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: { topic: string; depth?: string; durationMinutes?: number; seedUrl?: string }) => {
-    const topic = String(data?.topic ?? "").trim().slice(0, 500);
-    if (topic.length < 3) throw new Error("Topic must be at least 3 characters.");
-    const depth = String(data?.depth ?? "basic").trim().slice(0, 32) || "basic";
-    const durationMinutes = Math.min(240, Math.max(1, Number(data?.durationMinutes ?? 5) || 5));
-    const seedUrl = data?.seedUrl ? String(data.seedUrl).trim().slice(0, 2000) : "";
-    if (seedUrl && !isHttpUrl(seedUrl)) throw new Error("Seed URL must be http or https.");
-    return { topic, depth, durationMinutes, seedUrl };
-  })
-  .handler(async ({ context, data }) => {
-    const { data: task } = await context.supabase.from("tasks").insert({ user_id: context.userId, title: `Research: ${data.topic.slice(0, 120)}`, kind: "research", status: "queued", progress: 0, detail: { topic: data.topic, depth: data.depth, seedUrl: data.seedUrl || null } }).select("id").maybeSingle();
-    const { data: run, error } = await context.supabase.from("research_runs").insert({ user_id: context.userId, task_id: task?.id ?? null, topic: data.topic, depth: data.depth, duration_minutes: data.durationMinutes, source_types: ["web"], status: "queued" }).select("id, topic, depth, duration_minutes, status, created_at, task_id").single();
-    if (error || !run) return { ok: false as const, message: "Could not create research run." };
-    if (task?.id) {
-      await context.supabase.from("task_runs").insert({ task_id: task.id, owner_id: context.userId, attempt: 1, status: "queued", inputs: { research_run_id: run.id, topic: data.topic, seedUrl: data.seedUrl || null }, outputs: {}, idempotency_key: `research:${run.id}:attempt:1` });
-      await context.supabase.from("task_events").insert({ task_id: task.id, event_type: "research.queued", message: "Research run queued", data: { researchRunId: run.id, topic: data.topic }, actor_id: context.userId });
-    }
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin.from("notifications").insert({ recipient_id: context.userId, audience: "user", event_type: "research.queued", title: "Research run queued", body: `"${data.topic.slice(0, 80)}" is queued.`, resource_type: "research_runs", resource_id: run.id, link: "/research", status: "delivered", delivered_at: new Date().toISOString() });
-    } catch { /* notification is non-blocking */ }
-    return { ok: true as const, run };
-  });
+export const createMyResearchRun = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { topic: string; depth?: string; durationMinutes?: number; seedUrl?: string }) => {
+  const topic = String(data?.topic ?? "").trim().slice(0, 500); if (topic.length < 3) throw new Error("Topic must be at least 3 characters.");
+  const depth = String(data?.depth ?? "basic").trim().slice(0, 32) || "basic"; const durationMinutes = Math.min(240, Math.max(1, Number(data?.durationMinutes ?? 5) || 5)); const seedUrl = data?.seedUrl ? String(data.seedUrl).trim().slice(0, 2000) : "";
+  if (seedUrl && !isHttpUrl(seedUrl)) throw new Error("Seed URL must be http or https."); return { topic, depth, durationMinutes, seedUrl };
+}).handler(async ({ context, data }) => {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: task } = await context.supabase.from("tasks").insert({ user_id: context.userId, title: `Research: ${data.topic.slice(0, 120)}`, kind: "research", status: "queued", progress: 0, detail: { topic: data.topic, depth: data.depth, seedUrl: data.seedUrl || null } }).select("id").maybeSingle();
+  const { data: run, error } = await context.supabase.from("research_runs").insert({ user_id: context.userId, task_id: task?.id ?? null, topic: data.topic, depth: data.depth, duration_minutes: data.durationMinutes, source_types: ["web"], status: "queued" }).select("id, topic, depth, duration_minutes, status, created_at, task_id").single();
+  if (error || !run) return { ok: false as const, message: "Could not create research run." };
+  if (task?.id) {
+    await supabaseAdmin.from("task_runs").insert({ task_id: task.id, owner_id: context.userId, attempt: 1, status: "queued", inputs: { research_run_id: run.id, topic: data.topic, seedUrl: data.seedUrl || null }, outputs: {}, idempotency_key: `research:${run.id}:attempt:1` });
+    await supabaseAdmin.from("task_events").insert({ task_id: task.id, event_type: "research.queued", message: "Research run queued", data: { researchRunId: run.id, topic: data.topic }, actor_id: context.userId });
+  }
+  try { await supabaseAdmin.from("notifications").insert({ recipient_id: context.userId, audience: "user", event_type: "research.queued", title: "Research run queued", body: `"${data.topic.slice(0, 80)}" is queued.`, resource_type: "research_runs", resource_id: run.id, link: "/research", status: "delivered", delivered_at: new Date().toISOString() }); } catch { /* notification is non-blocking */ }
+  return { ok: true as const, run };
+});
 
-export const processResearchSeedUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: { runId: string; url: string }) => {
-    const runId = String(data?.runId ?? "");
-    const url = String(data?.url ?? "").trim();
-    if (!runId) throw new Error("runId required");
-    if (!isHttpUrl(url)) throw new Error("Valid public http/https URL required");
-    return { runId, url };
-  })
-  .handler(async ({ context, data }) => {
-    try { assertAgentPermission("research", "sources.read"); } catch { /* user-owned sandbox retrieval remains allowed */ }
-    const { data: run } = await context.supabase.from("research_runs").select("id, user_id, status, task_id").eq("id", data.runId).eq("user_id", context.userId).maybeSingle();
-    if (!run) return { ok: false as const, message: "Research run not found." };
-
-    const now = new Date().toISOString();
-    await context.supabase.from("research_runs").update({ status: "running", updated_at: now }).eq("id", run.id).eq("user_id", context.userId);
-    if (run.task_id) {
-      await context.supabase.from("tasks").update({ status: "running", progress: 15, started_at: now, heartbeat_at: now, detail: { currentActivity: "Retrieving seed URL", url: data.url } }).eq("id", run.task_id).eq("user_id", context.userId);
-      await context.supabase.from("task_events").insert({ task_id: run.task_id, event_type: "research.retrieval_started", message: "Retrieving seed URL", data: { url: data.url }, actor_id: context.userId });
-    }
-
-    const domain = domainFromUrl(data.url);
-    const rateLimit = await (context.supabase as any).rpc("consume_aether_research_rate_limit", { p_owner_id: context.userId, p_domain: domain, p_max_requests: 12, p_window_seconds: 60 });
-    if (rateLimit.error || rateLimit.data === false) {
-      const message = "Research rate limit reached for this domain. Try again shortly.";
-      await context.supabase.from("research_runs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", run.id).eq("user_id", context.userId);
-      if (run.task_id) await context.supabase.from("tasks").update({ status: "failed", progress: 15, last_error_code: "rate_limited", last_error_message: message }).eq("id", run.task_id).eq("user_id", context.userId);
-      return { ok: false as const, message };
-    }
-
-    const page = await retrievePage(data.url, { timeoutMs: 15_000, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30 });
-    if (page.error || page.status >= 400 || !page.text) {
-      const message = page.error || `Fetch failed with status ${page.status}`;
-      await context.supabase.from("research_runs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", run.id).eq("user_id", context.userId);
-      if (run.task_id) {
-        await context.supabase.from("tasks").update({ status: "failed", last_error_code: page.failureClass ?? "retrieval_failed", last_error_message: message, heartbeat_at: new Date().toISOString() }).eq("id", run.task_id).eq("user_id", context.userId);
-        await context.supabase.from("task_events").insert({ task_id: run.task_id, event_type: "research.retrieval_failed", message, data: { failureClass: page.failureClass ?? null, attempts: page.attempts ?? 1, status: page.status }, actor_id: context.userId });
-      }
-      return { ok: false as const, message };
-    }
-
-    const quality = sourceQualityScore(page);
-    const metadata = { status: page.status, original_url: page.url, final_url: page.finalUrl, canonical_url: page.canonicalUrl, content_type: page.contentType, content_length: page.contentLength, redirect_count: page.redirectCount, attempts: page.attempts, robots_allowed: page.robotsAllowed, stale: page.stale, failure_class: page.failureClass ?? null, quality_score: quality.score, quality_factors: quality.factors };
-    const { error: srcErr } = await context.supabase.from("research_sources").insert({ run_id: run.id, user_id: context.userId, url: page.finalUrl, title: page.title, domain: domainFromUrl(page.finalUrl), content_excerpt: page.text.slice(0, 4000), retrieved_at: page.retrievedAt, content_hash: page.contentHash, metadata });
-    const { error: nativeSrcErr } = await context.supabase.from("aether_research_sessions").insert({ owner_id: context.userId, scope: "user", query: run.id, status: "completed", source_count: 1, diversity_score: 1, task_id: run.task_id, started_at: now, completed_at: new Date().toISOString(), last_event_at: new Date().toISOString(), freshness_policy: { staleAfterDays: 30 }, research_plan: { strategy: "seed_url", url: page.url } }).select("id").maybeSingle();
-    if (srcErr || nativeSrcErr) return { ok: false as const, message: "Retrieval succeeded but the research record could not be persisted completely." };
-
-    const completedAt = new Date().toISOString();
-    await context.supabase.from("research_runs").update({ status: "completed", updated_at: completedAt }).eq("id", run.id).eq("user_id", context.userId);
-    if (run.task_id) {
-      await context.supabase.from("tasks").update({ status: "completed", progress: 100, completed_at: completedAt, heartbeat_at: completedAt, detail: { currentActivity: "Seed URL stored", sourceUrl: page.finalUrl, sourceHash: page.contentHash, qualityScore: quality.score } }).eq("id", run.task_id).eq("user_id", context.userId);
-      await context.supabase.from("task_runs").update({ status: "completed", ended_at: completedAt, duration_ms: Math.max(0, Date.parse(completedAt) - Date.parse(now)), outputs: { sourceUrl: page.finalUrl, sourceHash: page.contentHash, qualityScore: quality.score } }).eq("task_id", run.task_id).eq("owner_id", context.userId).in("status", ["queued", "running"]);
-      await context.supabase.from("task_events").insert({ task_id: run.task_id, event_type: "research.retrieval_completed", message: "Seed URL retrieved and persisted", data: { sourceUrl: page.finalUrl, sourceHash: page.contentHash, qualityScore: quality.score, stale: page.stale ?? false }, actor_id: context.userId });
-    }
-
-    return { ok: true as const, source: { url: page.finalUrl, canonicalUrl: page.canonicalUrl, title: page.title, domain: domainFromUrl(page.finalUrl), excerptLength: Math.min(page.text.length, 4000), contentHash: page.contentHash, qualityScore: quality.score, qualityFactors: quality.factors, stale: page.stale ?? false, attempts: page.attempts ?? 1, redirectCount: page.redirectCount ?? 0 } };
-  });
+export const processResearchSeedUrl = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { runId: string; url: string }) => {
+  const runId = String(data?.runId ?? ""); const url = String(data?.url ?? "").trim(); if (!runId) throw new Error("runId required"); if (!isHttpUrl(url)) throw new Error("Valid public http/https URL required"); return { runId, url };
+}).handler(async ({ context, data }) => {
+  try { assertAgentPermission("research", "sources.read"); } catch { /* user-owned sandbox retrieval remains allowed */ }
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: run } = await context.supabase.from("research_runs").select("id, user_id, status, task_id").eq("id", data.runId).eq("user_id", context.userId).maybeSingle(); if (!run) return { ok: false as const, message: "Research run not found." };
+  const now = new Date().toISOString(); await context.supabase.from("research_runs").update({ status: "running", updated_at: now }).eq("id", run.id).eq("user_id", context.userId);
+  if (run.task_id) { await context.supabase.from("tasks").update({ status: "running", progress: 15, started_at: now, heartbeat_at: now, detail: { currentActivity: "Retrieving seed URL", url: data.url } }).eq("id", run.task_id).eq("user_id", context.userId); await supabaseAdmin.from("task_events").insert({ task_id: run.task_id, event_type: "research.retrieval_started", message: "Retrieving seed URL", data: { url: data.url }, actor_id: context.userId }); }
+  const domain = domainFromUrl(data.url); const rateLimit = await (context.supabase as any).rpc("consume_aether_research_rate_limit", { p_owner_id: context.userId, p_domain: domain, p_max_requests: 12, p_window_seconds: 60 });
+  if (rateLimit.error || rateLimit.data === false) { const message = "Research rate limit reached for this domain. Try again shortly."; await context.supabase.from("research_runs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", run.id).eq("user_id", context.userId); if (run.task_id) { await context.supabase.from("tasks").update({ status: "failed", progress: 15, last_error_code: "rate_limited", last_error_message: message }).eq("id", run.task_id).eq("user_id", context.userId); await supabaseAdmin.from("task_events").insert({ task_id: run.task_id, event_type: "research.rate_limited", message, data: { domain }, actor_id: context.userId }); } return { ok: false as const, message }; }
+  const page = await retrievePage(data.url, { timeoutMs: 15_000, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30 });
+  if (page.error || page.status >= 400 || !page.text) { const message = page.error || `Fetch failed with status ${page.status}`; await context.supabase.from("research_runs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", run.id).eq("user_id", context.userId); if (run.task_id) { await context.supabase.from("tasks").update({ status: "failed", last_error_code: page.failureClass ?? "retrieval_failed", last_error_message: message, heartbeat_at: new Date().toISOString() }).eq("id", run.task_id).eq("user_id", context.userId); await supabaseAdmin.from("task_events").insert({ task_id: run.task_id, event_type: "research.retrieval_failed", message, data: { failureClass: page.failureClass ?? null, attempts: page.attempts ?? 1, status: page.status }, actor_id: context.userId }); } return { ok: false as const, message }; }
+  const quality = sourceQualityScore(page); const metadata = { status: page.status, original_url: page.url, final_url: page.finalUrl, canonical_url: page.canonicalUrl, content_type: page.contentType, content_length: page.contentLength, redirect_count: page.redirectCount, attempts: page.attempts, robots_allowed: page.robotsAllowed, stale: page.stale, failure_class: page.failureClass ?? null, quality_score: quality.score, quality_factors: quality.factors };
+  const { error: srcErr } = await context.supabase.from("research_sources").insert({ run_id: run.id, user_id: context.userId, url: page.finalUrl, title: page.title, domain: domainFromUrl(page.finalUrl), content_excerpt: page.text.slice(0, 4000), retrieved_at: page.retrievedAt, content_hash: page.contentHash, metadata });
+  const nativeSession = await context.supabase.from("aether_research_sessions").insert({ owner_id: context.userId, scope: "user", query: run.id, status: "completed", source_count: 1, diversity_score: 1, task_id: run.task_id, started_at: now, completed_at: new Date().toISOString(), last_event_at: new Date().toISOString(), freshness_policy: { staleAfterDays: 30 }, research_plan: { strategy: "seed_url", url: page.url } }).select("id").maybeSingle();
+  const { error: nativeSrcErr } = nativeSession.data?.id ? await context.supabase.from("aether_research_sources").insert({ session_id: nativeSession.data.id, owner_id: context.userId, url: page.url, canonical_url: page.canonicalUrl ?? page.finalUrl, final_url: page.finalUrl, title: page.title, domain: domainFromUrl(page.finalUrl), provider: "direct", snippet: page.description ?? "", content: page.text.slice(0, 80_000), status: "retrieved", http_status: page.status, content_hash: page.contentHash, published_at: page.publishedAt ?? null, updated_at_source: page.updatedAt ?? null, retrieved_at: page.retrievedAt, content_type: page.contentType ?? null, content_length: page.contentLength ?? null, redirect_count: page.redirectCount ?? 0, retrieval_attempts: page.attempts ?? 1, last_checked_at: page.retrievedAt, quality_score: quality.score, quality_factors: quality.factors, robots_allowed: page.robotsAllowed ?? true, retrieval_policy: { maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true } }) : { error: new Error("Research session could not be persisted") };
+  if (srcErr || nativeSrcErr) return { ok: false as const, message: "Retrieval succeeded but the research record could not be persisted completely." };
+  const completedAt = new Date().toISOString(); await context.supabase.from("research_runs").update({ status: "completed", updated_at: completedAt }).eq("id", run.id).eq("user_id", context.userId);
+  if (run.task_id) { await context.supabase.from("tasks").update({ status: "completed", progress: 100, completed_at: completedAt, heartbeat_at: completedAt, detail: { currentActivity: "Seed URL stored", sourceUrl: page.finalUrl, sourceHash: page.contentHash, qualityScore: quality.score } }).eq("id", run.task_id).eq("user_id", context.userId); await supabaseAdmin.from("task_runs").update({ status: "completed", ended_at: completedAt, duration_ms: Math.max(0, Date.parse(completedAt) - Date.parse(now)), outputs: { sourceUrl: page.finalUrl, sourceHash: page.contentHash, qualityScore: quality.score } }).eq("task_id", run.task_id).eq("owner_id", context.userId).in("status", ["queued", "running"]); await supabaseAdmin.from("task_events").insert({ task_id: run.task_id, event_type: "research.retrieval_completed", message: "Seed URL retrieved and persisted", data: { sourceUrl: page.finalUrl, sourceHash: page.contentHash, qualityScore: quality.score, stale: page.stale ?? false }, actor_id: context.userId }); }
+  return { ok: true as const, source: { url: page.finalUrl, canonicalUrl: page.canonicalUrl, title: page.title, domain: domainFromUrl(page.finalUrl), excerptLength: Math.min(page.text.length, 4000), contentHash: page.contentHash, qualityScore: quality.score, qualityFactors: quality.factors, stale: page.stale ?? false, attempts: page.attempts ?? 1, redirectCount: page.redirectCount ?? 0 } };
+});
