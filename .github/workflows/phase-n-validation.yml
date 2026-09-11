@@ -4,8 +4,9 @@ on:
   push:
     branches: [main]
     paths:
+      - 'src/lib/aether/phase-n-orchestrator.ts'
+      - 'src/lib/aether/phase-n.functions.ts'
       - 'src/lib/aether/orchestrator.ts'
-      - 'src/lib/aether/orchestrator.functions.ts'
       - 'src/lib/aether/__tests__/orchestrator.test.ts'
       - 'supabase/migrations/2026091119*.sql'
       - 'tsconfig.phase-n.json'
