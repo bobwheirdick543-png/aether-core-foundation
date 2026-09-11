@@ -9,7 +9,8 @@ describe("Aether native web intelligence contract", () => {
 
   it("has independent no-key discovery adapters", () => {
     for (const marker of ["searchWikipedia", "searchReddit", "searchDuckDuckGo", "lookupDictionary"]) expect(source).toContain(marker);
-    expect(source).toContain("Promise.allSettled(providers.map");
+    expect(source).toContain("Promise.allSettled(");
+    expect(source).toContain("providerKeys.map");
     expect(source).toContain("runAetherWebResearch");
   });
 
