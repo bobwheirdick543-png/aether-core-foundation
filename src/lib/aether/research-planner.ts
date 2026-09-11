@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { domainFromUrl, normalizeUrl, sourceQualityScore, type RetrievedPage } from "./research-engine";
-import { runAetherWebResearch, persistAetherWebResearch, type AetherWebResearchResult } from "./aax-web-intelligence";
+import { runAetherWebResearch, persistAetherWebResearch, persistResearchDiscoveryEvent, type AetherWebResearchResult } from "./aax-web-intelligence";
 import { unmetSourceRequirements } from "./research-policy";
 
 export type ResearchPlan = {
@@ -14,17 +14,7 @@ export type ResearchPlan = {
 export function createResearchPlan(topic: string, strategy: ResearchPlan["strategy"] = "multi_source"): ResearchPlan {
   const clean = topic.trim().slice(0, 500);
   if (clean.length < 3) throw new Error("Research topic is required");
-  return {
-    topic: clean,
-    strategy,
-    queries: [clean, `${clean} evidence`, `${clean} official documentation`, `${clean} recent developments`],
-    sourceRequirements: {
-      minSources: strategy === "source_comparison" ? 4 : 3,
-      minDomains: strategy === "source_comparison" ? 3 : 2,
-      preferredProviders: ["official", "academic", "government", "wikipedia", "reddit", "duckduckgo"],
-    },
-    comparisonRules: { compareDates: true, compareAgreement: true, flagConflicts: true },
-  };
+  return { topic: clean, strategy, queries: [clean, `${clean} evidence`, `${clean} official documentation`, `${clean} recent developments`], sourceRequirements: { minSources: strategy === "source_comparison" ? 4 : 3, minDomains: strategy === "source_comparison" ? 3 : 2, preferredProviders: ["official", "academic", "government", "wikipedia", "reddit", "duckduckgo"] }, comparisonRules: { compareDates: true, compareAgreement: true, flagConflicts: true } };
 }
 
 export type SourceComparison = {
@@ -58,81 +48,47 @@ export function compareResearchSources(subject: string, sources: Array<{ id: str
   const dates = normalized.flatMap((source) => [source.publishedAt, source.updatedAt].filter(Boolean).map((value) => ({ id: source.id, value: String(value) })));
   const dateMismatches = dates.length > 1 ? [`${dates.length} source dates available for comparison`] : [];
   const freshnessSignals = normalized.map((source) => `${source.domain}: ${source.updatedAt ?? source.publishedAt ?? "no publication date"}`);
-  if (!normalized.length) {
-    missingEvidence.push("No retrieved sources were available for comparison");
-    uncertainty.push("Comparison cannot establish evidence without retrieved sources");
-  } else {
+  if (!normalized.length) { missingEvidence.push("No retrieved sources were available for comparison"); uncertainty.push("Comparison cannot establish evidence without retrieved sources"); }
+  else {
     const undated = normalized.filter((source) => !source.updatedAt && !source.publishedAt).length;
     if (undated) missingEvidence.push(`${undated} source(s) have no publication or update date`);
     if (domains.length < 2) uncertainty.push("Only one source domain is represented; cross-source agreement is limited");
     if (contradictionSignals.length) uncertainty.push("Source terminology differs; contradictions require verification");
   }
-  return {
-    subject,
-    sourceIds: normalized.map((source) => source.id),
-    domains,
-    agreementSignals,
-    contradictionSignals,
-    dateMismatches,
-    freshnessSignals,
-    missingEvidence,
-    uncertainty,
-    quality: normalized.map((source) => {
-      const page = source.page ?? ({ status: 200, text: source.content ?? "", error: undefined, stale: false } as RetrievedPage);
-      const quality = sourceQualityScore(page);
-      return { sourceId: source.id, score: quality.score, factors: quality.factors };
-    }),
-  };
+  return { subject, sourceIds: normalized.map((source) => source.id), domains, agreementSignals, contradictionSignals, dateMismatches, freshnessSignals, missingEvidence, uncertainty, quality: normalized.map((source) => { const page = source.page ?? ({ status: 200, text: source.content ?? "", error: undefined, stale: false } as RetrievedPage); const quality = sourceQualityScore(page); return { sourceId: source.id, score: quality.score, factors: quality.factors }; }) };
 }
 
 async function runQueriesBounded(queries: string[], signal?: AbortSignal): Promise<AetherWebResearchResult[]> {
   const results: AetherWebResearchResult[] = [];
   let cursor = 0;
-  const worker = async () => {
-    for (;;) {
-      if (signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
-      const index = cursor++;
-      if (index >= queries.length) return;
-      results[index] = await runAetherWebResearch({ query: queries[index], maxSources: 8, signal });
-    }
-  };
+  const worker = async () => { for (;;) { if (signal?.aborted) throw new DOMException("Research cancelled", "AbortError"); const index = cursor++; if (index >= queries.length) return; results[index] = await runAetherWebResearch({ query: queries[index], maxSources: 8, signal }); } };
   await Promise.all([worker(), worker()]);
   return results;
 }
 
-export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId: string; plan: ResearchPlan; taskId?: string | null; runId?: string | null; signal?: AbortSignal }): Promise<{ sessionId: string; result: AetherWebResearchResult; plan: ResearchPlan; unmetRequirements: string[] }> {
+export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId: string; projectId?: string | null; plan: ResearchPlan; taskId?: string | null; runId?: string | null; signal?: AbortSignal }): Promise<{ sessionId: string; result: AetherWebResearchResult; plan: ResearchPlan; unmetRequirements: string[] }> {
   const results = await runQueriesBounded(input.plan.queries, input.signal);
   const sources = [...new Map(results.flatMap((result) => result.sources).map((source) => [normalizeUrl(source.canonicalUrl || source.url), source])).values()].slice(0, 24);
   const domains = [...new Set(sources.map((source) => source.domain))];
   const unmetRequirements = unmetSourceRequirements(sources.length, domains.length, input.plan.sourceRequirements);
-  const merged: AetherWebResearchResult = {
-    query: input.plan.topic,
-    sources,
-    failedSources: results.flatMap((result) => result.failedSources),
-    sourceDomains: domains,
-    diversity: sources.length ? Math.min(1, domains.length / Math.min(5, sources.length)) : 0,
-    completedAt: new Date().toISOString(),
-  };
-  const sessionId = await persistAetherWebResearch(input.admin, {
-    ownerId: input.ownerId,
-    scope: "agent",
-    query: input.plan.topic,
-    result: merged,
-    taskId: input.taskId,
-    runId: input.runId,
-  });
-  await persistResearchPlan(input.admin, input.ownerId, sessionId, input.plan, unmetRequirements);
+  const merged: AetherWebResearchResult = { query: input.plan.topic, sources, failedSources: results.flatMap((result) => result.failedSources), sourceDomains: domains, diversity: sources.length ? Math.min(1, domains.length / Math.min(5, sources.length)) : 0, completedAt: new Date().toISOString() };
+  const sessionId = await persistAetherWebResearch(input.admin, { ownerId: input.ownerId, scope: "agent", query: input.plan.topic, result: merged, taskId: input.taskId, runId: input.runId, projectId: input.projectId });
+  await persistResearchPlan(input.admin, input.ownerId, sessionId, input.plan, unmetRequirements, input.projectId);
+  for (let i = 0; i < input.plan.queries.length; i++) {
+    const queryResult = results[i];
+    await persistResearchDiscoveryEvent(input.admin, { ownerId: input.ownerId, projectId: input.projectId, sessionId, taskId: input.taskId, runId: input.runId, sequence: i + 1, provider: "multi-source", query: input.plan.queries[i], status: queryResult ? "completed" : "failed", resultCount: queryResult?.sources.length ?? 0, data: { failed_sources: queryResult?.failedSources.length ?? 0, source_domains: queryResult?.sourceDomains ?? [] } });
+  }
   return { sessionId, result: merged, plan: input.plan, unmetRequirements };
 }
 
-export async function persistResearchPlan(admin: SupabaseClient, ownerId: string, sessionId: string, plan: ResearchPlan, unmetRequirements: string[] = []): Promise<string> {
-  const { data, error } = await admin.from("aether_research_plans").insert({ owner_id: ownerId, session_id: sessionId, topic: plan.topic, strategy: plan.strategy, queries: plan.queries, source_requirements: plan.sourceRequirements, comparison_rules: plan.comparisonRules, unmet_requirements: unmetRequirements, status: "completed" }).select("id").single();
+export async function persistResearchPlan(admin: SupabaseClient, ownerId: string, sessionId: string, plan: ResearchPlan, unmetRequirements: string[] = [], projectId?: string | null): Promise<string> {
+  const { data, error } = await admin.from("aether_research_plans").insert({ owner_id: ownerId, project_id: projectId ?? null, session_id: sessionId, topic: plan.topic, strategy: plan.strategy, queries: plan.queries, source_requirements: plan.sourceRequirements, comparison_rules: plan.comparisonRules, unmet_requirements: unmetRequirements, status: "completed" }).select("id").single();
   if (error || !data) throw new Error(`Could not persist research plan: ${error?.message ?? "unknown error"}`);
   return data.id as string;
 }
 
-export async function persistResearchComparison(admin: SupabaseClient, ownerId: string, sessionId: string, comparison: SourceComparison): Promise<string> {
-  const { data, error } = await admin.from("aether_research_comparisons").insert({ owner_id: ownerId, session_id: sessionId, subject: comparison.subject, source_ids: comparison.sourceIds, comparison, missing_evidence: comparison.missingEvidence, uncertainty: comparison.uncertainty, status: "completed" }).select("id").single();
+export async function persistResearchComparison(admin: SupabaseClient, ownerId: string, sessionId: string, comparison: SourceComparison, projectId?: string | null): Promise<string> {
+  const { data, error } = await admin.from("aether_research_comparisons").insert({ owner_id: ownerId, project_id: projectId ?? null, session_id: sessionId, subject: comparison.subject, source_ids: comparison.sourceIds, comparison, missing_evidence: comparison.missingEvidence, uncertainty: comparison.uncertainty, status: "completed" }).select("id").single();
   if (error || !data) throw new Error(`Could not persist research comparison: ${error?.message ?? "unknown error"}`);
   return data.id as string;
 }
