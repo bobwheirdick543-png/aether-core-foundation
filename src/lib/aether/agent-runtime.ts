@@ -3,25 +3,14 @@ import { AGENTS, type AgentKey, type AgentDefinition } from "@/lib/aether/agents
 import { createFullAgentDefinition, type FullAgentDefinition, type AgentTaskContext, type AgentResult, type AgentMessage } from "@/lib/aether/agent-sdk";
 
 export type AgentLifecycle = "draft" | "validated" | "tested" | "active" | "disabled" | "maintenance";
+export interface AgentVersion extends FullAgentDefinition { lifecycle: AgentLifecycle; configurationHash: string; }
+export interface AgentRegistryEntry { key: AgentKey; definition: FullAgentDefinition; lifecycle: AgentLifecycle; }
+export interface AgentHandler { execute(context: AgentTaskContext): Promise<AgentResult>; }
 
-export interface AgentVersion extends FullAgentDefinition {
-  lifecycle: AgentLifecycle;
-  configurationHash: string;
-}
-
-export interface AgentRegistryEntry {
-  key: AgentKey;
-  definition: FullAgentDefinition;
-  lifecycle: AgentLifecycle;
-}
-
-export interface AgentHandler {
-  execute(context: AgentTaskContext): Promise<AgentResult>;
-}
-
+function lifecycleForStatus(status: AgentDefinition["status"]): AgentLifecycle { return status === "enabled" ? "active" : status; }
 export function buildAgentVersion(base: AgentDefinition, overrides?: Partial<FullAgentDefinition>): AgentVersion {
   const definition = createFullAgentDefinition(base, overrides);
-  return { ...definition, lifecycle: base.status === "enabled" ? "active" : base.status, configurationHash: stableConfigurationHash(definition) };
+  return { ...definition, lifecycle: lifecycleForStatus(base.status), configurationHash: stableConfigurationHash(definition) };
 }
 
 export function stableConfigurationHash(definition: FullAgentDefinition): string {
@@ -54,7 +43,7 @@ export function buildRegistry(): Map<AgentKey, AgentRegistryEntry> {
     const definition = createFullAgentDefinition(base);
     const errors = validateAgentDefinition(definition);
     if (errors.length) throw new Error(`Invalid agent ${base.key}: ${errors.join(", ")}`);
-    registry.set(base.key, { key: base.key, definition, lifecycle: base.status });
+    registry.set(base.key, { key: base.key, definition, lifecycle: lifecycleForStatus(base.status) });
   }
   return registry;
 }
@@ -67,7 +56,7 @@ export function assertLifecycleTransition(from: AgentLifecycle, to: AgentLifecyc
 }
 
 export function authorizeAgentExecution(entry: AgentRegistryEntry, permission: string): void {
-  if (!["active"].includes(entry.lifecycle)) throw new Error(`Agent ${entry.key} is not active`);
+  if (entry.lifecycle !== "active") throw new Error(`Agent ${entry.key} is not active`);
   const grant = entry.definition.permissions.find((item) => item.permission === permission);
   if (!grant?.allowed) throw new Error(`Agent ${entry.key} is not permitted to use ${permission}`);
   if (permission === "roles.modify" || permission === "permissions.self_modify") throw new Error("Agent permission-boundary mutation is prohibited");
