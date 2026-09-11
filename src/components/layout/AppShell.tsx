@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, MessagesSquare, Boxes, FolderKanban, Library, Brain, Telescope, FileText, ListChecks, KeyRound, Settings, Menu, X, LogOut, ShieldCheck, Bell } from "lucide-react";
+import { LayoutDashboard, MessagesSquare, Boxes, FolderKanban, Library, Brain, Telescope, FileText, ListChecks, KeyRound, Settings, Menu, X, LogOut, ShieldCheck, Bell, Activity } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -16,6 +16,7 @@ const NAV = [
   { label: "Knowledge", to: "/knowledge" as const, icon: Library },
   { label: "Memory", to: "/memory" as const, icon: Brain },
   { label: "Research", to: "/research" as const, icon: Telescope },
+  { label: "Operations", to: "/operations" as const, icon: Activity },
   { label: "Reports", to: "/reports" as const, icon: FileText },
   { label: "Tasks", to: "/tasks" as const, icon: ListChecks },
   { label: "Notifications", to: "/notifications" as const, icon: Bell },
