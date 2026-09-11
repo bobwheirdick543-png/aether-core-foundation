@@ -1,0 +1,99 @@
+import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+
+const db = (value: unknown) => value as SupabaseClient;
+const clean = (value: string, max = 12000) => value.trim().slice(0, max);
+const assertProjectOwner = async (client: SupabaseClient, projectId: string | null, userId: string) => {
+  if (!projectId) return;
+  const { data, error } = await client.from("projects").select("id").eq("id", projectId).eq("owner_id", userId).maybeSingle();
+  if (error || !data) throw new Response("Project not found or not owned by the current user", { status: 404 });
+};
+
+export const listAetherMemories = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).validator((input?: { projectId?: string | null; includeSuperseded?: boolean }) => input ?? {}).handler(async ({ context, data }) => {
+  const client = db(context.supabase);
+  if (data.projectId) await assertProjectOwner(client, data.projectId, context.userId);
+  let query = client.from("aether_memories").select("id,project_id,scope,memory_type,content,status,persistence_mode,reason,confidence,importance,version,previous_memory_id,source_conversation_id,source_message_id,created_at,updated_at,last_used_at").eq("owner_id", context.userId);
+  if (data.projectId) query = query.or(`project_id.eq.${data.projectId},scope.eq.global`); else query = query.is("project_id", null);
+  if (!data.includeSuperseded) query = query.eq("status", "active");
+  const { data: rows, error } = await query.order("updated_at", { ascending: false }).limit(200);
+  if (error) throw new Response(`Could not load memories: ${error.message}`, { status: 500 });
+  return rows ?? [];
+});
+
+export const listAetherMemoryCandidates = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).validator((input?: { projectId?: string | null; status?: string }) => input ?? {}).handler(async ({ context, data }) => {
+  const client = db(context.supabase);
+  if (data.projectId) await assertProjectOwner(client, data.projectId, context.userId);
+  let query = client.from("aether_memory_candidates").select("id,project_id,scope,memory_type,content,status,reason,confidence,source_conversation_id,source_message_id,provenance,reviewed_at,memory_id,created_at,updated_at").eq("owner_id", context.userId);
+  if (data.projectId) query = query.eq("project_id", data.projectId); else query = query.is("project_id", null);
+  if (data.status) query = query.eq("status", data.status);
+  const { data: rows, error } = await query.order("created_at", { ascending: false }).limit(200);
+  if (error) throw new Response(`Could not load memory candidates: ${error.message}`, { status: 500 });
+  return rows ?? [];
+});
+
+export const createAetherMemory = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).validator((input: { content: string; scope: "global" | "project"; projectId?: string | null; memoryType?: string; reason?: string; confidence?: number; importance?: number }) => input).handler(async ({ context, data }) => {
+  const content = clean(data.content); if (!content) throw new Response("Memory content is required", { status: 400 });
+  const projectId = data.scope === "project" ? data.projectId ?? null : null;
+  if (data.scope === "project") await assertProjectOwner(db(context.supabase), projectId, context.userId);
+  const confidence = data.confidence == null ? null : Math.max(0, Math.min(1, data.confidence));
+  const importance = Math.max(0, Math.min(1, data.importance ?? 0.5));
+  const { data: memory, error } = await db(context.supabase).from("aether_memories").insert({ owner_id: context.userId, project_id: projectId, scope: data.scope, memory_type: data.memoryType ?? "fact", content, persistence_mode: "explicit", reason: clean(data.reason ?? "", 1000), confidence, importance }).select("id,project_id,scope,memory_type,content,status,persistence_mode,reason,confidence,importance,version,created_at,updated_at").single();
+  if (error || !memory) throw new Response(`Could not create memory: ${error?.message ?? "unknown error"}`, { status: 500 });
+  await supabaseAdmin.from("aether_memory_events").insert({ owner_id: context.userId, memory_id: memory.id, event_type: "created", actor_id: context.userId, metadata: { persistence_mode: "explicit" } });
+  return memory;
+});
+
+export const updateAetherMemory = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).validator((input: { memoryId: string; content: string; reason?: string; confidence?: number; importance?: number; memoryType?: string }) => input).handler(async ({ context, data }) => {
+  const content = clean(data.content); if (!content) throw new Response("Memory content is required", { status: 400 });
+  const { data: newId, error } = await supabaseAdmin.rpc("replace_aether_memory", { p_memory_id: data.memoryId, p_actor_id: context.userId, p_content: content, p_reason: clean(data.reason ?? "", 1000), p_confidence: data.confidence == null ? null : Math.max(0, Math.min(1, data.confidence)), p_importance: Math.max(0, Math.min(1, data.importance ?? 0.5)), p_memory_type: data.memoryType ?? null });
+  if (error || !newId) throw new Response(`Could not update memory: ${error?.message ?? "unknown error"}`, { status: 500 });
+  return { memoryId: newId };
+});
+
+export const deleteAetherMemory = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).validator((input: { memoryId: string }) => input).handler(async ({ context, data }) => {
+  const { data: memory, error } = await db(context.supabase).from("aether_memories").select("id,project_id,status").eq("id", data.memoryId).eq("owner_id", context.userId).eq("status", "active").maybeSingle();
+  if (error || !memory) throw new Response("Memory not found", { status: 404 });
+  const { error: updateError } = await db(context.supabase).from("aether_memories").update({ status: "deleted", deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", memory.id).eq("owner_id", context.userId).eq("status", "active");
+  if (updateError) throw new Response(`Could not delete memory: ${updateError.message}`, { status: 500 });
+  await supabaseAdmin.from("aether_memory_events").insert({ owner_id: context.userId, memory_id: memory.id, event_type: "deleted", actor_id: context.userId });
+  return { ok: true };
+});
+
+export const promoteAetherMemoryCandidate = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).validator((input: { candidateId: string }) => input).handler(async ({ context, data }) => {
+  const { data: memoryId, error } = await supabaseAdmin.rpc("promote_aether_memory_candidate", { p_candidate_id: data.candidateId, p_actor_id: context.userId });
+  if (error || !memoryId) throw new Response(`Could not promote memory candidate: ${error?.message ?? "unknown error"}`, { status: 500 });
+  return { memoryId };
+});
+
+export const rejectAetherMemoryCandidate = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).validator((input: { candidateId: string }) => input).handler(async ({ context, data }) => {
+  const { data: candidate, error } = await db(context.supabase).from("aether_memory_candidates").update({ status: "rejected", reviewed_by: context.userId, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", data.candidateId).eq("owner_id", context.userId).eq("status", "candidate").select("id").maybeSingle();
+  if (error || !candidate) throw new Response("Memory candidate not found or already reviewed", { status: 404 });
+  await supabaseAdmin.from("aether_memory_events").insert({ owner_id: context.userId, candidate_id: candidate.id, event_type: "candidate_rejected", actor_id: context.userId });
+  return { ok: true };
+});
+
+export const setAetherMemoryPreference = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).validator((input: { enabled: boolean }) => input).handler(async ({ context, data }) => {
+  const { error } = await db(context.supabase).from("profiles").update({ memory_enabled: data.enabled, updated_at: new Date().toISOString() }).eq("id", context.userId);
+  if (error) throw new Response(`Could not update memory preference: ${error.message}`, { status: 500 });
+  return { enabled: data.enabled };
+});
+
+export async function getAetherMemoryContext(admin: SupabaseClient, userId: string, projectId: string | null, queryText: string, limit = 8) {
+  if (!userId || !queryText.trim()) return [];
+  const { data: profile } = await admin.from("profiles").select("memory_enabled").eq("id", userId).maybeSingle();
+  if (profile?.memory_enabled === false) return [];
+  if (projectId) {
+    const { data: project } = await admin.from("projects").select("memory_enabled").eq("id", projectId).eq("owner_id", userId).maybeSingle();
+    if (!project) return [];
+    if (project.memory_enabled === false) projectId = null;
+  }
+  const { data: rows, error } = await admin.from("aether_memories").select("id,project_id,scope,memory_type,content,reason,confidence,importance,version,source_conversation_id,source_message_id").eq("owner_id", userId).eq("status", "active").is("deleted_at", null).or(projectId ? `project_id.eq.${projectId},scope.eq.global` : "scope.eq.global").order("importance", { ascending: false }).order("updated_at", { ascending: false }).limit(100);
+  if (error || !rows?.length) return [];
+  const terms = Array.from(new Set(queryText.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 3))).slice(0, 24);
+  const scored = rows.map((row) => { const text = row.content.toLowerCase(); const hits = terms.reduce((n, term) => n + (text.includes(term) ? 1 : 0), 0); const lexical = terms.length ? hits / terms.length : 0; const score = lexical * 0.7 + Number(row.importance ?? 0.5) * 0.2 + Number(row.confidence ?? 0.5) * 0.1; return { ...row, score }; }).filter((row) => row.score >= 0.12).sort((a,b) => b.score - a.score).slice(0, Math.max(1, Math.min(limit, 20)));
+  if (scored.length) await admin.from("aether_memory_events").insert(scored.map((row) => ({ owner_id: userId, memory_id: row.id, event_type: "retrieved", source_conversation_id: row.source_conversation_id, metadata: { score: row.score, project_id: projectId } })));
+  if (scored.length) await admin.from("aether_memories").update({ last_used_at: new Date().toISOString() }).in("id", scored.map((row) => row.id)).eq("owner_id", userId);
+  return scored;
+}
