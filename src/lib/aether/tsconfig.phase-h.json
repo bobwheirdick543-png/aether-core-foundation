@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "noEmit": true, "skipLibCheck": true },
+  "include": [
+    "./knowledge-curator-engine.ts",
+    "./knowledge-curator.functions.ts",
+    "./knowledge-production.functions.ts",
+    "./agents.ts",
+    "./__tests__/knowledge-curator-engine.test.ts"
+  ]
+}
