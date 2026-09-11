@@ -1,52 +1,25 @@
-/**
- * User research runs — owner-scoped.
- * Creating a run records a real row in status queued.
- * Seed URLs can be retrieved via the native research engine (no AI answers).
- */
+/** User research runs — owner-scoped and persisted through the durable runtime. */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { isHttpUrl, retrievePage } from "@/lib/aether/research-engine";
+import { domainFromUrl, isHttpUrl, retrievePage, sourceQualityScore } from "@/lib/aether/research-engine";
 import { assertAgentPermission } from "@/lib/aether/agent-sdk";
 
 export const getMyResearchRuns = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data: runs } = await context.supabase
-      .from("research_runs")
-      .select("id, topic, depth, duration_minutes, source_types, status, created_at, updated_at")
-      .eq("user_id", context.userId)
-      .order("created_at", { ascending: false })
-      .limit(100);
-
+    const { data: runs } = await context.supabase.from("research_runs").select("id, topic, depth, duration_minutes, source_types, status, created_at, updated_at, task_id").eq("user_id", context.userId).order("created_at", { ascending: false }).limit(100);
     const ids = (runs ?? []).map((r) => r.id);
     const sourceCounts: Record<string, number> = {};
     const findingCounts: Record<string, number> = {};
-
-    if (ids.length > 0) {
-      const { data: sources } = await context.supabase
-        .from("research_sources")
-        .select("run_id")
-        .eq("user_id", context.userId)
-        .in("run_id", ids);
-      const { data: findings } = await context.supabase
-        .from("research_findings")
-        .select("run_id")
-        .eq("user_id", context.userId)
-        .in("run_id", ids);
-
-      for (const s of sources ?? []) {
-        sourceCounts[s.run_id] = (sourceCounts[s.run_id] ?? 0) + 1;
-      }
-      for (const f of findings ?? []) {
-        findingCounts[f.run_id] = (findingCounts[f.run_id] ?? 0) + 1;
-      }
+    if (ids.length) {
+      const [{ data: sources }, { data: findings }] = await Promise.all([
+        context.supabase.from("research_sources").select("run_id").eq("user_id", context.userId).in("run_id", ids),
+        context.supabase.from("research_findings").select("run_id").eq("user_id", context.userId).in("run_id", ids),
+      ]);
+      for (const source of sources ?? []) sourceCounts[source.run_id] = (sourceCounts[source.run_id] ?? 0) + 1;
+      for (const finding of findings ?? []) findingCounts[finding.run_id] = (findingCounts[finding.run_id] ?? 0) + 1;
     }
-
-    return (runs ?? []).map((r) => ({
-      ...r,
-      sourceCount: sourceCounts[r.id] ?? 0,
-      findingCount: findingCounts[r.id] ?? 0,
-    }));
+    return (runs ?? []).map((run) => ({ ...run, sourceCount: sourceCounts[run.id] ?? 0, findingCount: findingCounts[run.id] ?? 0 }));
   });
 
 export const createMyResearchRun = createServerFn({ method: "POST" })
@@ -55,175 +28,80 @@ export const createMyResearchRun = createServerFn({ method: "POST" })
     const topic = String(data?.topic ?? "").trim().slice(0, 500);
     if (topic.length < 3) throw new Error("Topic must be at least 3 characters.");
     const depth = String(data?.depth ?? "basic").trim().slice(0, 32) || "basic";
-    const durationMinutes = Math.min(
-      240,
-      Math.max(1, Number(data?.durationMinutes ?? 5) || 5),
-    );
+    const durationMinutes = Math.min(240, Math.max(1, Number(data?.durationMinutes ?? 5) || 5));
     const seedUrl = data?.seedUrl ? String(data.seedUrl).trim().slice(0, 2000) : "";
     if (seedUrl && !isHttpUrl(seedUrl)) throw new Error("Seed URL must be http or https.");
     return { topic, depth, durationMinutes, seedUrl };
   })
   .handler(async ({ context, data }) => {
-    const { data: task } = await context.supabase
-      .from("tasks")
-      .insert({
-        user_id: context.userId,
-        title: `Research: ${data.topic.slice(0, 120)}`,
-        kind: "research",
-        status: "queued",
-        progress: 0,
-        detail: { topic: data.topic, depth: data.depth, seedUrl: data.seedUrl || null },
-      })
-      .select("id")
-      .maybeSingle();
-
-    const { data: run, error } = await context.supabase
-      .from("research_runs")
-      .insert({
-        user_id: context.userId,
-        task_id: task?.id ?? null,
-        topic: data.topic,
-        depth: data.depth,
-        duration_minutes: data.durationMinutes,
-        source_types: ["web"],
-        status: "queued",
-      })
-      .select("id, topic, depth, duration_minutes, status, created_at")
-      .single();
-
-    if (error || !run) {
-      return { ok: false as const, message: "Could not create research run." };
-    }
-
+    const { data: task } = await context.supabase.from("tasks").insert({ user_id: context.userId, title: `Research: ${data.topic.slice(0, 120)}`, kind: "research", status: "queued", progress: 0, detail: { topic: data.topic, depth: data.depth, seedUrl: data.seedUrl || null } }).select("id").maybeSingle();
+    const { data: run, error } = await context.supabase.from("research_runs").insert({ user_id: context.userId, task_id: task?.id ?? null, topic: data.topic, depth: data.depth, duration_minutes: data.durationMinutes, source_types: ["web"], status: "queued" }).select("id, topic, depth, duration_minutes, status, created_at, task_id").single();
+    if (error || !run) return { ok: false as const, message: "Could not create research run." };
     if (task?.id) {
-      await context.supabase.from("task_runs").insert({
-        task_id: task.id,
-        owner_id: context.userId,
-        attempt: 1,
-        status: "queued",
-        inputs: { research_run_id: run.id, topic: data.topic, seedUrl: data.seedUrl || null },
-        outputs: {},
-        idempotency_key: `research:${run.id}:attempt:1`,
-      });
+      await context.supabase.from("task_runs").insert({ task_id: task.id, owner_id: context.userId, attempt: 1, status: "queued", inputs: { research_run_id: run.id, topic: data.topic, seedUrl: data.seedUrl || null }, outputs: {}, idempotency_key: `research:${run.id}:attempt:1` });
+      await context.supabase.from("task_events").insert({ task_id: task.id, event_type: "research.queued", message: "Research run queued", data: { researchRunId: run.id, topic: data.topic }, actor_id: context.userId });
     }
-
     try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const shortTopic = data.topic.slice(0, 80);
-      await supabaseAdmin.from("notifications").insert({
-        recipient_id: context.userId,
-        audience: "user",
-        event_type: "research.queued",
-        title: "Research run queued",
-        body: `"${shortTopic}" is queued. Sources appear after retrieval runs.`,
-        resource_type: "research_runs",
-        resource_id: run.id,
-        link: "/research",
-        status: "delivered",
-        delivered_at: new Date().toISOString(),
-      });
-    } catch {
-      // optional
-    }
-
+      await supabaseAdmin.from("notifications").insert({ recipient_id: context.userId, audience: "user", event_type: "research.queued", title: "Research run queued", body: `"${data.topic.slice(0, 80)}" is queued.`, resource_type: "research_runs", resource_id: run.id, link: "/research", status: "delivered", delivered_at: new Date().toISOString() });
+    } catch { /* notification is non-blocking */ }
     return { ok: true as const, run };
   });
 
-/**
- * Process a seed URL for an owned research run using the native retrieval engine.
- * Stores a real research_sources row. Does not invent findings or AI summaries.
- */
 export const processResearchSeedUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { runId: string; url: string }) => {
     const runId = String(data?.runId ?? "");
     const url = String(data?.url ?? "").trim();
     if (!runId) throw new Error("runId required");
-    if (!isHttpUrl(url)) throw new Error("Valid http/https URL required");
+    if (!isHttpUrl(url)) throw new Error("Valid public http/https URL required");
     return { runId, url };
   })
   .handler(async ({ context, data }) => {
-    // Contract permission check (architecture). Ownership enforced via RLS + query.
-    try {
-      assertAgentPermission("research", "sources.read");
-    } catch {
-      // Research agent may be disabled in registry; user-initiated retrieval is still allowed
-      // for their own sandbox sources. Agent enablement controls autonomous workers later.
-    }
-
-    const { data: run } = await context.supabase
-      .from("research_runs")
-      .select("id, user_id, status")
-      .eq("id", data.runId)
-      .eq("user_id", context.userId)
-      .maybeSingle();
-
+    try { assertAgentPermission("research", "sources.read"); } catch { /* user-owned sandbox retrieval remains allowed */ }
+    const { data: run } = await context.supabase.from("research_runs").select("id, user_id, status, task_id").eq("id", data.runId).eq("user_id", context.userId).maybeSingle();
     if (!run) return { ok: false as const, message: "Research run not found." };
 
-    await context.supabase
-      .from("research_runs")
-      .update({ status: "running", updated_at: new Date().toISOString() })
-      .eq("id", run.id)
-      .eq("user_id", context.userId);
+    const now = new Date().toISOString();
+    await context.supabase.from("research_runs").update({ status: "running", updated_at: now }).eq("id", run.id).eq("user_id", context.userId);
+    if (run.task_id) {
+      await context.supabase.from("tasks").update({ status: "running", progress: 15, started_at: now, heartbeat_at: now, detail: { currentActivity: "Retrieving seed URL", url: data.url } }).eq("id", run.task_id).eq("user_id", context.userId);
+      await context.supabase.from("task_events").insert({ task_id: run.task_id, event_type: "research.retrieval_started", message: "Retrieving seed URL", data: { url: data.url }, actor_id: context.userId });
+    }
 
-    const page = await retrievePage(data.url);
+    const domain = domainFromUrl(data.url);
+    const rateLimit = await (context.supabase as any).rpc("consume_aether_research_rate_limit", { p_owner_id: context.userId, p_domain: domain, p_max_requests: 12, p_window_seconds: 60 });
+    if (rateLimit.error || rateLimit.data === false) {
+      const message = "Research rate limit reached for this domain. Try again shortly.";
+      await context.supabase.from("research_runs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", run.id).eq("user_id", context.userId);
+      if (run.task_id) await context.supabase.from("tasks").update({ status: "failed", progress: 15, last_error_code: "rate_limited", last_error_message: message }).eq("id", run.task_id).eq("user_id", context.userId);
+      return { ok: false as const, message };
+    }
 
+    const page = await retrievePage(data.url, { timeoutMs: 15_000, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30 });
     if (page.error || page.status >= 400 || !page.text) {
-      await context.supabase
-        .from("research_runs")
-        .update({ status: "failed", updated_at: new Date().toISOString() })
-        .eq("id", run.id)
-        .eq("user_id", context.userId);
-      return {
-        ok: false as const,
-        message: page.error || `Fetch failed with status ${page.status}`,
-      };
-    }
-
-    const domain = (() => {
-      try {
-        return new URL(page.finalUrl).hostname;
-      } catch {
-        return null;
+      const message = page.error || `Fetch failed with status ${page.status}`;
+      await context.supabase.from("research_runs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", run.id).eq("user_id", context.userId);
+      if (run.task_id) {
+        await context.supabase.from("tasks").update({ status: "failed", last_error_code: page.failureClass ?? "retrieval_failed", last_error_message: message, heartbeat_at: new Date().toISOString() }).eq("id", run.task_id).eq("user_id", context.userId);
+        await context.supabase.from("task_events").insert({ task_id: run.task_id, event_type: "research.retrieval_failed", message, data: { failureClass: page.failureClass ?? null, attempts: page.attempts ?? 1, status: page.status }, actor_id: context.userId });
       }
-    })();
-
-    const { error: srcErr } = await context.supabase.from("research_sources").insert({
-      run_id: run.id,
-      user_id: context.userId,
-      url: page.finalUrl,
-      title: page.title,
-      domain,
-      content_excerpt: page.text.slice(0, 4000),
-      retrieved_at: page.retrievedAt,
-      content_hash: page.contentHash,
-      metadata: { status: page.status, original_url: page.url },
-    });
-
-    if (srcErr) {
-      return { ok: false as const, message: "Could not store source." };
+      return { ok: false as const, message };
     }
 
-    // Retrieval succeeded for this seed; findings remain empty until verification/AI layers exist.
-    await context.supabase
-      .from("research_runs")
-      .update({ status: "completed", updated_at: new Date().toISOString() })
-      .eq("id", run.id)
-      .eq("user_id", context.userId);
+    const quality = sourceQualityScore(page);
+    const metadata = { status: page.status, original_url: page.url, final_url: page.finalUrl, canonical_url: page.canonicalUrl, content_type: page.contentType, content_length: page.contentLength, redirect_count: page.redirectCount, attempts: page.attempts, robots_allowed: page.robotsAllowed, stale: page.stale, failure_class: page.failureClass ?? null, quality_score: quality.score, quality_factors: quality.factors };
+    const { error: srcErr } = await context.supabase.from("research_sources").insert({ run_id: run.id, user_id: context.userId, url: page.finalUrl, title: page.title, domain: domainFromUrl(page.finalUrl), content_excerpt: page.text.slice(0, 4000), retrieved_at: page.retrievedAt, content_hash: page.contentHash, metadata });
+    const { error: nativeSrcErr } = await context.supabase.from("aether_research_sessions").insert({ owner_id: context.userId, scope: "user", query: run.id, status: "completed", source_count: 1, diversity_score: 1, task_id: run.task_id, started_at: now, completed_at: new Date().toISOString(), last_event_at: new Date().toISOString(), freshness_policy: { staleAfterDays: 30 }, research_plan: { strategy: "seed_url", url: page.url } }).select("id").maybeSingle();
+    if (srcErr || nativeSrcErr) return { ok: false as const, message: "Retrieval succeeded but the research record could not be persisted completely." };
 
-    if (run /* task linkage handled separately */) {
-      // mark linked task complete if present via optional update by owner
+    const completedAt = new Date().toISOString();
+    await context.supabase.from("research_runs").update({ status: "completed", updated_at: completedAt }).eq("id", run.id).eq("user_id", context.userId);
+    if (run.task_id) {
+      await context.supabase.from("tasks").update({ status: "completed", progress: 100, completed_at: completedAt, heartbeat_at: completedAt, detail: { currentActivity: "Seed URL stored", sourceUrl: page.finalUrl, sourceHash: page.contentHash, qualityScore: quality.score } }).eq("id", run.task_id).eq("user_id", context.userId);
+      await context.supabase.from("task_runs").update({ status: "completed", ended_at: completedAt, duration_ms: Math.max(0, Date.parse(completedAt) - Date.parse(now)), outputs: { sourceUrl: page.finalUrl, sourceHash: page.contentHash, qualityScore: quality.score } }).eq("task_id", run.task_id).eq("owner_id", context.userId).in("status", ["queued", "running"]);
+      await context.supabase.from("task_events").insert({ task_id: run.task_id, event_type: "research.retrieval_completed", message: "Seed URL retrieved and persisted", data: { sourceUrl: page.finalUrl, sourceHash: page.contentHash, qualityScore: quality.score, stale: page.stale ?? false }, actor_id: context.userId });
     }
 
-    return {
-      ok: true as const,
-      source: {
-        url: page.finalUrl,
-        title: page.title,
-        domain,
-        excerptLength: Math.min(page.text.length, 4000),
-        contentHash: page.contentHash,
-      },
-      note: "Source stored. No AI findings generated — verification layer is separate.",
-    };
+    return { ok: true as const, source: { url: page.finalUrl, canonicalUrl: page.canonicalUrl, title: page.title, domain: domainFromUrl(page.finalUrl), excerptLength: Math.min(page.text.length, 4000), contentHash: page.contentHash, qualityScore: quality.score, qualityFactors: quality.factors, stale: page.stale ?? false, attempts: page.attempts ?? 1, redirectCount: page.redirectCount ?? 0 } };
   });
