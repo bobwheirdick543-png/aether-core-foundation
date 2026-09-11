@@ -35,7 +35,7 @@ describe("Phase F native research contracts", () => {
     expect(plan.comparisonRules.flagConflicts).toBe(true);
   });
 
-  it("records comparison signals without declaring truth", () => {
+  it("records comparison signals, missing evidence, and uncertainty without declaring truth", () => {
     const comparison = compareResearchSources("topic", [
       { id: "a", url: "https://one.example/a", content: "shared evidence alpha", publishedAt: "2026-01-01" },
       { id: "b", url: "https://two.example/b", content: "shared evidence beta", publishedAt: "2026-02-01" },
@@ -43,6 +43,11 @@ describe("Phase F native research contracts", () => {
     expect(comparison.domains).toHaveLength(2);
     expect(comparison.sourceIds).toEqual(["a", "b"]);
     expect(comparison.dateMismatches.length).toBeGreaterThan(0);
+    expect(comparison.missingEvidence).toEqual([]);
+    expect(comparison.uncertainty).toEqual([]);
+
+    const limited = compareResearchSources("topic", [{ id: "a", url: "https://one.example/a", content: "evidence" }]);
+    expect(limited.uncertainty.length).toBeGreaterThan(0);
   });
 
   it("classifies only transient HTTP statuses as retryable", () => {
@@ -75,10 +80,20 @@ describe("Phase F native research contracts", () => {
   it("bounds concurrent research work and applies per-domain pacing", () => {
     const limiter = new ResearchAccessLimiter({ maxConcurrent: 1, minDomainIntervalMs: 1000 });
     expect(limiter.start("https://example.com/a", 1000)).toEqual({ allowed: true, waitMs: 0 });
-    expect(limiter.start("https://example.com/b", 1001)).toEqual({ allowed: false, waitMs: 999, reason: "global_concurrency" });
+    expect(limiter.start("https://example.com/b", 1001)).toEqual({ allowed: false, waitMs: 50, reason: "global_concurrency" });
     limiter.finish();
     expect(limiter.start("https://example.com/b", 1001)).toEqual({ allowed: false, waitMs: 999, reason: "domain_rate_limit" });
     limiter.finish();
     expect(limiter.start("https://example.com/b", 2001)).toEqual({ allowed: true, waitMs: 0 });
+  });
+
+  it("honors cancellation while waiting for a research policy slot", async () => {
+    const limiter = new ResearchAccessLimiter({ maxConcurrent: 1, minDomainIntervalMs: 1000 });
+    expect(limiter.start("https://example.com/a")).toEqual({ allowed: true, waitMs: 0 });
+    const controller = new AbortController();
+    const pending = limiter.acquire("https://example.com/b", controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    limiter.finish();
   });
 });
