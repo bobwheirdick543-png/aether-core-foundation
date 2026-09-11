@@ -11,18 +11,23 @@ on:
       - 'supabase/migrations/2026091118*.sql'
       - '.github/workflows/phase-m-validation.yml'
       - 'package.json'
+      - 'bun.lock'
       - 'tsconfig.json'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npx vitest run src/lib/aether/__tests__/agent-runtime.test.ts
-      - run: npm run build
+          bun-version: 1.2.21
+      - run: bun install
+      - run: bunx tsc --noEmit
+      - run: bunx vitest run src/lib/aether/__tests__/agent-runtime.test.ts
+      - run: bun run build:dev
