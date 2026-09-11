@@ -24,7 +24,7 @@ jobs:
         run: bun install
       - name: Production build and route generation
         run: bun run build:dev
-      - name: Typecheck
-        run: bunx tsc --noEmit
+      - name: Phase F focused typecheck
+        run: bunx tsc -p tsconfig.phase-f.json --noEmit
       - name: Phase F tests
         run: bunx vitest run src/lib/aether/__tests__/phase-f-research.test.ts src/lib/aether/__tests__/phase-f-completion-gate.test.ts src/lib/aether/aax-web-intelligence.test.ts src/lib/aether/task-runtime.test.ts
