@@ -1,0 +1,9 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": { "noEmit": true, "skipLibCheck": true },
+  "include": [
+    "./retrieval-engine.ts",
+    "./phase-i-retrieval.functions.ts",
+    "./__tests__/retrieval-engine.test.ts"
+  ]
+}
