@@ -1,10 +1,10 @@
-name: Phase C AAX Validation
+name: Phase F Native Research & Operations Validation
 on:
   push:
     branches: [main]
-    paths: ["src/lib/aether/**", "src/lib/admin/**", "src/routes/**", "supabase/migrations/**", "package.json", "tsconfig.phase-c.json", ".github/workflows/phase-b-orchestrator.yml"]
+    paths: ["src/lib/aether/**", "src/lib/admin/**", "src/lib/workspace/**", "src/routes/**", "supabase/migrations/**", "package.json", "tsconfig.phase-c.json", ".github/workflows/phase-b-orchestrator.yml"]
   pull_request:
-    paths: ["src/lib/aether/**", "src/lib/admin/**", "src/routes/**", "supabase/migrations/**", "package.json", "tsconfig.phase-c.json", ".github/workflows/phase-b-orchestrator.yml"]
+    paths: ["src/lib/aether/**", "src/lib/admin/**", "src/lib/workspace/**", "src/routes/**", "supabase/migrations/**", "package.json", "tsconfig.phase-c.json", ".github/workflows/phase-b-orchestrator.yml"]
 permissions: { contents: read }
 jobs:
   validate:
@@ -23,5 +23,5 @@ jobs:
         run: npm run build
       - name: Phase C TypeScript validation
         run: npx tsc -p tsconfig.phase-c.json --noEmit --pretty false
-      - name: AAX and Phase D/E workspace tests
-        run: npx vitest run src/lib/aether/aax.test.ts src/lib/aether/aax-phase-d.test.ts src/lib/aether/aax-web-intelligence.test.ts src/lib/aether/aether-phase-e.test.ts src/lib/aether/aether-memory-governance.test.ts src/lib/aether/aether-phase-e-completion.test.ts src/lib/aether/aether-memory-deletion.test.ts
+      - name: AAX, Phase D/E and Phase F tests
+        run: npx vitest run src/lib/aether/aax.test.ts src/lib/aether/aax-phase-d.test.ts src/lib/aether/aax-web-intelligence.test.ts src/lib/aether/aether-phase-e.test.ts src/lib/aether/aether-memory-governance.test.ts src/lib/aether/aether-phase-e-completion.test.ts src/lib/aether/aether-memory-deletion.test.ts src/lib/aether/__tests__/phase-f-research.test.ts
