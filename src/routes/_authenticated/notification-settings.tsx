@@ -1,0 +1,10 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery,useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { AppShell } from "@/components/layout/AppShell";
+import { PageHeader,Panel } from "@/components/common/Primitives";
+import { Button } from "@/components/ui/button";
+import { getNotificationPreferences,updateNotificationPreferences } from "@/lib/aether/notification-delivery.functions";
+export const Route=createFileRoute("/_authenticated/notification-settings")({head:()=>({meta:[{title:"Notification Settings — Aether"}]}),component:Page});
+function Page(){const qc=useQueryClient();const get=useServerFn(getNotificationPreferences);const save=useServerFn(updateNotificationPreferences);const {data}=useQuery({queryKey:["notification-preferences"],queryFn:()=>get({})});const [email,setEmail]=useState("");const [enabled,setEnabled]=useState<boolean|undefined>(undefined);const emailEnabled=enabled??data?.email_enabled??false;async function submit(){await save({data:{inAppEnabled:data?.in_app_enabled??true,emailEnabled,emailAddress:email||data?.email_address||null,eventTypes:data?.event_types??[]}});setEnabled(undefined);qc.invalidateQueries({queryKey:["notification-preferences"]});}return <AppShell><div className="animate-in-up space-y-6"><PageHeader title="Notification Settings" description="Control how Aether delivers authorized platform events." backFallback="/notifications"/><Panel className="max-w-2xl space-y-5"><label className="flex items-center justify-between gap-4"><span className="text-sm">Email delivery</span><input type="checkbox" checked={emailEnabled} onChange={e=>setEnabled(e.target.checked)}/></label><label className="block space-y-2"><span className="text-sm">Email address</span><input className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={email} placeholder={data?.email_address??"name@example.com"} onChange={e=>setEmail(e.target.value)}/></label><Button type="button" onClick={submit}>Save preferences</Button></Panel></div></AppShell>}
