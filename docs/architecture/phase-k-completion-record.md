@@ -27,3 +27,5 @@ Phase K sits after durable work/report state and before external delivery. Phase
 ## Validation
 
 Focused Phase K TypeScript validation, notification delivery regression tests and production build are required before closure. Vercel is not used for validation or deployment.
+
+Final validation gate: pending CI execution on the Phase K validation branch.
