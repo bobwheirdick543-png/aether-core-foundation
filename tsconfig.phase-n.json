@@ -1,4 +1,4 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/lib/aether/orchestrator.ts", "src/lib/aether/orchestrator.functions.ts", "src/lib/aether/__tests__/orchestrator.test.ts"]
+  "include": ["src/lib/aether/orchestrator.ts", "src/lib/aether/phase-n-orchestrator.ts", "src/lib/aether/orchestrator.functions.ts", "src/lib/aether/__tests__/orchestrator.test.ts"]
 }
