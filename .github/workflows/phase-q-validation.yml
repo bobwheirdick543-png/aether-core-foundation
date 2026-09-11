@@ -1,0 +1,38 @@
+name: Phase Q validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/module-runtime.ts'
+      - 'src/lib/aether/module.functions.ts'
+      - 'src/lib/aether/module-worker.ts'
+      - 'src/lib/aether/agents.ts'
+      - 'src/lib/aether/__tests__/module-runtime.test.ts'
+      - 'src/routes/_authenticated/modules.tsx'
+      - 'supabase/migrations/*phase_q*'
+      - 'tsconfig.phase-q.json'
+      - '.github/workflows/phase-q-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/module-runtime.ts'
+      - 'src/lib/aether/module.functions.ts'
+      - 'src/lib/aether/module-worker.ts'
+      - 'src/lib/aether/agents.ts'
+      - 'src/lib/aether/__tests__/module-runtime.test.ts'
+      - 'src/routes/_authenticated/modules.tsx'
+      - 'supabase/migrations/*phase_q*'
+      - 'tsconfig.phase-q.json'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+      - run: bun install
+      - run: bunx tsc -p tsconfig.phase-q.json --noEmit
+      - run: bunx vitest run src/lib/aether/__tests__/module-runtime.test.ts
+      - run: bun run build:dev
