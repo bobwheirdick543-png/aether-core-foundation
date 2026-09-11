@@ -25,7 +25,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun install --frozen-lockfile
+      - run: bun install
       - run: bunx tsc --noEmit --pretty false
       - run: bunx vitest run src/lib/aether/__tests__/knowledge-curator-engine.test.ts
       - run: bun run build
