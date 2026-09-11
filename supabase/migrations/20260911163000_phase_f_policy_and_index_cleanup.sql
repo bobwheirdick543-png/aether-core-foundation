@@ -1,4 +1,6 @@
 -- Phase F policy/index cleanup: keep one owner policy per action and index new FKs.
+ALTER TABLE public.aether_research_plans ADD COLUMN IF NOT EXISTS project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL;
+ALTER TABLE public.aether_research_comparisons ADD COLUMN IF NOT EXISTS project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL;
 DROP POLICY IF EXISTS "research source versions owner read" ON public.aether_research_source_versions;
 DROP POLICY IF EXISTS "research source versions owner insert" ON public.aether_research_source_versions;
 DROP POLICY IF EXISTS "research attempts owner read" ON public.aether_research_retrieval_attempts;
