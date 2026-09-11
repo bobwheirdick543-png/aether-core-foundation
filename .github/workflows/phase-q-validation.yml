@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/lib/aether/module-runtime.ts'
       - 'src/lib/aether/module.functions.ts'
+      - 'src/lib/aether/module-admin.functions.ts'
       - 'src/lib/aether/module-worker.ts'
       - 'src/lib/aether/agents.ts'
       - 'src/lib/aether/__tests__/module-runtime.test.ts'
@@ -17,6 +18,7 @@ on:
     paths:
       - 'src/lib/aether/module-runtime.ts'
       - 'src/lib/aether/module.functions.ts'
+      - 'src/lib/aether/module-admin.functions.ts'
       - 'src/lib/aether/module-worker.ts'
       - 'src/lib/aether/agents.ts'
       - 'src/lib/aether/__tests__/module-runtime.test.ts'
