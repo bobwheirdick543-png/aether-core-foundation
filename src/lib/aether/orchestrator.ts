@@ -1,135 +1,26 @@
+/** Phase N — durable, provider-independent multi-agent orchestration primitives. */
 import type { AgentKey } from "./agents";
-import type { AgentResult } from "./agent-sdk";
-import type { TaskStatus } from "./task-runtime";
-
-export interface OrchestratorStage { key: string; label: string; description: string; implemented: boolean; }
-
-export const ORCHESTRATOR_PIPELINE: OrchestratorStage[] = [
-  { key: "request", label: "User request", description: "Input captured from interface or API.", implemented: true },
-  { key: "intent", label: "Intent", description: "Normalize the request into an actionable intent.", implemented: true },
-  { key: "permissions", label: "Permissions", description: "Check requester, scopes and agent limits before execution.", implemented: true },
-  { key: "context", label: "Context", description: "Assemble task-local context within an explicit budget.", implemented: true },
-  { key: "knowledge", label: "Knowledge retrieval", description: "Approved production knowledge is consumed when the knowledge layer exposes it.", implemented: false },
-  { key: "plan", label: "Typed plan", description: "Create traceable steps, dependencies, risk and expected outputs.", implemented: true },
-  { key: "model", label: "AAX routing", description: "Resolve an approved Aether Ascension generation by real capabilities and availability.", implemented: true },
-  { key: "tools", label: "Tools / agents", description: "Delegate only through registered capabilities and the universal runtime.", implemented: true },
-  { key: "evaluation", label: "Evaluation", description: "Evaluate intermediate results and escalate when required.", implemented: true },
-  { key: "response", label: "Final response", description: "Produce a user-safe response from completed execution results.", implemented: true },
-];
-
-export const PLATFORM_LAYERS = ["Platform", "Core services", "AAX Models", "Memory", "Knowledge", "Tools", "Agents", "Projects / Modules", "External applications"] as const;
-
-export interface WorkflowStep {
-  step_id: string;
-  agent_key: AgentKey;
-  description: string;
-  depends_on?: string[];
-  required_permission?: string;
-  timeout_ms?: number;
-  model_key?: string;
-}
-
-export interface WorkflowPlan { plan_id: string; task_id: string; steps: WorkflowStep[]; created_at: string; status: "planned" | "running" | "completed" | "failed" | "cancelled"; }
-
-export interface OrchestratorDecision {
-  next_agent: AgentKey | null;
-  next_step_id?: string;
-  action: "start_step" | "wait_approval" | "complete" | "fail" | "retry" | "escalate";
-  reason: string;
-  updated_status?: TaskStatus;
-}
-
-export type OrchestrationRisk = "low" | "medium" | "high" | "critical";
-export type AaxRequirement = "reasoning" | "conversation" | "knowledge" | "tools" | "structured-output" | "vision" | "multimodal" | "long-context" | "advanced-reasoning" | "streaming" | "tool-calling";
-
-export interface OrchestrationPlanDraft {
-  title: string;
-  intent: string;
-  capabilities: string[];
-  context: Record<string, unknown>;
-  modelRequirements: Record<string, unknown>;
-  tools: string[];
-  agents: AgentKey[];
-  expectedOutputs: string[];
-  riskLevel: OrchestrationRisk;
-  approvalRequired: boolean;
-}
-
-export interface ContextBudget { totalTokens: number; systemTokens: number; historyTokens: number; knowledgeTokens: number; toolTokens: number; remainingTokens: number; }
-
-const AGENT_KEYS = new Set<AgentKey>(["orchestrator", "research", "verification", "knowledge-acquisition", "curator", "report", "notification", "security", "optimization", "module"]);
-const text = (value: string, max: number) => String(value ?? "").trim().slice(0, max);
-
-export function classifyIntent(message: string): OrchestrationPlanDraft {
-  const raw = text(message, 8000); const lower = raw.toLowerCase();
-  const capabilities = new Set<string>(); const agents = new Set<AgentKey>(["orchestrator"]); const tools = new Set<string>();
-  let intent = "general_assistance"; let riskLevel: OrchestrationRisk = "low"; let expectedOutputs = ["response"];
-  if (/research|investigate|find out|look up|source|latest|current/.test(lower)) { intent = "research"; capabilities.add("research"); capabilities.add("source_evidence"); agents.add("research"); agents.add("verification"); tools.add("web_research"); }
-  if (/verify|fact.?check|validate|evidence|claim|contradict/.test(lower)) { intent = intent === "general_assistance" ? "verification" : `${intent}_and_verification`; capabilities.add("verification"); agents.add("verification"); }
-  if (/report|pdf|document/.test(lower)) { intent = intent === "general_assistance" ? "report_generation" : `${intent}_and_report`; capabilities.add("report_generation"); agents.add("report"); expectedOutputs = ["structured_report"]; }
-  if (/code|coding|program|debug|repository|repo/.test(lower)) capabilities.add("code");
-  if (/image|photo|visual|screenshot/.test(lower)) capabilities.add("vision");
-  if (/translate|translation/.test(lower)) capabilities.add("translation");
-  if (/long form|long-form|deep analysis|very detailed/.test(lower)) capabilities.add("long_context");
-  if (/delete|remove|change settings|admin|permission|credential|publish|send to/.test(lower)) riskLevel = "high";
-  if (/delete account|drop database|give yourself admin|disable security/.test(lower)) riskLevel = "critical";
-  return {
-    title: raw.slice(0, 120) || "Aether request", intent, capabilities: [...capabilities], context: { requestText: raw },
-    modelRequirements: { requiredCapabilities: [...capabilities], preferredAaxCapability: resolveAaxRequirement([...capabilities]) },
-    tools: [...tools], agents: [...agents], expectedOutputs, riskLevel, approvalRequired: riskLevel === "high" || riskLevel === "critical",
-  };
-}
-
-export function validateOrchestrationPlan(plan: OrchestrationPlanDraft): true {
-  if (!plan.intent) throw new Error("Orchestration intent is required");
-  if (!plan.agents.length) throw new Error("Orchestration plan requires an agent");
-  if (plan.agents.some((key) => !AGENT_KEYS.has(key))) throw new Error("Plan contains an unregistered agent");
-  if (plan.riskLevel === "critical" && !plan.approvalRequired) throw new Error("Critical plans require approval");
-  return true;
-}
-
-export function resolveAaxRequirement(capabilities: string[]): AaxRequirement {
-  if (capabilities.includes("vision")) return "vision";
-  if (capabilities.includes("translation")) return "multimodal";
-  if (capabilities.includes("long_context")) return "long-context";
-  if (capabilities.includes("code")) return "advanced-reasoning";
-  if (capabilities.includes("research") || capabilities.includes("verification") || capabilities.length > 1) return "reasoning";
-  return "conversation";
-}
-
-export function allocateContextBudget(totalTokens: number, input?: Partial<Omit<ContextBudget, "totalTokens" | "remainingTokens">>): ContextBudget {
-  const total = Math.max(256, Math.floor(totalTokens));
-  const requested = { systemTokens: Math.max(0, Math.floor(input?.systemTokens ?? Math.round(total * .12))), historyTokens: Math.max(0, Math.floor(input?.historyTokens ?? Math.round(total * .28))), knowledgeTokens: Math.max(0, Math.floor(input?.knowledgeTokens ?? Math.round(total * .28))), toolTokens: Math.max(0, Math.floor(input?.toolTokens ?? Math.round(total * .12))) };
-  const used = requested.systemTokens + requested.historyTokens + requested.knowledgeTokens + requested.toolTokens;
-  if (used > total) throw new Error(`Context budget exceeded: ${used} > ${total} tokens`);
-  return { totalTokens: total, ...requested, remainingTokens: total - used };
-}
-
-export function buildWorkflowSteps(plan: OrchestrationPlanDraft, taskId: string): WorkflowPlan {
-  const agents = [...plan.agents]; const steps: WorkflowStep[] = [];
-  agents.forEach((agentKey, index) => {
-    const previous = index > 0 ? [steps[index - 1].step_id] : [];
-    const permission = agentKey === "research" ? "web.search" : agentKey === "report" ? "report.generate" : agentKey === "notification" ? "notification.send" : undefined;
-    steps.push({ step_id: `${taskId}:step:${index + 1}`, agent_key: agentKey, description: agentKey === "orchestrator" ? "Coordinate and evaluate the request" : `Execute authorized ${agentKey} work`, depends_on: previous, required_permission: permission });
-  });
-  return { plan_id: `plan_${taskId}`, task_id: taskId, steps, created_at: new Date().toISOString(), status: "planned" };
-}
-
-export function planWorkflow(taskKind: string, taskId: string): WorkflowPlan {
-  const baseSteps: Record<string, WorkflowStep[]> = {
-    research: [{ step_id: "research", agent_key: "research", description: "Discover and extract sources" }, { step_id: "verify", agent_key: "verification", description: "Evaluate evidence", depends_on: ["research"] }, { step_id: "report", agent_key: "report", description: "Generate structured report/PDF", depends_on: ["verify"] }, { step_id: "notify", agent_key: "notification", description: "Notify owner", depends_on: ["report"] }],
-    knowledge: [{ step_id: "acquire", agent_key: "knowledge-acquisition", description: "Extract candidate knowledge and preserve the original source" }, { step_id: "research", agent_key: "research", description: "Add external evidence and cross-domain context", depends_on: ["acquire"] }, { step_id: "verify", agent_key: "verification", description: "Verify claims and contradictions using the original source plus accumulated understanding", depends_on: ["research"] }, { step_id: "security", agent_key: "security", description: "Audit provenance and authorization boundaries", depends_on: ["verify"] }, { step_id: "curate", agent_key: "curator", description: "Build the append-only collective package for target AAX self-analysis", depends_on: ["security"] }, { step_id: "notify", agent_key: "notification", description: "Notify owner after target AAX processing", depends_on: ["curate"] }],
-    report: [{ step_id: "report", agent_key: "report", description: "Generate report from verified material" }, { step_id: "notify", agent_key: "notification", description: "Notify owner", depends_on: ["report"] }],
-  };
-  return { plan_id: `plan_${taskId}`, task_id: taskId, steps: baseSteps[taskKind] ?? [{ step_id: "orchestrate", agent_key: "orchestrator", description: "Coordinate generic task" }], created_at: new Date().toISOString(), status: "planned" };
-}
-
-export function decideNext(plan: WorkflowPlan, completedStepIds: string[], lastResult?: AgentResult): OrchestratorDecision {
-  if (lastResult?.requiresReview) return { next_agent: null, action: "wait_approval", reason: "Last step requires human review", updated_status: "waiting_approval" };
-  if (lastResult && (lastResult.status === "failed" || (lastResult.errors && lastResult.errors.length > 0))) return { next_agent: null, action: "retry", reason: lastResult.errors?.[0] || "Step failed", updated_status: "retrying" };
-  const remaining = plan.steps.filter((s) => !completedStepIds.includes(s.step_id));
-  if (remaining.length === 0) return { next_agent: null, action: "complete", reason: "All steps completed", updated_status: "completed" };
-  const next = remaining.find((s) => !s.depends_on || s.depends_on.every((d) => completedStepIds.includes(d)));
-  if (!next) return { next_agent: null, action: "fail", reason: "No runnable step (dependency deadlock)", updated_status: "failed" };
-  return { next_agent: next.agent_key, next_step_id: next.step_id, action: "start_step", reason: `Starting step: ${next.description}` };
-}
+import { AGENTS } from "./agents";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { authorizeAgentAction, appendAgentMessage } from "./agent-runtime";
+import { exponentialBackoffMs, resolveTimeoutMs, type TaskRecord } from "./task-runtime";
+export type OrchestrationStepStatus="pending"|"ready"|"running"|"waiting_approval"|"completed"|"failed"|"skipped"|"cancelled";
+export type OrchestrationPlanStatus="draft"|"ready"|"running"|"waiting_approval"|"completed"|"failed"|"cancelled"|"paused";
+export type OrchestrationGateType="approval"|"verification"|"policy";
+export interface OrchestrationStepDefinition{stepId:string;agentKey:AgentKey;title:string;input?:Record<string,unknown>;dependsOn?:string[];requiresApproval?:boolean;requiresVerification?:boolean;maxRetries?:number;timeoutMs?:number;critical?:boolean;}
+export interface OrchestrationPlanDefinition{taskId:string;objective:string;steps:OrchestrationStepDefinition[];context?:Record<string,unknown>;}
+export interface OrchestrationDecision{stepId:string;agentKey:AgentKey;reason:string;score:number;}
+const db=supabaseAdmin as any;const AGENT_SET=new Set<AgentKey>(AGENTS.map(a=>a.key));
+export function validateOrchestrationPlan(plan:OrchestrationPlanDefinition):string[]{const errors:string[]=[];if(!plan.taskId)errors.push("taskId is required");if(!plan.objective?.trim())errors.push("objective is required");if(!Array.isArray(plan.steps)||!plan.steps.length)errors.push("At least one orchestration step is required");const ids=new Set<string>();for(const s of plan.steps??[]){if(!s.stepId||ids.has(s.stepId))errors.push(`Duplicate or empty stepId: ${s.stepId||"<empty>"}`);ids.add(s.stepId);if(!AGENT_SET.has(s.agentKey))errors.push(`Unknown agent: ${s.agentKey}`);if(s.agentKey==="orchestrator")errors.push("Orchestrator cannot delegate to itself");if(s.maxRetries!==undefined&&(!Number.isInteger(s.maxRetries)||s.maxRetries<0||s.maxRetries>20))errors.push(`Invalid maxRetries for ${s.stepId}`);if(s.timeoutMs!==undefined){try{resolveTimeoutMs(s.timeoutMs);}catch{errors.push(`Invalid timeout for ${s.stepId}`)}}}for(const s of plan.steps??[])for(const dep of s.dependsOn??[])if(!ids.has(dep))errors.push(`Unknown dependency ${dep} for ${s.stepId}`);if(!errors.length){const visiting=new Set<string>(),visited=new Set<string>();const walk=(id:string)=>{if(visiting.has(id)){errors.push("Orchestration plan contains a dependency cycle");return;}if(visited.has(id))return;visiting.add(id);const s=plan.steps.find(x=>x.stepId===id);for(const d of s?.dependsOn??[])walk(d);visiting.delete(id);visited.add(id);};for(const s of plan.steps)walk(s.stepId);}return[...new Set(errors)];}
+export function readyStepIds(steps:Array<{step_id:string;status:OrchestrationStepStatus;depends_on?:string[]|null}>):string[]{const byId=new Map(steps.map(s=>[s.step_id,s]));return steps.filter(s=>s.status==="pending"&&(s.depends_on??[]).every(d=>byId.get(d)?.status==="completed")).map(s=>s.step_id);}
+export function aggregateResults(results:Array<{stepId:string;agentKey:AgentKey;status:string;result?:Record<string,unknown>;warnings?:string[];errors?:string[]}>){const warnings=results.flatMap(r=>r.warnings??[]),errors=results.flatMap(r=>r.errors??[]),failed=results.some(r=>r.status==="failed");return{status:failed?"failed":"completed" as "failed"|"completed",result:{steps:results.map(r=>({stepId:r.stepId,agentKey:r.agentKey,status:r.status,result:r.result??{}}))},warnings,errors};}
+export function selectAgent(agentKey:AgentKey):OrchestrationDecision{if(!AGENT_SET.has(agentKey))throw new Error(`Unknown agent: ${agentKey}`);if(agentKey==="orchestrator")throw new Error("Orchestrator cannot select itself as a worker");const a=AGENTS.find(x=>x.key===agentKey)!;return{stepId:"",agentKey,reason:`Selected ${a.name} for its declared mission and tool territory`,score:1};}
+export function makeOrchestrationIdempotencyKey(taskId:string,objective:string){return`aether:orchestration:${taskId}:${stableHash(objective)}`;}
+function stableHash(value:string){let h=2166136261;for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619);}return(h>>>0).toString(16);}
+export function retryDelay(retryCount:number){return exponentialBackoffMs(retryCount,5000,300000);}
+export async function createOrchestrationPlan(input:OrchestrationPlanDefinition&{ownerId:string}){const errors=validateOrchestrationPlan(input);if(errors.length)throw new Error(errors.join("; "));const{data,error}=await db.rpc("create_orchestration_plan",{p_task_id:input.taskId,p_owner_id:input.ownerId,p_objective:input.objective,p_context:input.context??{},p_idempotency_key:makeOrchestrationIdempotencyKey(input.taskId,input.objective),p_steps:input.steps});if(error||!data)throw new Error(error?.message??"Could not create orchestration plan");return data;}
+export async function dispatchReadyStep(input:{planId:string;stepId:string;task:TaskRecord;actorId:string}){const{data:step,error}=await db.from("orchestration_steps").select("*").eq("plan_id",input.planId).eq("step_id",input.stepId).single();if(error||!step)throw new Error("Orchestration step not found");const{data:plan}=await db.from("orchestration_plans").select("*").eq("id",input.planId).single();if(!plan||plan.owner_id!==input.task.owner_id)throw new Error("Forbidden: orchestration plan ownership mismatch");const{data:ready,error:readyError}=await db.rpc("orchestration_step_ready",{p_step_id:step.id});if(readyError||!ready)throw new Error(readyError?.message??"Step dependencies are not complete");const auth=await authorizeAgentAction({agentKey:step.agent_key,permission:"orchestration.execute",action:"orchestration.execute",taskId:input.task.id,actorId:input.actorId});if(!auth.allowed)throw new Error(auth.reason);const{data:claimed,error:claimError}=await db.rpc("claim_orchestration_step",{p_step_id:step.id,p_actor_id:input.actorId});if(claimError||!claimed)throw new Error(claimError?.message??"Step claim failed");return claimed;}
+export async function recordStepResult(input:{stepId:string;status:OrchestrationStepStatus;result?:Record<string,unknown>;warnings?:string[];errors?:string[];actorId:string}){const{data,error}=await db.rpc("complete_orchestration_step",{p_step_id:input.stepId,p_status:input.status,p_result:input.result??{},p_warnings:input.warnings??[],p_errors:input.errors??[],p_actor_id:input.actorId});if(error||!data)throw new Error(error?.message??"Could not record orchestration result");return data;}
+export async function requestGate(input:{stepId:string;gateType:OrchestrationGateType;actorId:string;reason:string}){const{data,error}=await db.rpc("request_orchestration_gate",{p_step_id:input.stepId,p_gate_type:input.gateType,p_reason:input.reason,p_actor_id:input.actorId});if(error||!data)throw new Error(error?.message??"Could not request orchestration gate");return data;}
+export async function handoffStep(input:{taskId:string;runId:string;fromAgent:AgentKey;toAgent:AgentKey;payload:Record<string,unknown>;actorId:string}){return appendAgentMessage({taskId:input.taskId,runId:input.runId,fromAgent:input.fromAgent,toAgent:input.toAgent,type:"orchestration.handoff",payload:input.payload,actorId:input.actorId});}
+export async function recoverOrchestrationPlans(){const{data,error}=await db.rpc("recover_orchestration_plans");if(error)throw new Error(error.message);return data??0;}
