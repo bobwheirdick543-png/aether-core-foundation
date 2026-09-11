@@ -1,4 +1,5 @@
 /** Phase H — deterministic knowledge acquisition, curation and governance primitives. */
+/** Final validation trigger: H1 deterministic extraction/curation contract. */
 
 export type KnowledgeStatus = "candidate" | "needs_review" | "approved" | "rejected" | "published" | "superseded" | "outdated" | "conflicted";
 export type FreshnessState = "current" | "aging" | "stale" | "superseded" | "conflicted" | "deprecated";
@@ -7,7 +8,6 @@ export interface ExtractedEntity { name: string; normalizedName: string; entityT
 export interface ExtractedRelation { subject: string; predicate: string; object: string; confidence: number; }
 export interface KnowledgeExtraction { title: string; normalizedContent: string; contentHash: string; claims: ExtractedClaim[]; entities: ExtractedEntity[]; relations: ExtractedRelation[]; }
 export interface KnowledgeConflict { type: "duplicate" | "conflict" | "outdated"; candidateId?: string; reason: string; }
-
 const STOPWORDS = new Set(["the", "this", "that", "with", "from", "into", "have", "has", "were", "been", "will", "about", "their", "there", "which", "what", "when", "where", "while", "also", "than", "then", "they", "them", "your", "you"]);
 export function normalizeKnowledgeText(value: string): string { return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase(); }
 export async function sha256(value: string): Promise<string> { const bytes = new TextEncoder().encode(value); const digest = await crypto.subtle.digest("SHA-256", bytes); return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join(""); }
