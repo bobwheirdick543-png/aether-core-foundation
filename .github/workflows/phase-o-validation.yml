@@ -1,0 +1,33 @@
+name: Phase O Validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/security-runtime.ts'
+      - 'src/lib/aether/security.functions.ts'
+      - 'src/lib/aether/agents.ts'
+      - 'src/lib/aether/agent-runtime.ts'
+      - 'src/lib/aether/__tests__/security-runtime.test.ts'
+      - 'src/routes/_authenticated/admin/security.tsx'
+      - 'supabase/migrations/**phase_o**.sql'
+      - 'tsconfig.phase-o.json'
+      - '.github/workflows/phase-o-validation.yml'
+      - 'docs/architecture/phase-o-completion-record.md'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.21'
+      - run: bun install --frozen-lockfile
+      - name: Phase O focused TypeScript
+        run: bunx tsc -p tsconfig.phase-o.json --noEmit
+      - name: Phase O tests
+        run: bunx vitest run src/lib/aether/__tests__/security-runtime.test.ts
+      - name: Production build
+        run: bun run build:dev

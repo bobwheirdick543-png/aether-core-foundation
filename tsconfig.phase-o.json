@@ -1,0 +1,13 @@
+{
+  "extends":"./tsconfig.json",
+  "include":[
+    "src/lib/aether/agents.ts",
+    "src/lib/aether/agent-sdk.ts",
+    "src/lib/aether/agent-registry.ts",
+    "src/lib/aether/agent-runtime.ts",
+    "src/lib/aether/agent.functions.ts",
+    "src/lib/aether/security-runtime.ts",
+    "src/lib/aether/security.functions.ts",
+    "src/lib/aether/__tests__/security-runtime.test.ts"
+  ]
+}
