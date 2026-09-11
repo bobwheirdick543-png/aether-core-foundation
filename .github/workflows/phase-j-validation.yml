@@ -1,0 +1,34 @@
+name: Phase J validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/lib/aether/report-engine.ts"
+      - "src/lib/aether/report.functions.ts"
+      - "src/lib/aether/__tests__/report-engine.test.ts"
+      - "src/lib/aether/tsconfig.phase-j.json"
+      - "src/routes/_authenticated/reports.tsx"
+      - "supabase/migrations/*phase_j*"
+      - "docs/architecture/phase-j-completion-record.md"
+      - ".github/workflows/phase-j-validation.yml"
+  pull_request:
+    paths:
+      - "src/lib/aether/report-engine.ts"
+      - "src/lib/aether/report.functions.ts"
+      - "src/lib/aether/__tests__/report-engine.test.ts"
+      - "src/lib/aether/tsconfig.phase-j.json"
+      - "src/routes/_authenticated/reports.tsx"
+      - "supabase/migrations/*phase_j*"
+      - "docs/architecture/phase-j-completion-record.md"
+      - ".github/workflows/phase-j-validation.yml"
+jobs:
+  phase-j:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - run: bun install
+      - run: bunx tsc -p src/lib/aether/tsconfig.phase-j.json --noEmit
+      - run: bunx vitest run src/lib/aether/__tests__/report-engine.test.ts
+      - run: bun run build
