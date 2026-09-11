@@ -16,7 +16,8 @@ describe("Aether native web intelligence contract", () => {
 
   it("retrieves sources concurrently and deduplicates them", () => {
     expect(source).toContain("dedupeHits");
-    expect(source).toContain("Promise.allSettled(selected.map");
+    expect(source).toContain("Promise.allSettled(");
+    expect(source).toContain("selected.map((hit) => retrieveHit");
     expect(source).toContain("contentHash");
     expect(source).toContain("sourceDomains");
   });
