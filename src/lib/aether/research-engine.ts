@@ -62,6 +62,7 @@ export interface RetrieveOptions {
   userAgent?: string;
   respectRobots?: boolean;
   staleAfterDays?: number;
+  signal?: AbortSignal;
 }
 
 const DEFAULT_TIMEOUT_MS = 12_000;
@@ -72,6 +73,7 @@ const DEFAULT_USER_AGENT = "AetherResearchBot/1.0 (+https://aether.ai; research 
 const ALLOWED_CONTENT_TYPES = ["text/html", "application/xhtml+xml", "text/plain", "application/json"];
 const RETRYABLE_HTTP = new Set([408, 425, 429, 500, 502, 503, 504]);
 const TRACKING_KEYS = /^(utm_[^=]*|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid|ref|ref_src)$/i;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 function decodeEntities(value: string): string {
   return value
@@ -86,15 +88,15 @@ function decodeEntities(value: string): string {
 function stripTags(html: string): string {
   return decodeEntities(
     html
-      .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
-      .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
-      .replace(/<noscript[\\s\\S]*?<\\/noscript>/gi, " ")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
       .replace(/<[^>]+>/g, " "),
-  ).replace(/\\s+/g, " ").trim();
+  ).replace(/\s+/g, " ").trim();
 }
 
 function extractTitle(html: string): string | null {
-  const m = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);
+  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   return m?.[1] ? stripTags(m[1]).slice(0, 300) || null : null;
 }
 
@@ -131,10 +133,10 @@ export function isHttpUrl(value: string): boolean {
 }
 
 function isPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/[\\[\\]]/g, "");
+  const host = hostname.toLowerCase().replace(/[\[\]]/g, "");
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host === "::1") return true;
-  if (/^127(?:\\.\\d{1,3}){3}$/.test(host) || /^10(?:\\.\\d{1,3}){3}$/.test(host) || /^192\\.168(?:\\.\\d{1,3}){2}$/.test(host)) return true;
-  const m = host.match(/^172\\.(\\d{1,3})\\.\\d{1,3}\\.\\d{1,3}$/);
+  if (/^127(?:\.\d{1,3}){3}$/.test(host) || /^10(?:\.\d{1,3}){3}$/.test(host) || /^192\.168(?:\.\d{1,3}){2}$/.test(host)) return true;
+  const m = host.match(/^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
   return Boolean(m && Number(m[1]) >= 16 && Number(m[1]) <= 31);
 }
 
@@ -144,12 +146,12 @@ export function normalizeUrl(value: string): string {
   for (const key of [...url.searchParams.keys()]) if (TRACKING_KEYS.test(key)) url.searchParams.delete(key);
   url.hostname = url.hostname.toLowerCase();
   if ((url.protocol === "https:" && url.port === "443") || (url.protocol === "http:" && url.port === "80")) url.port = "";
-  url.pathname = url.pathname.replace(/\\/{2,}/g, "/");
-  return url.toString().replace(/\\/$/, "");
+  url.pathname = url.pathname.replace(/\/{2,}/g, "/");
+  return url.toString().replace(/\/$/, "");
 }
 
 export function domainFromUrl(url: string): string {
-  try { return new URL(url).hostname.replace(/^www\\./, "").toLowerCase(); } catch { return "unknown"; }
+  try { return new URL(url).hostname.replace(/^www\./, "").toLowerCase(); } catch { return "unknown"; }
 }
 
 function failureForStatus(status: number): RetrievalFailureClass {
@@ -160,11 +162,34 @@ function failureForStatus(status: number): RetrievalFailureClass {
 
 function retryDelayMs(attempt: number): number { return Math.min(4_000, 400 * 2 ** attempt); }
 
-async function readBoundedBody(response: Response, maxBytes: number): Promise<string> {
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
+}
+
+async function waitWithCancellation(ms: number, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  await new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onAbort = () => {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new DOMException("Research cancelled", "AbortError"));
+    };
+    timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, Math.max(0, ms));
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function readBoundedBody(response: Response, maxBytes: number, signal?: AbortSignal): Promise<string> {
+  throwIfAborted(signal);
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (declared > maxBytes) throw Object.assign(new Error(`Response exceeds ${maxBytes} byte limit`), { failureClass: "response_too_large" as const });
   if (!response.body) {
     const text = await response.text();
+    throwIfAborted(signal);
     if (new TextEncoder().encode(text).byteLength > maxBytes) throw Object.assign(new Error("Response exceeds byte limit"), { failureClass: "response_too_large" as const });
     return text;
   }
@@ -173,6 +198,7 @@ async function readBoundedBody(response: Response, maxBytes: number): Promise<st
   let total = 0;
   try {
     while (true) {
+      throwIfAborted(signal);
       const { done, value } = await reader.read();
       if (done) break;
       if (value) {
@@ -191,18 +217,21 @@ async function readBoundedBody(response: Response, maxBytes: number): Promise<st
   return new TextDecoder("utf-8", { fatal: false }).decode(merged);
 }
 
-async function robotsAllowed(url: string, userAgent: string, timeoutMs: number): Promise<boolean> {
+async function robotsAllowed(url: string, userAgent: string, timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
   try {
+    throwIfAborted(signal);
     const target = new URL(url);
     const robotsUrl = `${target.origin}/robots.txt`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, 5_000));
+    const onAbort = () => controller.abort();
+    signal?.addEventListener("abort", onAbort, { once: true });
     try {
       const response = await fetch(robotsUrl, { headers: { "User-Agent": userAgent }, signal: controller.signal });
       if (response.status === 404) return true;
       if (!response.ok) return true;
       const text = await response.text();
-      const lines = text.split(/\\r?\\n/).map((line) => line.trim());
+      const lines = text.split(/\r?\n/).map((line) => line.trim());
       let active = false;
       let denied = false;
       for (const line of lines) {
@@ -219,25 +248,43 @@ async function robotsAllowed(url: string, userAgent: string, timeoutMs: number):
         }
       }
       return !denied;
-    } finally { clearTimeout(timer); }
-  } catch { return true; }
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+  } catch (error) {
+    if (signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
+    return true;
+  }
 }
 
 async function fetchWithRedirects(startUrl: string, options: Required<RetrieveOptions>): Promise<{ response: Response; finalUrl: string; redirectCount: number }> {
   let current = normalizeUrl(startUrl);
   let redirectCount = 0;
+  const visited = new Set<string>([current]);
+  const deadline = Date.now() + options.timeoutMs;
   for (;;) {
+    throwIfAborted(options.signal);
+    const remaining = Math.max(1, deadline - Date.now());
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), remaining);
+    const onAbort = () => controller.abort();
+    options.signal?.addEventListener("abort", onAbort, { once: true });
     try {
       const response = await fetch(current, { method: "GET", redirect: "manual", signal: controller.signal, headers: { "User-Agent": options.userAgent, Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,application/json;q=0.8" } });
-      if (![301,302,303,307,308].includes(response.status)) return { response, finalUrl: current, redirectCount };
+      if (!REDIRECT_STATUSES.has(response.status)) return { response, finalUrl: current, redirectCount };
       const location = response.headers.get("location");
       if (!location) return { response, finalUrl: current, redirectCount };
       if (++redirectCount > options.maxRedirects) throw Object.assign(new Error("Redirect limit exceeded"), { failureClass: "blocked" as const });
-      current = normalizeUrl(new URL(location, current).toString());
-      if (!isHttpUrl(current)) throw Object.assign(new Error("Redirect target is not allowed"), { failureClass: "blocked" as const });
-    } finally { clearTimeout(timer); }
+      const next = normalizeUrl(new URL(location, current).toString());
+      if (!isHttpUrl(next)) throw Object.assign(new Error("Redirect target is not allowed"), { failureClass: "blocked" as const });
+      if (visited.has(next)) throw Object.assign(new Error("Redirect loop detected"), { failureClass: "blocked" as const });
+      visited.add(next);
+      current = next;
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+    }
   }
 }
 
@@ -250,24 +297,32 @@ export async function retrievePage(url: string, optionsOrTimeout: RetrieveOption
     userAgent: typeof optionsOrTimeout === "number" ? DEFAULT_USER_AGENT : optionsOrTimeout.userAgent ?? DEFAULT_USER_AGENT,
     respectRobots: typeof optionsOrTimeout === "number" ? true : optionsOrTimeout.respectRobots ?? true,
     staleAfterDays: typeof optionsOrTimeout === "number" ? 30 : optionsOrTimeout.staleAfterDays ?? 30,
+    signal: typeof optionsOrTimeout === "number" ? undefined : optionsOrTimeout.signal,
   };
   const retrievedAt = new Date().toISOString();
   if (!isHttpUrl(url)) return { url, finalUrl: url, status: 0, title: null, text: "", contentHash: "", retrievedAt, failureClass: "invalid_url", error: "Only public http/https URLs are allowed" };
   const normalizedUrl = normalizeUrl(url);
-  if (options.respectRobots && !(await robotsAllowed(normalizedUrl, options.userAgent, options.timeoutMs))) return { url, finalUrl: normalizedUrl, status: 0, title: null, text: "", contentHash: "", retrievedAt, robotsAllowed: false, failureClass: "robots_denied", error: "Retrieval disallowed by robots.txt" };
+  try {
+    throwIfAborted(options.signal);
+    if (options.respectRobots && !(await robotsAllowed(normalizedUrl, options.userAgent, options.timeoutMs, options.signal))) return { url, finalUrl: normalizedUrl, status: 0, title: null, text: "", contentHash: "", retrievedAt, robotsAllowed: false, failureClass: "robots_denied", error: "Retrieval disallowed by robots.txt" };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return { url, finalUrl: normalizedUrl, status: 0, title: null, text: "", contentHash: "", retrievedAt, attempts: 0, failureClass: "timeout", error: "Research cancelled" };
+    throw error;
+  }
 
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= options.maxRetries + 1; attempt++) {
     try {
+      throwIfAborted(options.signal);
       const { response, finalUrl, redirectCount } = await fetchWithRedirects(normalizedUrl, options);
       const contentType = (response.headers.get("content-type") ?? "").split(";", 1)[0].trim().toLowerCase();
       if (!response.ok) {
         const failureClass = failureForStatus(response.status);
-        if (RETRYABLE_HTTP.has(response.status) && attempt <= options.maxRetries) { await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt - 1))); continue; }
+        if (RETRYABLE_HTTP.has(response.status) && attempt <= options.maxRetries) { await waitWithCancellation(retryDelayMs(attempt - 1), options.signal); continue; }
         return { url, finalUrl, status: response.status, title: null, text: "", contentHash: "", retrievedAt, contentType, redirectCount, attempts: attempt, failureClass, error: `HTTP ${response.status}` };
       }
       if (!ALLOWED_CONTENT_TYPES.includes(contentType)) return { url, finalUrl, status: response.status, title: null, text: "", contentHash: "", retrievedAt, contentType, redirectCount, attempts: attempt, failureClass: "unsupported_content_type", error: `Unsupported content type: ${contentType || "unknown"}` };
-      const raw = await readBoundedBody(response, options.maxBytes);
+      const raw = await readBoundedBody(response, options.maxBytes, options.signal);
       const title = extractTitle(raw);
       const text = stripTags(raw).slice(0, 80_000);
       if (!text) return { url, finalUrl, status: response.status, title, text: "", contentHash: "", retrievedAt, contentType, contentLength: new TextEncoder().encode(raw).byteLength, redirectCount, attempts: attempt, failureClass: "parse_error", error: "No readable text extracted" };
@@ -298,10 +353,13 @@ export async function retrievePage(url: string, optionsOrTimeout: RetrieveOption
       };
     } catch (err) {
       lastError = err;
+      if (err instanceof DOMException && err.name === "AbortError" && options.signal?.aborted) {
+        return { url, finalUrl: normalizedUrl, status: 0, title: null, text: "", contentHash: "", retrievedAt, attempts: attempt, failureClass: "timeout", error: "Research cancelled" };
+      }
       const message = err instanceof Error ? err.message : "Fetch failed";
       const failureClass = (err as { failureClass?: RetrievalFailureClass })?.failureClass
         ?? (err instanceof DOMException && err.name === "AbortError" ? "timeout" : "dns_or_network");
-      if (attempt <= options.maxRetries) { await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt - 1))); continue; }
+      if (attempt <= options.maxRetries) { await waitWithCancellation(retryDelayMs(attempt - 1), options.signal); continue; }
       return { url, finalUrl: normalizedUrl, status: 0, title: null, text: "", contentHash: "", retrievedAt, attempts: attempt, failureClass, error: message };
     }
   }
