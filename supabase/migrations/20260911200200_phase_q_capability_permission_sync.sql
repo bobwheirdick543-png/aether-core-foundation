@@ -1,0 +1,5 @@
+-- Phase Q: derive explicit module capability grants from versioned manifests.
+create or replace function public.sync_module_version_permissions() returns trigger language plpgsql security definer set search_path=public as $$ declare capability text; begin for capability in select jsonb_array_elements_text(coalesce(new.manifest->'capabilities','[]'::jsonb)) loop insert into public.module_permissions(module_version_id,permission,allowed,requires_approval) values(new.id,'module.capability.'||capability,true,false) on conflict(module_version_id,permission) do update set allowed=excluded.allowed,requires_approval=excluded.requires_approval; end loop; return new; end; $$;
+drop trigger if exists trg_sync_module_version_permissions on public.module_versions;
+create trigger trg_sync_module_version_permissions after insert or update of manifest on public.module_versions for each row execute function public.sync_module_version_permissions();
+revoke all on function public.sync_module_version_permissions() from public,anon,authenticated; grant execute on function public.sync_module_version_permissions() to service_role;
