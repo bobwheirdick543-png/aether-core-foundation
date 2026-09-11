@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/lib/aether/optimization.ts",
+    "src/lib/aether/optimization-runtime.ts",
+    "src/lib/aether/optimization.functions.ts",
+    "src/lib/aether/agents.ts",
+    "src/lib/aether/agent-registry.ts",
+    "src/lib/aether/security-runtime.ts",
+    "src/lib/aether/__tests__/optimization-runtime.test.ts",
+    "src/routes/_authenticated/admin/optimization.tsx"
+  ]
+}
