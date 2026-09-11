@@ -11,10 +11,11 @@ export interface EmbeddingProvider {
 }
 
 export interface RetrievalCandidate {
-  id: string;
+  id?: string;
   entryId: string;
   chunkId?: string | null;
   versionId?: string | null;
+  rank?: number;
   title: string;
   snippet: string;
   content: string;
@@ -87,8 +88,9 @@ export function chunkText(content: string, maxCharacters = 1800, overlap = 180):
 
 export function buildRagContext(results: RetrievalCandidate[], maxCharacters = 12000): string {
   let output = "";
-  for (const result of results) {
-    const block = `[${result.rank ?? "?"}] ${result.title}\n${result.snippet}\nSource/version: ${String(result.provenance.source_url ?? result.provenance.version ?? "internal")}`;
+  for (const [index, result] of results.entries()) {
+    const rank = result.rank ?? index + 1;
+    const block = `[${rank}] ${result.title}\n${result.snippet}\nSource/version: ${String(result.provenance.source_url ?? result.provenance.version ?? "internal")}`;
     if ((output + block).length > maxCharacters) break;
     output += `${output ? "\n\n" : ""}${block}`;
   }
