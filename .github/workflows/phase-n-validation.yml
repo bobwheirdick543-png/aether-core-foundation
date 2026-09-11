@@ -1,4 +1,5 @@
 name: Phase N Validation
+# Phase N durable orchestration validation; intentionally independent of Vercel.
 on:
   push:
     branches: [main]
