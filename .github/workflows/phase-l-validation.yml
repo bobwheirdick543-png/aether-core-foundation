@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/phase-l-validation.yml'
       - 'src/lib/aether/scheduler.ts'
       - 'src/lib/aether/scheduler-runtime.ts'
       - 'src/lib/aether/scheduler.functions.ts'
@@ -13,6 +14,7 @@ on:
       - 'docs/architecture/phase-l-completion-record.md'
   pull_request:
     paths:
+      - '.github/workflows/phase-l-validation.yml'
       - 'src/lib/aether/scheduler.ts'
       - 'src/lib/aether/scheduler-runtime.ts'
       - 'src/lib/aether/scheduler.functions.ts'
