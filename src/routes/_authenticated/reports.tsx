@@ -1,32 +1,13 @@
+import { useEffect,useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/layout/AppShell";
-import { PageHeader, PhaseNote, Panel } from "@/components/common/Primitives";
-
-export const Route = createFileRoute("/_authenticated/reports")({
-  head: () => ({
-    meta: [
-      { title: "Reports — Aether" },
-      { name: "description", content: "Generated research and analysis reports." },
-      { property: "og:title", content: "Reports — Aether" },
-      { property: "og:description", content: "Generated research and analysis reports." },
-    ],
-  }),
-  component: Page,
-});
-
-function Page() {
-  return (
-    <AppShell>
-      <PageHeader title="Reports" description="Generated research and analysis reports." />
-      <div className="mt-6 space-y-4">
-        <PhaseNote>Interface only — backend behaviour lands in a later phase.</PhaseNote>
-        <Panel>
-          <p className="text-sm text-muted-foreground">
-            This surface is part of the Aether foundation build. Data and actions arrive with the
-            matching platform phase.
-          </p>
-        </Panel>
-      </div>
-    </AppShell>
-  );
-}
+import { PageHeader,Panel } from "@/components/common/Primitives";
+import { archiveReport,generateReport,getReport,getReportDownloadUrl,listReports } from "@/lib/aether/report.functions";
+export const Route=createFileRoute("/_authenticated/reports")({head:()=>({meta:[{title:"Reports — Aether"},{name:"description",content:"Generated research and analysis reports."}] }),component:Page});
+type Row={id:string;title:string;topic:string|null;current_version:number;source_count:number;verification_status:string;approval_status:string;updated_at:string;archived_at:string|null};
+function Page(){const [rows,setRows]=useState<Row[]>([]),[search,setSearch]=useState(""),[session,setSession]=useState(""),[busy,setBusy]=useState(false),[msg,setMsg]=useState(""),[detail,setDetail]=useState<Awaited<ReturnType<typeof getReport>>|null>(null);const refresh=async()=>setRows(await listReports({data:{search,includeArchived:true}}) as Row[]);useEffect(()=>{void refresh().catch(e=>setMsg(e instanceof Error?e.message:String(e)));},[]);
+ const generate=async()=>{if(!session.trim()){setMsg("Enter a research session ID.");return;}setBusy(true);setMsg("");try{const r=await generateReport({data:{researchSessionId:session.trim(),idempotencyKey:`reports:${session.trim()}:${Date.now()}`}});setMsg(`Report ${r.reportId} version ${r.version} generated.`);await refresh();}catch(e){setMsg(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
+ const open=async(id:string)=>{setBusy(true);try{setDetail(await getReport({data:{reportId:id}}));}catch(e){setMsg(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
+ const download=async(id:string,version?:number)=>{setBusy(true);try{const r=await getReportDownloadUrl({data:{reportId:id,version}});window.open(r.url,"_blank","noopener,noreferrer");}catch(e){setMsg(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
+ const archive=async(id:string)=>{setBusy(true);try{await archiveReport({data:{reportId:id}});setMsg("Report archived.");setDetail(null);await refresh();}catch(e){setMsg(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
+ return <AppShell><PageHeader title="Reports" description="Durable, reviewable Aether research artifacts."/><div className="mt-6 space-y-4"><Panel><div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]"><input className="rounded-md border bg-background px-3 py-2 text-sm" value={session} onChange={e=>setSession(e.target.value)} placeholder="Research session ID"/><input className="rounded-md border bg-background px-3 py-2 text-sm" value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")void refresh();}} placeholder="Search reports"/><button type="button" disabled={busy} className="rounded-md border px-4 py-2 text-sm" onClick={()=>void generate()}>Generate PDF</button></div>{msg&&<p className="mt-3 text-sm text-muted-foreground">{msg}</p>}</Panel><Panel><div className="flex justify-between"><h2 className="text-lg font-semibold">Report library</h2><button type="button" className="text-sm underline" onClick={()=>void refresh()}>Refresh</button></div>{!rows.length?<p className="mt-4 text-sm text-muted-foreground">No reports found.</p>:<div className="mt-4 divide-y">{rows.map(r=><div key={r.id} className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between"><button type="button" className="text-left" onClick={()=>void open(r.id)}><div className="font-medium">{r.title}</div><div className="text-xs text-muted-foreground">v{r.current_version} · {r.source_count} sources · {r.verification_status} · {r.approval_status}{r.archived_at?" · archived":""}</div></button><div className="flex gap-2">{!r.archived_at&&<button type="button" className="rounded-md border px-3 py-1.5 text-xs" onClick={()=>void archive(r.id)}>Archive</button>}<button type="button" className="rounded-md border px-3 py-1.5 text-xs" onClick={()=>void download(r.id)}>Download</button></div></div>)}</div>}</Panel>{detail&&<Panel><div className="flex justify-between"><div><h2 className="text-lg font-semibold">{detail.report.title}</h2><p className="text-sm text-muted-foreground">Version history · {detail.report.verification_status} · {detail.report.approval_status}</p></div><button type="button" className="text-sm underline" onClick={()=>setDetail(null)}>Close</button></div><div className="mt-4 space-y-2">{detail.versions.map(v=><div key={v.id} className="flex flex-col gap-2 rounded-md border p-3 md:flex-row md:items-center md:justify-between"><div><div className="text-sm font-medium">Version {v.version} · {v.status}</div><div className="text-xs text-muted-foreground">{v.byte_size?v.byte_size.toLocaleString()+" bytes":"No artifact"} · {v.generated_at}</div>{v.error&&<div className="text-xs text-destructive">{v.error}</div>}</div>{v.status==="ready"&&<button type="button" className="rounded-md border px-3 py-1.5 text-xs" onClick={()=>void download(detail.report.id,v.version)}>Download version</button>}</div>)}</div></Panel>}</div></AppShell>}
