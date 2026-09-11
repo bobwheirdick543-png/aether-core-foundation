@@ -23,5 +23,5 @@ jobs:
         run: npm run build
       - name: Phase C TypeScript validation
         run: npx tsc -p tsconfig.phase-c.json --noEmit --pretty false
-      - name: AAX and Phase D workspace tests
-        run: npx vitest run src/lib/aether/aax.test.ts src/lib/aether/aax-phase-d.test.ts src/lib/aether/aax-web-intelligence.test.ts src/lib/aether/aether-phase-e.test.ts
+      - name: AAX and Phase D/E workspace tests
+        run: npx vitest run src/lib/aether/aax.test.ts src/lib/aether/aax-phase-d.test.ts src/lib/aether/aax-web-intelligence.test.ts src/lib/aether/aether-phase-e.test.ts src/lib/aether/aether-memory-governance.test.ts src/lib/aether/aether-phase-e-completion.test.ts
