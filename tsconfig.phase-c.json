@@ -1,12 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "strict": false,
-    "strictNullChecks": false,
-    "noImplicitAny": false,
-    "noUncheckedIndexedAccess": false,
-    "types": ["node"]
-  },
+  "compilerOptions": { "strict": false, "strictNullChecks": false, "noImplicitAny": false, "noUncheckedIndexedAccess": false, "types": ["node"] },
   "include": [
     "src/lib/aether/aax-gateway.ts",
     "src/lib/aether/aax-capabilities.ts",
@@ -20,6 +14,8 @@
     "src/lib/aether/aax-knowledge-evolution-engine.ts",
     "src/lib/aether/aax-web-intelligence.ts",
     "src/lib/aether/aax-web-research.ts",
+    "src/lib/aether/aether-memory.functions.ts",
+    "src/lib/aether/aether-project.functions.ts",
     "src/lib/admin/aax-model-lab.types.ts"
   ]
 }
