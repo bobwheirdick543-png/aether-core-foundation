@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Panel, Tag } from "@/components/common/Primitives";
+import { listMyVerificationSessions } from "@/lib/aether/verification-sessions.functions";
 import {
   executeVerificationRun,
   getMyVerificationRun,
-  listMyVerificationSessions,
   reviewVerificationClaim,
   startVerificationRun,
 } from "@/lib/aether/verification.functions";
