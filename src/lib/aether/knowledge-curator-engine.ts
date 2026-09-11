@@ -1,0 +1,111 @@
+/** Phase H — deterministic knowledge acquisition, curation and governance primitives. */
+
+export type KnowledgeStatus = "candidate" | "needs_review" | "approved" | "rejected" | "published" | "superseded" | "outdated" | "conflicted";
+export type FreshnessState = "current" | "aging" | "stale" | "superseded" | "conflicted" | "deprecated";
+
+export interface ExtractedClaim { text: string; normalized: string; hash: string; }
+export interface ExtractedEntity { name: string; normalizedName: string; entityType: string; }
+export interface ExtractedRelation { subject: string; predicate: string; object: string; confidence: number; }
+
+export interface KnowledgeExtraction {
+  title: string;
+  normalizedContent: string;
+  contentHash: string;
+  claims: ExtractedClaim[];
+  entities: ExtractedEntity[];
+  relations: ExtractedRelation[];
+}
+
+export interface KnowledgeConflict { type: "duplicate" | "conflict" | "outdated"; candidateId?: string; reason: string; }
+
+const STOPWORDS = new Set(["the", "this", "that", "with", "from", "into", "have", "has", "were", "been", "will", "about", "their", "there", "which", "what", "when", "where", "while", "also", "than", "then", "they", "them", "your", "you"]);
+
+export function normalizeKnowledgeText(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export async function sha256(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function splitClaims(content: string): string[] {
+  return content.replace(/\r/g, "").split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter((s) => s.length >= 20).slice(0, 200);
+}
+
+function extractEntities(claims: string[]): ExtractedEntity[] {
+  const values = new Map<string, ExtractedEntity>();
+  for (const claim of claims) {
+    const matches = claim.match(/\b[A-Z][A-Za-z0-9&.'-]{2,}(?:\s+[A-Z][A-Za-z0-9&.'-]{2,}){0,3}\b/g) ?? [];
+    for (const name of matches) {
+      const normalizedName = normalizeKnowledgeText(name);
+      if (!normalizedName || STOPWORDS.has(normalizedName) || normalizedName.length < 3) continue;
+      values.set(normalizedName, { name, normalizedName, entityType: "unknown" });
+    }
+  }
+  return Array.from(values.values()).slice(0, 100);
+}
+
+function extractRelations(claims: string[]): ExtractedRelation[] {
+  const relations: ExtractedRelation[] = [];
+  for (const claim of claims) {
+    const match = claim.match(/^(.{2,80}?)\s+(?:is|are|was|were|has|have|uses|uses|supports|contains|includes)\s+(.{2,160}?)(?:[.!?]|$)/i);
+    if (!match) continue;
+    const subject = match[1].trim();
+    const object = match[2].trim();
+    if (subject && object) relations.push({ subject, predicate: "asserts", object, confidence: 0.5 });
+  }
+  return relations.slice(0, 100);
+}
+
+export async function extractKnowledge(content: string): Promise<KnowledgeExtraction> {
+  const normalizedContent = normalizeKnowledgeText(content);
+  if (!normalizedContent) throw new Error("Knowledge content cannot be empty");
+  const rawClaims = splitClaims(content);
+  const claims: ExtractedClaim[] = [];
+  for (const text of rawClaims) claims.push({ text, normalized: normalizeKnowledgeText(text), hash: await sha256(normalizeKnowledgeText(text)) });
+  const title = rawClaims[0]?.slice(0, 120) ?? content.trim().slice(0, 120);
+  return { title, normalizedContent, contentHash: await sha256(normalizedContent), claims, entities: extractEntities(rawClaims), relations: extractRelations(rawClaims) };
+}
+
+export function freshnessFromEvidence(input: { retrievedAt?: string | null; publishedAt?: string | null; staleAt?: string | null; now?: Date }): FreshnessState {
+  const now = (input.now ?? new Date()).getTime();
+  if (input.staleAt && new Date(input.staleAt).getTime() <= now) return "stale";
+  const date = input.publishedAt ?? input.retrievedAt;
+  if (!date) return "aging";
+  const ageDays = Math.max(0, (now - new Date(date).getTime()) / 86_400_000);
+  if (ageDays <= 30) return "current";
+  if (ageDays <= 180) return "aging";
+  return "stale";
+}
+
+export function mergeFreshness(states: FreshnessState[]): FreshnessState {
+  if (states.includes("conflicted")) return "conflicted";
+  if (states.includes("stale")) return "stale";
+  if (states.includes("aging")) return "aging";
+  return "current";
+}
+
+export function findConflicts(candidate: { normalizedContent: string; claims: ExtractedClaim[] }, existing: Array<{ id: string; normalizedContent: string; claims: ExtractedClaim[]; status: KnowledgeStatus }>): KnowledgeConflict[] {
+  const conflicts: KnowledgeConflict[] = [];
+  const candidateClaims = new Set(candidate.claims.map((c) => c.normalized));
+  for (const item of existing) {
+    if (["rejected", "superseded"].includes(item.status)) continue;
+    if (item.normalizedContent === candidate.normalizedContent) {
+      conflicts.push({ type: "duplicate", candidateId: item.id, reason: "An active knowledge item has identical normalized content." });
+      continue;
+    }
+    const overlap = item.claims.filter((claim) => candidateClaims.has(claim.normalized)).length;
+    if (overlap > 0 && item.claims.length !== candidate.claims.length) conflicts.push({ type: "conflict", candidateId: item.id, reason: `Shared claim detected with an existing item (${overlap} matching claim${overlap === 1 ? "" : "s"}); curator review is required.` });
+  }
+  return conflicts.slice(0, 20);
+}
+
+export function canPublishCandidate(input: { status: KnowledgeStatus; verificationStatus: string; conflicts: KnowledgeConflict[]; freshness: FreshnessState }): { ok: true } | { ok: false; reason: string } {
+  if (input.status !== "approved") return { ok: false, reason: "Knowledge must be explicitly approved before publication." };
+  if (input.verificationStatus !== "verified") return { ok: false, reason: "Only verified knowledge may enter production." };
+  if (input.conflicts.length) return { ok: false, reason: "Unresolved duplicate or conflict findings block publication." };
+  if (input.freshness === "stale" || input.freshness === "deprecated") return { ok: false, reason: "Stale or deprecated knowledge must be refreshed before publication." };
+  return { ok: true };
+}
