@@ -7,17 +7,22 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import { nitro } from "nitro/vite";
 
+// Detect the deployment target so we produce the correct output format.
+// Vercel sets VERCEL=1 during builds. Everything else (Render, Railway, local, etc.)
+// gets a standard Node server.
+const isVercel = process.env.VERCEL === "1";
+const nitroPreset = isVercel ? "vercel" : "node-server";
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
   },
-  // Force Node-compatible output so Render / Node hosts get .output/server/index.mjs
   vite: {
     plugins: [
       nitro({
-        preset: "node-server",
+        preset: nitroPreset,
       }),
     ],
   },
