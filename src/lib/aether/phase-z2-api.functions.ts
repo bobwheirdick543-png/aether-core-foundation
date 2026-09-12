@@ -1,11 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createZ2ApiKey, getZ2ApiKeySecret, getZ2Models, getZ2UsageForecast, listZ2ApiKeys, listZ2RequestRecords, getZ2RequestRecord, revokeZ2ApiKey, rotateZ2ApiKey, suspendZ2ApiKey } from "./phase-z2-api";
-
+import { createZ2ApiKey, getZ2Models, getZ2UsageForecast, listZ2ApiKeys, listZ2RequestRecords, getZ2RequestRecord, revokeZ2ApiKey, rotateZ2ApiKey, suspendZ2ApiKey } from "./phase-z2-api";
+import { recoverZ2ApiKeySecret } from "./phase-z2-secret-recovery";
 export const listMyZ2ApiKeys = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(({ context }) => listZ2ApiKeys(context.userId));
 export const listMyZ2Models = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(() => getZ2Models());
 export const createMyZ2ApiKey = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { name: string; applicationName: string; environment: "development" | "test" | "production"; modelKey: string; projectId?: string | null; expiresAt?: string | null; rateLimitPerMinute?: number; allowWebResearch?: boolean; allowStreaming?: boolean }) => data).handler(({ context, data }) => createZ2ApiKey({ ownerId: context.userId, actorId: context.userId, ...data }));
-export const getMyZ2ApiKeySecret = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { keyId: string }) => data).handler(({ context, data }) => getZ2ApiKeySecret(context.userId, data.keyId));
+export const getMyZ2ApiKeySecret = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { keyId: string }) => data).handler(({ context, data }) => recoverZ2ApiKeySecret(context.userId, data.keyId));
 export const revokeMyZ2ApiKey = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { keyId: string }) => data).handler(({ context, data }) => revokeZ2ApiKey(context.userId, data.keyId));
 export const suspendMyZ2ApiKey = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { keyId: string; suspend: boolean }) => data).handler(({ context, data }) => suspendZ2ApiKey(context.userId, data.keyId, context.userId, data.suspend));
 export const rotateMyZ2ApiKey = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { keyId: string }) => data).handler(({ context, data }) => rotateZ2ApiKey(context.userId, data.keyId));
