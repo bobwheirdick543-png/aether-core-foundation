@@ -1,0 +1,35 @@
+name: Phase T Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/routes/**'
+      - 'src/components/layout/SiteChrome.tsx'
+      - 'src/lib/auth/profile.functions.ts'
+      - 'src/lib/aether/models.ts'
+      - '.github/workflows/phase-t-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/routes/**'
+      - 'src/components/layout/SiteChrome.tsx'
+      - 'src/lib/auth/profile.functions.ts'
+      - 'src/lib/aether/models.ts'
+      - '.github/workflows/phase-t-validation.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.21'
+      - run: bun install
+      - name: Public surface policy
+        run: '! grep -Eiq "\\bagents?\\b" src/routes/index.tsx'
+      - name: Production build and route generation
+        run: bun run build:dev

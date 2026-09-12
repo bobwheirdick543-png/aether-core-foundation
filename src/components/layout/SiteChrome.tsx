@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { label: "Features", to: "/features" as const },
   { label: "Models", to: "/models-overview" as const },
-  { label: "Agents", to: "/agents-overview" as const },
   { label: "Developers", to: "/developers" as const },
   { label: "Docs", to: "/docs" as const },
 ];
@@ -114,8 +113,7 @@ export function SiteFooter() {
         <div className="max-w-sm space-y-4">
           <Logo />
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Aether is a modular AI platform: models, memory, knowledge, research, agents, projects
-            and a developer API under one roof.
+            Aether is a unified AI platform for conversations, evolving intelligence, knowledge, research, projects and applications.
           </p>
         </div>
         <nav className="grid grid-cols-2 gap-x-12 gap-y-2.5 sm:grid-cols-3">

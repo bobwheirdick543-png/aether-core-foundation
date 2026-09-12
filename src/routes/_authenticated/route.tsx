@@ -13,6 +13,18 @@ export const Route = createFileRoute("/_authenticated")({
         search: { redirect: path.startsWith("/admin") ? "/dashboard" : path },
       });
     }
+
+    if (location.pathname !== "/onboarding") {
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("id", data.user.id)
+        .maybeSingle();
+      if (!profileError && profile?.onboarding_completed !== true) {
+        throw redirect({ to: "/onboarding" });
+      }
+    }
+
     return { user: data.user };
   },
   component: () => <Outlet />,
