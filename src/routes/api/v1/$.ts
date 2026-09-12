@@ -30,9 +30,16 @@ async function handle({ request }: { request: Request }) {
     }
     const idempotencyKey = request.headers.get("idempotency-key")?.trim() || null;
     if (idempotencyKey && !/^[A-Za-z0-9._:-]{8,255}$/.test(idempotencyKey)) { status = 400; return withHeaders(apiError(400, "invalid_idempotency_key", "Idempotency-Key must be 8-255 characters using letters, numbers, '.', '_', ':' or '-'"), requestId); }
-    if (idempotencyKey) { const replay = await loadIdempotency(identity.apiKeyId, idempotencyKey, hashBody(body)); if (replay) { status = replay.statusCode; return withHeaders(new Response(JSON.stringify(replay.body), { status: replay.statusCode, headers: { "Content-Type": "application/json; charset=utf-8" } }), requestId); } }
+    if (idempotencyKey) {
+      const claim = await claimIdempotency(identity.apiKeyId, identity.ownerId, idempotencyKey, hashBody(body));
+      if (claim.conflict) { status = 409; return withHeaders(apiError(409, "idempotency_conflict", "The Idempotency-Key was already used with a different request body"), requestId); }
+      if (!claim.claimed) {
+        if (claim.responseBody !== null) { status = claim.statusCode; return withHeaders(new Response(JSON.stringify(claim.responseBody), { status: claim.statusCode, headers: { "Content-Type": "application/json; charset=utf-8" } }), requestId); }
+        status = 409; return withHeaders(apiError(409, "idempotency_in_progress", "A request with this Idempotency-Key is already being processed", { retryable: true }), requestId);
+      }
+    }
     const response = await dispatchDeveloperRequest(request, identity, segments, body); status = response.status; const normalized = withHeaders(response, requestId);
-    if (idempotencyKey && status >= 200 && status < 500) await saveIdempotency(identity.apiKeyId, identity.ownerId, idempotencyKey, hashBody(body), status, await normalized.clone().json().catch(() => ({})));
+    if (idempotencyKey && status >= 200 && status < 500) await saveIdempotency(identity.apiKeyId, idempotencyKey, hashBody(body), status, await normalized.clone().json().catch(() => ({})));
     return normalized;
   } catch (error) {
     if (error instanceof Response) { status = error.status; return withHeaders(error, requestId); }
@@ -41,12 +48,23 @@ async function handle({ request }: { request: Request }) {
 }
 
 function withHeaders(response: Response, requestId: string) { response.headers.set("Access-Control-Allow-Origin", "*"); response.headers.set("X-Request-Id", requestId); return response; }
-async function loadIdempotency(apiKeyId: string, key: string, bodyHash: string) { const { data, error } = await db.from("aether_api_idempotency").select("request_hash,status_code,response_body,expires_at").eq("api_key_id", apiKeyId).eq("idempotency_key", key).maybeSingle(); if (error) throw new Error(`Idempotency lookup failed: ${error.message}`); if (!data) return null; if (new Date(data.expires_at).getTime() <= Date.now()) { await db.from("aether_api_idempotency").delete().eq("api_key_id", apiKeyId).eq("idempotency_key", key); return null; } if (data.request_hash !== bodyHash) throw apiError(409, "idempotency_conflict", "The Idempotency-Key was already used with a different request body"); return { statusCode: Number(data.status_code), body: data.response_body ?? {} }; }
-async function saveIdempotency(apiKeyId: string, ownerId: string, key: string, bodyHash: string, statusCode: number, body: unknown) { const { error } = await db.from("aether_api_idempotency").insert({ api_key_id: apiKeyId, owner_id: ownerId, idempotency_key: key, request_hash: bodyHash, status_code: statusCode, response_body: body }); if (error && !String(error.message).toLowerCase().includes("duplicate")) throw new Error(`Idempotency persistence failed: ${error.message}`); }
+async function claimIdempotency(apiKeyId: string, ownerId: string, key: string, bodyHash: string) {
+  try {
+    const { data, error } = await db.rpc("aether_api_idempotency_claim", { p_api_key_id: apiKeyId, p_owner_id: ownerId, p_idempotency_key: key, p_request_hash: bodyHash });
+    if (error) throw new Error(`Idempotency claim failed: ${error.message}`);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error("Idempotency claim returned no result");
+    return { claimed: Boolean(row.claimed), conflict: false, statusCode: Number(row.status_code ?? 202), responseBody: row.response_body ?? null };
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("idempotency_conflict")) return { claimed: false, conflict: true, statusCode: 409, responseBody: null };
+    throw error;
+  }
+}
+async function saveIdempotency(apiKeyId: string, key: string, bodyHash: string, statusCode: number, body: unknown) { const { error } = await db.from("aether_api_idempotency").update({ request_hash: bodyHash, status_code: statusCode, response_body: body }).eq("api_key_id", apiKeyId).eq("idempotency_key", key).eq("request_hash", bodyHash); if (error) throw new Error(`Idempotency persistence failed: ${error.message}`); }
 
 async function dispatchDeveloperRequest(request: Request, identity: NonNullable<Awaited<ReturnType<typeof authenticateDeveloperApiKey>>>, segments: string[], body: any) {
   const [resource, id] = segments;
-  if (resource === "models" && request.method === "GET") { requireScope(identity, "agents:read"); const { data, error } = await db.from("aax_models").select("id,model_key,display_name,generation,revision,description,capabilities,specializations,context_window,output_limit,release_status,available_at,disabled_at,config,created_at,updated_at").is("disabled_at", null).order("generation", { ascending: false }).order("display_name", { ascending: true }).limit(200); if (error) return apiError(500, "model_catalog_error", error.message); return Response.json({ data: data ?? [] }); }
+  if (resource === "models" && request.method === "GET") { requireScope(identity, "models:read"); const { data, error } = await db.from("aax_models").select("id,model_key,display_name,generation,revision,description,capabilities,specializations,context_window,output_limit,release_status,available_at,disabled_at,config,created_at,updated_at").is("disabled_at", null).order("generation", { ascending: false }).order("display_name", { ascending: true }).limit(200); if (error) return apiError(500, "model_catalog_error", error.message); return Response.json({ data: data ?? [] }); }
   if (resource === "files" && request.method === "GET") { requireScope(identity, "projects:read"); const query = db.from("aether_project_files").select("id,project_id,filename,mime_type,size_bytes,sha256,extraction_status,metadata,created_at,updated_at").eq("owner_id", identity.ownerId).order("created_at", { ascending: false }).limit(200); const { data, error } = id ? await query.eq("id", id).maybeSingle() : await query; if (error) return apiError(500, "file_catalog_error", error.message); if (id && !data) return apiError(404, "not_found", "File not found"); return Response.json({ data: data ?? [] }); }
   if (resource === "usage" && request.method === "GET") { requireScope(identity, "logs:read"); const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(); const { data, error } = await db.from("aether_api_logs").select("status_code,latency_ms,path,method,created_at").eq("owner_id", identity.ownerId).gte("created_at", since).limit(10000); if (error) return apiError(500, "usage_error", error.message); const rows = data ?? []; const byStatus: Record<string, number> = {}; const byPath: Record<string, number> = {}; let latency = 0; for (const row of rows) { const s = String(row.status_code); byStatus[s] = (byStatus[s] ?? 0) + 1; byPath[row.path] = (byPath[row.path] ?? 0) + 1; latency += Number(row.latency_ms ?? 0); } return Response.json({ data: { period: "30d", requests: rows.length, averageLatencyMs: rows.length ? Math.round(latency / rows.length) : 0, byStatus, byPath } }); }
   if (resource === "conversations" && request.method === "POST") { requireScope(identity, "conversations:write"); if (!body?.message || typeof body.message !== "string") return apiError(400, "invalid_request", "message is required"); const result = await executeAaxConversationTurn(db, { ...body, userId: identity.ownerId, signal: request.signal }); return Response.json({ data: result }, { status: 201 }); }
