@@ -23,7 +23,7 @@ export const startKnowledgeAcquisition = createServerFn({ method: "POST" }).midd
 export const listKnowledgeAcquisitionJobs = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).inputValidator((d?: { limit?: number; admin?: boolean }) => ({ limit: Math.min(200, Math.max(1, Math.floor(d?.limit ?? 50))), admin: Boolean(d?.admin) })).handler(async ({ context, data }) => {
   if (data.admin) await requireAdmin(context);
   const db = data.admin ? supabaseAdmin : (context.supabase as SupabaseClient);
-  let query = db.from("aether_knowledge_acquisition_jobs").select("id,task_id,run_id,owner_id,project_id,title,subject,scope,depth_tier,time_budget_ms,target_type,target_model_keys,source_type,status,coverage,confidence,source_count,domain_count,related_concepts,unresolved_items,candidate_id,approval_status,cancel_reason,started_at,completed_at,paused_at,last_event_at,created_at,updated_at").order("created_at", { ascending: false }).limit(data.limit);
+  let query = db.from("aether_knowledge_acquisition_jobs").select("id,task_id,run_id,owner_id,project_id,title,subject,scope,depth_tier,time_budget_ms,target_type,target_model_keys,source_type,status,coverage,confidence,source_count,domain_count,related_concepts,unresolved_items,candidate_id,approval_status,report_ids,cancel_reason,started_at,completed_at,paused_at,last_event_at,created_at,updated_at").order("created_at", { ascending: false }).limit(data.limit);
   if (!data.admin) query = query.eq("owner_id", context.userId);
   const { data: rows, error } = await query;
   if (error) throw new Response(`Could not load knowledge acquisition jobs: ${error.message}`, { status: 500 });
