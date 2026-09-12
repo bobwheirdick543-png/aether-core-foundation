@@ -8,34 +8,40 @@ Phase S is Aether's external application boundary. It exposes a versioned `/api/
 
 ## Architecture integration
 
-`external app → /api/v1 → API-key authentication/scopes/rate limit → Phase O security boundary → existing Phase A durable runtime / Phase N orchestration / Phase M agent boundary / Phase Q module runtime → domain services → Phase K notifications and Phase W observability`.
+`external app → /api/v1 → API-key authentication/scopes/rate limit → Phase O security decision → existing Phase A durable runtime / Phase N orchestration / Phase M bounded agents / Phase Q module runtime → domain services → Phase K notifications and Phase W observability`.
 
 Developer API keys are separate from AAX model credentials and separate from third-party provider credentials.
 
 ## Implemented
 
-- Versioned `/api/v1/` gateway.
+- Versioned `/api/v1/` REST/JSON gateway.
 - Bearer API-key authentication using SHA-256 hashes; plaintext secrets are never persisted.
 - Key creation, listing, immediate revocation and rotation.
 - Per-key project binding, scopes, expiry and configurable per-minute rate limit.
-- API request audit logs and key lifecycle events.
+- Durable API request audit logs and key lifecycle events.
 - Durable webhook registrations with one-time returned webhook secrets.
 - Developer API dashboard and key workspace.
 - Back navigation on new authenticated pages.
 - Endpoint families for auth, projects, conversations, tasks, runs, agents, orchestration, memory, research, knowledge, reports, notifications, schedules, modules, Battleversia, webhooks and API logs.
 - Ownership filtering for user-owned resources and server-side authorization at the API boundary.
+- Phase O policy authorization before domain handling.
 - CORS preflight handling and request IDs.
+- Structured JSON error responses and rate-limit responses.
 - Focused Vitest coverage for key hashing and scope validation.
 - TypeScript/build validation workflow.
 
 ## Security
 
-API secrets are shown only at creation/rotation. Stored records contain a hash and display prefix. Revoked/expired credentials are rejected. Scope checks are enforced server-side. API activity is persisted without storing Authorization headers or plaintext credentials.
+API secrets are shown only at creation/rotation. Stored records contain a hash and display prefix. Revoked/expired credentials are rejected. Scope checks are enforced server-side. API activity is persisted without storing Authorization headers or plaintext credentials. High-impact mutation classes can be held for approval by the Phase O governance layer.
 
 ## Durability
 
 The API layer is a boundary over existing persistent services. It does not keep task/run state in browser memory and does not create a second task queue. Task creation enters the Phase A durable Task → Run runtime; orchestration and agent execution remain governed by Phases N/M; modules remain governed by Phase Q; Battleversia remains governed by Phase R.
 
+## Production security smoke test
+
+A real Phase O authorization call for a Developer API task-read action returned `allow`, confirming the Developer API security action is recognized by the production security policy layer. The smoke request used an idempotency key and was recorded by the security/audit subsystem.
+
 ## Validation
 
-Final Phase S validation ran on commit `ea51f61c63c20b51cd58e957003a4f9c956e2de4`: Bun install, focused Phase S TypeScript, focused Phase S Vitest, and `bun run build:dev` all completed successfully. The validation run was `34678559257` / job `103512726128`. Vercel was intentionally not used for validation or deployment.
+Final security-integrated Phase S validation ran on commit `00d4f69776c271f1c533950d7c1719d1048b6568`: Bun install, focused Phase S TypeScript, focused Phase S Vitest, and `bun run build:dev` all completed successfully. The validation run was `34678652796` / job `103512986301`. Vercel was intentionally not used for validation or deployment.
