@@ -1,0 +1,41 @@
+name: Phase U Validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Verify Phase U admin surfaces are wired
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in \
+            src/routes/_authenticated/admin/users.tsx \
+            src/routes/_authenticated/admin/tasks.tsx \
+            src/routes/_authenticated/admin/knowledge.tsx \
+            src/routes/_authenticated/admin/research.tsx \
+            src/routes/_authenticated/admin/api-keys.tsx \
+            src/routes/_authenticated/admin/usage.tsx \
+            src/routes/_authenticated/admin/logs.tsx \
+            src/routes/_authenticated/admin/system.tsx \
+            src/routes/_authenticated/admin/settings.tsx; do
+            test -f "$f"
+          done
+          test -f src/lib/admin/phase-u.functions.ts
+          test -f src/lib/admin/phase-u-logs.functions.ts
+          test -f supabase/migrations/20260912090000_phase_u_admin_command_center.sql
+          if grep -R -n "controls activate with the matching platform phase" src/routes/_authenticated/admin; then
+            echo "Found an unactivated Phase U admin surface"
+            exit 1
+          fi
+      - name: Production build
+        run: bun run build:dev
