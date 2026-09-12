@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { supabaseAdmin } from "../src/integrations/supabase/client.server";
 import { executeResearchStep } from "../src/lib/aether/executor";
 import { heartbeatRuntimeRun } from "../src/lib/aether/task-service";
+import { createObservabilityContext, recordObservabilityEvent, startObservabilitySpan } from "../src/lib/aether/observability";
 
 const WORKER_ID = process.env.AETHER_WORKER_ID?.trim() || `aether-worker-${randomUUID()}`;
 const LEASE_SECONDS = clampInt(process.env.AETHER_WORKER_LEASE_SECONDS, 60, 10, 300);
@@ -41,10 +42,21 @@ function asUrls(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean).slice(0, 10);
 }
 
+async function safeTelemetry(input: Parameters<typeof recordObservabilityEvent>[0]): Promise<void> {
+  try {
+    await recordObservabilityEvent(input);
+  } catch (error) {
+    console.error(`[Aether worker ${WORKER_ID}] observability write failed:`, error);
+  }
+}
+
 async function recoverExpiredWork(): Promise<void> {
   const { data, error } = await supabaseAdmin.rpc("requeue_expired_runtime_work", { p_limit: 100 });
   if (error) throw new Error(`Runtime recovery failed: ${error.message}`);
-  if (Number(data ?? 0) > 0) console.info(`[Aether worker ${WORKER_ID}] recovered ${data} expired run(s)`);
+  if (Number(data ?? 0) > 0) {
+    console.info(`[Aether worker ${WORKER_ID}] recovered ${data} expired run(s)`);
+    await safeTelemetry({ context: createObservabilityContext({ workerId: WORKER_ID }), component: "runtime-worker", eventType: "runtime.recovery", message: `Recovered ${data} expired run(s)`, metadata: { recovered: Number(data) } });
+  }
 }
 
 async function claimNextRun(): Promise<any | null> {
@@ -67,6 +79,7 @@ async function markWorker(status: "idle" | "running" | "draining" | "offline"): 
     updated_at: now,
   });
   if (error) throw new Error(`Worker status update failed: ${error.message}`);
+  await safeTelemetry({ context: createObservabilityContext({ workerId: WORKER_ID }), component: "runtime-worker", eventType: "worker.status", message: `Worker status: ${status}`, metadata: { status } });
 }
 
 async function scheduleRetryIfNeeded(taskId: string, runId: string): Promise<void> {
@@ -84,7 +97,10 @@ async function scheduleRetryIfNeeded(taskId: string, runId: string): Promise<voi
     p_reason: run.error ?? "Runtime execution failed",
   });
   if (retryError) throw new Error(`Failed to schedule runtime retry: ${retryError.message}`);
-  if (newRunId) console.info(`[Aether worker ${WORKER_ID}] scheduled retry ${newRunId} for ${runId}`);
+  if (newRunId) {
+    console.info(`[Aether worker ${WORKER_ID}] scheduled retry ${newRunId} for ${runId}`);
+    await safeTelemetry({ context: createObservabilityContext({ traceId: runId, workerId: WORKER_ID, taskId, runId }), component: "runtime-worker", eventType: "runtime.retry_scheduled", message: `Retry ${newRunId} scheduled`, metadata: { retryRunId: newRunId } });
+  }
 }
 
 async function failUnsupportedClaim(taskId: string, runId: string, taskKind: string): Promise<void> {
@@ -115,6 +131,7 @@ async function failUnsupportedClaim(taskId: string, runId: string, taskKind: str
     p_worker_id: WORKER_ID,
   });
   if (eventError) throw new Error(`Failed to record runtime failure event: ${eventError.message}`);
+  await safeTelemetry({ context: createObservabilityContext({ traceId: runId, workerId: WORKER_ID, taskId, runId }), level: "error", component: "runtime-worker", eventType: "runtime.run_failed", message, success: false, retryable: false, errorCode: "unsupported_runtime_task" });
 }
 
 async function executeClaim(claim: any): Promise<void> {
@@ -125,6 +142,9 @@ async function executeClaim(claim: any): Promise<void> {
   const inputs = claim.inputs && typeof claim.inputs === "object" ? claim.inputs : {};
   const topic = asString((detail as any).topic) ?? asString((inputs as any).topic) ?? asString((inputs as any).query);
   const urls = asUrls((detail as any).urls ?? (inputs as any).urls);
+  const traceId = asString(claim.trace_id) ?? runId;
+  const context = createObservabilityContext({ traceId, workerId: WORKER_ID, taskId, runId, userId: ownerId });
+  const span = await startObservabilitySpan({ context, name: `runtime:${String(claim.task_kind)}`, component: "runtime-worker", attributes: { taskKind: String(claim.task_kind), attempt: claim.attempt ?? null } });
 
   activeRunId = runId;
   await markWorker("running");
@@ -136,6 +156,7 @@ async function executeClaim(claim: any): Promise<void> {
       .catch((error: unknown) => {
         heartbeatFailures += 1;
         console.error(`[Aether worker ${WORKER_ID}] heartbeat failed (${heartbeatFailures}):`, error);
+        void safeTelemetry({ context, level: "warn", component: "runtime-worker", eventType: "runtime.heartbeat_failed", message: error instanceof Error ? error.message : String(error), errorCode: "heartbeat_failed", metadata: { consecutiveFailures: heartbeatFailures } });
         if (heartbeatFailures >= 3) stopping = true;
       });
   }, HEARTBEAT_MS);
@@ -144,6 +165,7 @@ async function executeClaim(claim: any): Promise<void> {
     const taskKind = String(claim.task_kind);
     if (taskKind !== "research") {
       await failUnsupportedClaim(taskId, runId, taskKind);
+      await span.finish("failed", "unsupported_runtime_task");
       return;
     }
 
@@ -158,12 +180,13 @@ async function executeClaim(claim: any): Promise<void> {
       workerId: WORKER_ID,
     });
 
-    // The domain executor owns the immediate result; the worker owns retry
-    // scheduling when that result is explicitly retryable.
     await scheduleRetryIfNeeded(taskId, runId);
+    await safeTelemetry({ context, component: "runtime-worker", eventType: "runtime.run_completed", message: "Runtime execution completed", success: true });
+    await span.finish("completed");
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[Aether worker ${WORKER_ID}] execution error for ${runId}: ${message}`);
+    await safeTelemetry({ context, level: "error", component: "runtime-worker", eventType: "runtime.run_error", message, success: false, retryable: true, errorCode: "worker_execution_error" });
 
     const now = new Date().toISOString();
     const { data: current, error: loadError } = await supabaseAdmin.from("task_runs")
@@ -202,6 +225,7 @@ async function executeClaim(claim: any): Promise<void> {
     }
 
     await scheduleRetryIfNeeded(taskId, runId);
+    await span.finish("failed", "worker_execution_error");
   } finally {
     clearInterval(heartbeatTimer);
     activeRunId = null;
@@ -216,6 +240,7 @@ async function sleep(ms: number): Promise<void> {
 async function run(): Promise<void> {
   requireRuntimeEnvironment();
   console.info(`[Aether worker ${WORKER_ID}] started; lease=${LEASE_SECONDS}s poll=${POLL_MS}ms heartbeat=${HEARTBEAT_MS}ms`);
+  await safeTelemetry({ context: createObservabilityContext({ workerId: WORKER_ID }), component: "runtime-worker", eventType: "worker.started", message: "Aether runtime worker started", metadata: { leaseSeconds: LEASE_SECONDS, pollMs: POLL_MS, heartbeatMs: HEARTBEAT_MS } });
   await markWorker("idle");
   let nextRecoveryAt = 0;
 
@@ -232,17 +257,20 @@ async function run(): Promise<void> {
       else await sleep(POLL_MS);
     } catch (error: unknown) {
       console.error(`[Aether worker ${WORKER_ID}] loop error:`, error);
+      await safeTelemetry({ context: createObservabilityContext({ workerId: WORKER_ID }), level: "error", component: "runtime-worker", eventType: "worker.loop_error", message: error instanceof Error ? error.message : String(error), success: false, errorCode: "worker_loop_error" });
       await sleep(Math.min(POLL_MS * 2, 10000));
     }
   }
 
   await markWorker("offline");
+  await safeTelemetry({ context: createObservabilityContext({ workerId: WORKER_ID }), component: "runtime-worker", eventType: "worker.stopped", message: "Aether runtime worker stopped" });
   console.info(`[Aether worker ${WORKER_ID}] stopped`);
 }
 
 function requestStop(signal: string): void {
   if (stopping) return;
   console.info(`[Aether worker ${WORKER_ID}] received ${signal}; draining`);
+  void safeTelemetry({ context: createObservabilityContext({ workerId: WORKER_ID }), component: "runtime-worker", eventType: "worker.draining", message: `Worker received ${signal}; draining`, metadata: { signal } });
   stopping = true;
 }
 
