@@ -10,6 +10,7 @@ on:
       - 'src/routes/_authenticated/api-keys.tsx'
       - 'src/routes/_authenticated/developer-api.tsx'
       - 'supabase/migrations/**phase_s**'
+      - 'tsconfig.phase-s.json'
       - '.github/workflows/phase-s-validation.yml'
   pull_request:
     branches: [main]
@@ -21,6 +22,7 @@ on:
       - 'src/routes/_authenticated/api-keys.tsx'
       - 'src/routes/_authenticated/developer-api.tsx'
       - 'supabase/migrations/**phase_s**'
+      - 'tsconfig.phase-s.json'
       - '.github/workflows/phase-s-validation.yml'
   workflow_dispatch:
 jobs:
@@ -32,6 +34,6 @@ jobs:
         with:
           bun-version: '1.2.21'
       - run: bun install
-      - run: bunx tsc --noEmit
+      - run: bunx tsc -p tsconfig.phase-s.json --noEmit
       - run: bunx vitest run src/lib/aether/__tests__/developer-api.test.ts
       - run: bun run build:dev
