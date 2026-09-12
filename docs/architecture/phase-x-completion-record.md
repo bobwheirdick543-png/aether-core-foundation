@@ -2,7 +2,11 @@
 
 ## Status
 
-Implemented on the Phase X branch and ready for repository validation/merge after the Phase X workflow completes successfully.
+**Merged to `main`.** Phase X implementation is complete in the repository.
+
+- Pull request: #21
+- Squash merge commit: `f3aeb70137b1ff7ceac704f3d69775eacbf16adb`
+- Phase X validation workflow: `34689205677` — successful
 
 ## Scope
 
@@ -44,11 +48,11 @@ Security authorizes transitions; Phase W observability records the resulting fac
 
 ## Validation
 
-The Phase X workflow runs:
+The Phase X workflow successfully completed:
 
 1. Bun 1.2.21 installation
 2. Dedicated security-boundary and untrusted-content tests
 3. Phase A worker entrypoint validation
 4. Development-mode production build
 
-No new runtime dependency is introduced by Phase X.
+No new runtime dependency was introduced by Phase X.
