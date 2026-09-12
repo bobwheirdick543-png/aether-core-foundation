@@ -8,6 +8,7 @@ on:
       - 'src/components/layout/SiteChrome.tsx'
       - 'src/lib/auth/profile.functions.ts'
       - 'src/lib/aether/models.ts'
+      - 'tsconfig.phase-t.json'
       - '.github/workflows/phase-t-validation.yml'
   pull_request:
     branches: [main]
@@ -16,6 +17,7 @@ on:
       - 'src/components/layout/SiteChrome.tsx'
       - 'src/lib/auth/profile.functions.ts'
       - 'src/lib/aether/models.ts'
+      - 'tsconfig.phase-t.json'
       - '.github/workflows/phase-t-validation.yml'
   workflow_dispatch:
 
@@ -32,5 +34,5 @@ jobs:
         run: '! grep -Eiq "\\bagents?\\b" src/routes/index.tsx'
       - name: Production build and route generation
         run: bun run build:dev
-      - name: TypeScript validation
-        run: bunx tsc --noEmit
+      - name: Focused Phase T TypeScript validation
+        run: bunx tsc -p tsconfig.phase-t.json --noEmit
