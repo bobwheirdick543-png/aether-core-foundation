@@ -1,0 +1,6 @@
+import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+async function assertAdmin(context:{supabase:unknown;userId:string}){const {data,error}=await(context.supabase as SupabaseClient).rpc("has_role",{_user_id:context.userId,_role:"admin"});if(error)throw new Response("Unable to verify administrator authorization",{status:500});if(!data)throw new Response("Forbidden",{status:403});}
+export const getPhaseULogs=createServerFn({method:"GET"}).middleware([requireSupabaseAuth]).handler(async({context})=>{await assertAdmin(context);const [{data:audit},{data:runtime},{data:api}]=await Promise.all([supabaseAdmin.from("audit_logs").select("id,action,actor_id,target_type,target_id,created_at").order("created_at",{ascending:false}).limit(200),supabaseAdmin.from("task_events").select("id,task_id,run_id,event_type,from_status,to_status,message,actor_id,worker_id,created_at").order("created_at",{ascending:false}).limit(300),supabaseAdmin.from("aether_api_logs").select("id,method,path,status_code,latency_ms,request_id,created_at").order("created_at",{ascending:false}).limit(200)]);return{audit:audit??[],runtime:runtime??[],api:api??[]};});
