@@ -56,13 +56,63 @@ Phase W provides one shared, server-side telemetry boundary for the platform:
 
 Observability must describe real Aether behavior. It never creates synthetic activity, fake health, fabricated usage or simulated success.
 
+## Phase X global security hardening
+
+Security is a cross-cutting control plane over the new architecture, not an agent that is trusted to police itself:
+
+```
+Interface
+   ↓
+Auth / Permissions
+   ↓
+Cognitive Orchestrator
+   ↓
+Model Router
+   ↓
+Agents / Tools / Knowledge / Memory
+   ↓
+Durable Runtime / Workers
+   ↓
+Result
+
+        ↕
+Global Security Boundary
+        ↕
+Global Observability
+```
+
+The authoritative security order is **authenticate → authorize ownership/scope/capability → execute → observe**. UI visibility is never an authorization boundary. Server functions, API handlers, durable RPCs and database RLS remain authoritative.
+
+Phase X adds:
+
+- `security-boundary.ts`: shared server-side identity, ownership, capability and privilege-escalation checks with deny-by-default behavior for privileged actions.
+- Security denials are emitted through the Phase W observability boundary without placing secrets into telemetry.
+- Agent permission checks remain least-privilege and cannot be changed by the agent itself; `security.ts` now provides observable security events for denied agent actions.
+- Developer API requests have an explicit payload-size boundary and project ownership is rechecked before a caller-supplied project can cross into execution.
+- External/retrieved content is wrapped by `untrusted-content.ts` as data. Role-like markers inside retrieved content are not promoted to system/developer instructions; model-facing formatting explicitly preserves the trust boundary.
+- Privilege changes are restricted to privileged actors. A normal user, agent or API identity cannot self-grant administrative authority.
+- Security errors are sanitized at the response boundary and do not return credentials, internal stack traces or policy internals.
+
+### Security boundaries by architecture layer
+
+| Layer | Phase X control |
+|---|---|
+| Interface | No client-only permission decisions; security-sensitive operations terminate in server functions/API handlers |
+| Auth / Permissions | Authenticated identity is required; ownership and role checks are server-side |
+| Cognitive Orchestrator | Agent/tool/module capability must be explicitly granted; approval remains separate from execution |
+| Model Router | Provider/model selection cannot grant new application privileges |
+| Agents / Tools / Knowledge / Memory | Least privilege, ownership, governed writes and untrusted-input labeling |
+| Durable Runtime / Workers | Server-owned execution, leases and persisted ownership; worker is not a user privilege source |
+| Result | Sensitive operational details remain authorized/admin-only and pass through observable security boundaries |
+| Observability | Security events are correlated and redacted; telemetry failure cannot disable primary execution |
+
 ## Architecture relationship
 
-The global observability context can travel with an operation:
+The global observability and security boundaries travel with the same operation:
 
 `Interface → Auth/Permissions → Cognitive Orchestrator → Model Router → Agents/Tools/Knowledge → Durable Task/Run → Worker → Result`
 
-Each layer may append events or child spans while preserving the same trace/request correlation. The Phase V Evaluation Lab can use these persisted execution measurements rather than creating a parallel telemetry model. Phase U remains the server-authorized command center; Phase W supplies the platform-wide operational evidence it observes.
+Security authorizes the transition before execution; observability records the real outcome after/beside execution. Phase V Evaluation Lab consumes the resulting evidence rather than creating a parallel security or telemetry model. Phase U remains the server-authorized command center for privileged operational visibility.
 
 ## Phase A durable runtime
 
@@ -105,7 +155,9 @@ The worker is deliberately separate from the web request lifecycle. It must run 
 | `knowledge.functions.ts` | Admin approve/reject with versioning |
 | `pdf-report.ts` + `report-builder.ts` | Report metadata + structured content |
 | `notifications.ts` + hooks | Ownership-safe delivery |
-| `security.ts` | Boundary enforcement |
+| `security.ts` | Agent boundary enforcement and observable security events |
+| `security-boundary.ts` | Global identity, ownership, capability and privilege boundary |
+| `untrusted-content.ts` | External-content trust envelope and model-facing data boundary |
 | `optimization.ts` | Recommendations only (never auto-apply) |
 | `evaluation.ts` | Metrics from real runs only |
 | `observability.ts` | Global server-side events, spans, correlation and metric samples |
@@ -129,6 +181,9 @@ The worker is deliberately separate from the web request lifecycle. It must run 
 - Unsupported task kinds fail explicitly rather than being reported as successful
 - Observability metadata is redacted and operational visibility is server-authorized
 - Telemetry failure does not become application failure
+- Ownership is rechecked at the server boundary before caller-supplied projects are used
+- External content is treated as untrusted data and cannot promote itself to platform instructions
+- Privilege escalation requests fail closed for non-privileged actors
 
 ## Database
 
@@ -149,6 +204,8 @@ Phase W adds:
 - `aether_observability_events` for structured global event history
 - `aether_observability_spans` for trace/span history
 - `aether_observability_metric_samples` for real metric/resource samples
+
+Phase X deliberately reuses these durable security/observability boundaries rather than introducing a parallel secret or audit store. Database RLS and server-side authorization remain the final data-access boundary.
 
 ## Phase A operational entrypoint
 
