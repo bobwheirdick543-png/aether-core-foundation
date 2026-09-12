@@ -16,6 +16,12 @@ Phase U activates the administrator control plane over Aether's existing runtime
 - Dedicated AAX model-routing control surface. Product model roles remain distinct from provider/model identifiers and credentials remain server-side.
 - Existing Agent SDK lifecycle/permission controls remain intact and are surfaced through the existing admin Team/Agents areas.
 
+## Security hardening added during final validation
+
+- Platform-setting writes reject secret-like keys at the server boundary so platform configuration cannot become a substitute secret store.
+- Privileged setting audit metadata is recursively redacted for secret-like keys before persistence.
+- The settings UI uses the hardened server functions rather than relying on client-side validation.
+
 ## Architecture boundary
 
 Admin actions are not client-only controls. Every Phase U server function re-checks the administrator role before reading or mutating privileged data. Runtime actions operate on Aether's durable tasks, runs, models, agents, knowledge and telemetry rather than browser-only state.
@@ -24,6 +30,6 @@ The ordinary user experience remains separate from the internal agent workforce.
 
 ## Validation
 
-`phase-u-validation.yml` verifies that required Phase U surfaces are present, placeholder phase-gating text is absent from the admin area, required backend/migration files exist, and the production development build succeeds.
+`phase-u-validation.yml` verifies that required Phase U surfaces are present, placeholder phase-gating text is absent from the admin area, required backend/security/migration files exist, hardened settings wiring is present, and the production development build succeeds. CI uses the same Bun 1.2.21 toolchain and install mode already validated by Phase T.
 
 Phase U does not claim overall Aether completion. Evaluation, observability expansion, security hardening, data lifecycle/reliability, WhatsApp and production-readiness phases remain governed by the master plan.
