@@ -1,10 +1,10 @@
 /**
  * AETHER DURABLE RUNTIME WORKER
  *
- * Long-running server process for Phase A. It owns no domain queue: Supabase is
- * the durable queue and source of truth. The worker only leases work, sends
- * heartbeats, dispatches to registered domain executors, and records terminal
- * truth. Closing the browser never affects an active lease.
+ * Long-running server process for Phase A. Supabase is the durable queue and
+ * source of truth. The worker leases work, sends heartbeats, dispatches only
+ * registered domain executors, and records terminal truth. Browser lifetime is
+ * never part of task execution.
  */
 
 import { randomUUID } from "node:crypto";
@@ -57,17 +57,64 @@ async function claimNextRun(): Promise<any | null> {
 }
 
 async function markWorker(status: "idle" | "running" | "draining" | "offline"): Promise<void> {
-  const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
-  if (status === "idle" || status === "offline") patch.current_run_id = null;
+  const now = new Date().toISOString();
   const { error } = await supabaseAdmin.from("runtime_workers").upsert({
     worker_id: WORKER_ID,
     status,
-    current_run_id: activeRunId,
-    last_heartbeat_at: new Date().toISOString(),
+    current_run_id: status === "idle" || status === "offline" ? null : activeRunId,
+    last_heartbeat_at: now,
     metadata: { runtime: "phase-a", pid: process.pid },
-    ...patch,
+    updated_at: now,
   });
   if (error) throw new Error(`Worker status update failed: ${error.message}`);
+}
+
+async function scheduleRetryIfNeeded(taskId: string, runId: string): Promise<void> {
+  const { data: run, error } = await supabaseAdmin.from("task_runs")
+    .select("status, retryable, error")
+    .eq("id", runId)
+    .eq("task_id", taskId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to inspect runtime failure: ${error.message}`);
+  if (run?.status !== "failed" || run.retryable !== true) return;
+
+  const { data: newRunId, error: retryError } = await supabaseAdmin.rpc("schedule_runtime_retry", {
+    p_task_id: taskId,
+    p_run_id: runId,
+    p_reason: run.error ?? "Runtime execution failed",
+  });
+  if (retryError) throw new Error(`Failed to schedule runtime retry: ${retryError.message}`);
+  if (newRunId) console.info(`[Aether worker ${WORKER_ID}] scheduled retry ${newRunId} for ${runId}`);
+}
+
+async function failUnsupportedClaim(taskId: string, runId: string, taskKind: string): Promise<void> {
+  const message = `No registered runtime executor for task kind: ${taskKind}`;
+  const now = new Date().toISOString();
+  const { error: runError } = await supabaseAdmin.from("task_runs").update({
+    status: "failed", failure_code: "unsupported_runtime_task", retryable: false,
+    error: message, ended_at: now, worker_id: null, lease_expires_at: null,
+    heartbeat_at: null, updated_at: now,
+  }).eq("id", runId).eq("worker_id", WORKER_ID).eq("status", "running");
+  if (runError) throw new Error(`Failed to finalize unsupported run: ${runError.message}`);
+
+  const { error: taskError } = await supabaseAdmin.from("tasks").update({
+    status: "failed", last_error_code: "unsupported_runtime_task",
+    last_error_message: message, completed_at: now, worker_id: null,
+    lease_expires_at: null, heartbeat_at: null, updated_at: now,
+  }).eq("id", taskId).eq("worker_id", WORKER_ID).eq("status", "running");
+  if (taskError) throw new Error(`Failed to finalize unsupported task: ${taskError.message}`);
+
+  const { error: eventError } = await supabaseAdmin.rpc("append_task_event", {
+    p_task_id: taskId,
+    p_run_id: runId,
+    p_event_type: "run.failed",
+    p_from_status: "running",
+    p_to_status: "failed",
+    p_message: message,
+    p_data: { failure_code: "unsupported_runtime_task" },
+    p_worker_id: WORKER_ID,
+  });
+  if (eventError) throw new Error(`Failed to record runtime failure event: ${eventError.message}`);
 }
 
 async function executeClaim(claim: any): Promise<void> {
@@ -94,40 +141,9 @@ async function executeClaim(claim: any): Promise<void> {
   }, HEARTBEAT_MS);
 
   try {
-    if (String(claim.task_kind) !== "research") {
-      // Unsupported work is a real terminal failure, never fabricated as success.
-      const message = `No registered runtime executor for task kind: ${String(claim.task_kind)}`;
-      await supabaseAdmin.from("task_runs").update({
-        status: "failed",
-        failure_code: "unsupported_runtime_task",
-        retryable: false,
-        error: message,
-        ended_at: new Date().toISOString(),
-        worker_id: null,
-        lease_expires_at: null,
-        heartbeat_at: null,
-        updated_at: new Date().toISOString(),
-      }).eq("id", runId).eq("worker_id", WORKER_ID).eq("status", "running");
-      await supabaseAdmin.from("tasks").update({
-        status: "failed",
-        last_error_code: "unsupported_runtime_task",
-        last_error_message: message,
-        completed_at: new Date().toISOString(),
-        worker_id: null,
-        lease_expires_at: null,
-        heartbeat_at: null,
-        updated_at: new Date().toISOString(),
-      }).eq("id", taskId).eq("worker_id", WORKER_ID).eq("status", "running");
-      await supabaseAdmin.rpc("append_task_event", {
-        p_task_id: taskId,
-        p_run_id: runId,
-        p_event_type: "run.failed",
-        p_from_status: "running",
-        p_to_status: "failed",
-        p_message: message,
-        p_data: { failure_code: "unsupported_runtime_task" },
-        p_worker_id: WORKER_ID,
-      });
+    const taskKind = String(claim.task_kind);
+    if (taskKind !== "research") {
+      await failUnsupportedClaim(taskId, runId, taskKind);
       return;
     }
 
@@ -141,35 +157,38 @@ async function executeClaim(claim: any): Promise<void> {
       deadlineAt: claim.deadline_at ?? undefined,
       workerId: WORKER_ID,
     });
+
+    // The domain executor owns the immediate result; the worker owns retry
+    // scheduling when that result is explicitly retryable.
+    await scheduleRetryIfNeeded(taskId, runId);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[Aether worker ${WORKER_ID}] execution error for ${runId}: ${message}`);
 
     const now = new Date().toISOString();
-    const { data: current } = await supabaseAdmin.from("task_runs").select("status, task_id").eq("id", runId).eq("worker_id", WORKER_ID).maybeSingle();
+    const { data: current, error: loadError } = await supabaseAdmin.from("task_runs")
+      .select("status")
+      .eq("id", runId)
+      .eq("worker_id", WORKER_ID)
+      .maybeSingle();
+    if (loadError) throw new Error(`Failed to inspect failed runtime run: ${loadError.message}`);
+
     if (current?.status === "running") {
-      await supabaseAdmin.from("task_runs").update({
-        status: "failed",
-        failure_code: "worker_execution_error",
-        retryable: true,
-        error: message,
-        ended_at: now,
-        worker_id: null,
-        lease_expires_at: null,
-        heartbeat_at: null,
-        updated_at: now,
+      const { error: runError } = await supabaseAdmin.from("task_runs").update({
+        status: "failed", failure_code: "worker_execution_error", retryable: true,
+        error: message, ended_at: now, worker_id: null, lease_expires_at: null,
+        heartbeat_at: null, updated_at: now,
       }).eq("id", runId).eq("worker_id", WORKER_ID).eq("status", "running");
-      await supabaseAdmin.from("tasks").update({
-        status: "failed",
-        last_error_code: "worker_execution_error",
-        last_error_message: message,
-        completed_at: now,
-        worker_id: null,
-        lease_expires_at: null,
-        heartbeat_at: null,
-        updated_at: now,
+      if (runError) throw new Error(`Failed to finalize worker error: ${runError.message}`);
+
+      const { error: taskError } = await supabaseAdmin.from("tasks").update({
+        status: "failed", last_error_code: "worker_execution_error",
+        last_error_message: message, completed_at: now, worker_id: null,
+        lease_expires_at: null, heartbeat_at: null, updated_at: now,
       }).eq("id", taskId).eq("worker_id", WORKER_ID).eq("status", "running");
-      await supabaseAdmin.rpc("append_task_event", {
+      if (taskError) throw new Error(`Failed to finalize worker task error: ${taskError.message}`);
+
+      const { error: eventError } = await supabaseAdmin.rpc("append_task_event", {
         p_task_id: taskId,
         p_run_id: runId,
         p_event_type: "run.failed",
@@ -179,7 +198,10 @@ async function executeClaim(claim: any): Promise<void> {
         p_data: { failure_code: "worker_execution_error", retryable: true },
         p_worker_id: WORKER_ID,
       });
+      if (eventError) throw new Error(`Failed to record worker failure event: ${eventError.message}`);
     }
+
+    await scheduleRetryIfNeeded(taskId, runId);
   } finally {
     clearInterval(heartbeatTimer);
     activeRunId = null;
