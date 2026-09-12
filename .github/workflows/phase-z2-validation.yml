@@ -1,0 +1,41 @@
+name: Phase Z2 Validation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/phase-z2-api.ts'
+      - 'src/lib/aether/phase-z2-api.functions.ts'
+      - 'src/lib/aether/__tests__/phase-z2-api.test.ts'
+      - 'src/routes/api/v1/intelligence.ts'
+      - 'src/routes/_authenticated/api-keys.tsx'
+      - 'src/lib/admin/phase-z2.functions.ts'
+      - 'src/routes/_authenticated/admin/api-keys.tsx'
+      - 'supabase/migrations/**phase_z2**'
+      - 'docs/api/phase-z2-intelligence-api.md'
+      - '.github/workflows/phase-z2-validation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/phase-z2-api.ts'
+      - 'src/lib/aether/phase-z2-api.functions.ts'
+      - 'src/lib/aether/__tests__/phase-z2-api.test.ts'
+      - 'src/routes/api/v1/intelligence.ts'
+      - 'src/routes/_authenticated/api-keys.tsx'
+      - 'src/lib/admin/phase-z2.functions.ts'
+      - 'src/routes/_authenticated/admin/api-keys.tsx'
+      - 'supabase/migrations/**phase_z2**'
+      - 'docs/api/phase-z2-intelligence-api.md'
+      - '.github/workflows/phase-z2-validation.yml'
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.21'
+      - run: bun install
+      - run: bunx tsc -p tsconfig.json --noEmit
+      - run: bunx vitest run src/lib/aether/__tests__/phase-z2-api.test.ts
+      - run: bun run build:dev
