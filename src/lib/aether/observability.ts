@@ -38,14 +38,30 @@ export function createObservabilityContext(seed: Partial<ObservabilityContext> =
   };
 }
 
+const SENSITIVE_KEYS = new Set([
+  "authorization", "cookie", "set-cookie", "password", "secret", "token", "api_key", "apikey",
+  "access_token", "refresh_token", "service_role_key", "private_key", "client_secret", "supabase_service_role_key",
+]);
+
+function redact(value: unknown, depth = 0): unknown {
+  if (depth > 4) return "[redacted-depth]";
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => redact(item, depth + 1));
+  if (!value || typeof value !== "object") return typeof value === "string" ? value.slice(0, 4000) : value;
+  const output: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 100)) {
+    output[key] = SENSITIVE_KEYS.has(key.toLowerCase()) ? "[redacted]" : redact(item, depth + 1);
+  }
+  return output;
+}
+
 function safeJson(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return value as Record<string, unknown>;
+  return redact(value) as Record<string, unknown>;
 }
 
 function safeMessage(message: string | undefined): string | null {
   if (!message) return null;
-  return message.slice(0, 2000);
+  return message.slice(0, 2000).replace(/(bearer\s+)[^\s]+/gi, "$1[redacted]");
 }
 
 export async function recordObservabilityEvent(input: {
@@ -63,8 +79,8 @@ export async function recordObservabilityEvent(input: {
   const { context } = input;
   const { error } = await supabaseAdmin.from("aether_observability_events").insert({
     level: input.level ?? "info",
-    component: input.component,
-    event_type: input.eventType,
+    component: input.component.slice(0, 120),
+    event_type: input.eventType.slice(0, 160),
     message: safeMessage(input.message),
     trace_id: context.traceId,
     request_id: context.requestId ?? null,
@@ -78,7 +94,7 @@ export async function recordObservabilityEvent(input: {
     duration_ms: input.durationMs ?? null,
     success: input.success ?? null,
     retryable: input.retryable ?? null,
-    error_code: input.errorCode ?? null,
+    error_code: input.errorCode?.slice(0, 160) ?? null,
     metadata: safeJson(input.metadata),
   });
   if (error) throw new Error(`Observability event write failed: ${error.message}`);
@@ -95,10 +111,10 @@ export async function recordObservabilityMetric(input: {
   if (!Number.isFinite(input.value)) throw new Error("Observability metric value must be finite");
   const context = input.context;
   const { error } = await supabaseAdmin.from("aether_observability_metric_samples").insert({
-    metric_name: input.metricName,
+    metric_name: input.metricName.slice(0, 160),
     value: input.value,
-    unit: input.unit ?? "count",
-    component: input.component,
+    unit: (input.unit ?? "count").slice(0, 40),
+    component: input.component.slice(0, 120),
     sampled_at: new Date().toISOString(),
     trace_id: context?.traceId ?? null,
     request_id: context?.requestId ?? null,
@@ -117,14 +133,15 @@ export async function startObservabilitySpan(input: {
   attributes?: Record<string, unknown>;
 }): Promise<{ spanId: string; finish: (status?: Exclude<ObservabilitySpanStatus, "running">, errorCode?: string | null) => Promise<void> }> {
   const spanId = randomUUID();
+  const parentSpanId = input.parentSpanId ?? input.context.spanId ?? null;
   const startedAt = Date.now();
   const context = { ...input.context, spanId };
   const { error } = await supabaseAdmin.from("aether_observability_spans").insert({
     trace_id: context.traceId,
     span_id: spanId,
-    parent_span_id: input.parentSpanId ?? context.spanId ?? null,
+    parent_span_id: parentSpanId,
     name: input.name.slice(0, 200),
-    component: input.component,
+    component: input.component.slice(0, 120),
     status: "running",
     started_at: new Date(startedAt).toISOString(),
     user_id: context.userId ?? null,
