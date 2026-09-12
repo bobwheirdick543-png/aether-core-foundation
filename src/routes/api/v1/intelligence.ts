@@ -3,17 +3,87 @@ import { createFileRoute } from "@tanstack/react-router";
 import { assertRequestSize } from "@/lib/aether/security-boundary";
 import { authenticateZ2ApiKey, executeZ2Intelligence } from "@/lib/aether/phase-z2-api";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+
 const db = supabaseAdmin as any;
-export const Route = createFileRoute("/api/v1/intelligence")({ server: { handlers: { POST: ({ request }) => handle(request), OPTIONS: async () => new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-Id, Idempotency-Key", "Access-Control-Allow-Methods": "POST, OPTIONS" } }) } } });
-function requestIdFrom(request: Request) { const supplied=request.headers.get("x-request-id")?.trim(); return supplied&&/^[A-Za-z0-9._:-]{1,128}$/.test(supplied)?supplied:`req_${crypto.randomUUID().replaceAll("-","")}`; }
-function errorResponse(status:number,code:string,message:string,requestId:string){return new Response(JSON.stringify({error:{code,message,requestId}}),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Request-Id":requestId,"Access-Control-Allow-Origin":"*"}})}
-function requestFingerprint(body:unknown){return createHash("sha256").update(JSON.stringify(body)).digest("hex")}
-async function handle(request:Request){const started=Date.now();const requestId=requestIdFrom(request);let identity:Awaited<ReturnType<typeof authenticateZ2ApiKey>>=null;let statusCode=500;let idempotencyKey:string|null=null;let idempotencyClaimed=false;try{assertRequestSize(request);identity=await authenticateZ2ApiKey(request);if(!identity){statusCode=401;return errorResponse(401,"invalid_api_key","A valid Aether Ascension API key is required",requestId)}if(identity.status!=="active"){statusCode=403;return errorResponse(403,"api_key_not_active","This Aether API key is not currently authorized",requestId)}if(request.headers.get("content-type")?.includes("application/json")!==true){statusCode=415;return errorResponse(415,"unsupported_media_type","Requests must use application/json",requestId)}let body:any;try{body=await request.json()}catch{statusCode=400;return errorResponse(400,"invalid_json","Request body must contain valid JSON",requestId)}
-    const scopes=new Set(identity.scopes??[]); if(!scopes.has("intelligence:invoke")){statusCode=403;return errorResponse(403,"capability_not_authorized","This API key is not authorized to invoke AAX intelligence",requestId)}
-    const { data: keyPolicy } = await db.from("aether_api_keys").select("metadata").eq("id",identity.apiKeyId).eq("owner_id",identity.ownerId).maybeSingle();
-    const allowWebResearch=Boolean(keyPolicy?.metadata?.allowWebResearch)||scopes.has("web:research")||scopes.has("research:invoke");
-    if(Boolean(body?.webResearch)&&!allowWebResearch){statusCode=403;return errorResponse(403,"capability_not_authorized","Web research is not enabled for this API key",requestId)}
-    if(Boolean(body?.stream)){statusCode=501;return errorResponse(501,"streaming_not_supported","External Z2 streaming is not currently exposed",requestId)}
-    idempotencyKey=request.headers.get("idempotency-key")?.trim()||null;if(idempotencyKey){if(idempotencyKey.length>255){statusCode=400;return errorResponse(400,"invalid_idempotency_key","Idempotency-Key must be 255 characters or fewer",requestId)}const {data:claimRows,error:claimError}=await db.rpc("aether_api_idempotency_claim",{p_api_key_id:identity.apiKeyId,p_owner_id:identity.ownerId,p_idempotency_key:idempotencyKey,p_request_hash:requestFingerprint(body)});if(claimError){if(claimError.message?.includes("idempotency_conflict")){statusCode=409;return errorResponse(409,"idempotency_conflict","This Idempotency-Key was already used with a different request body",requestId)}throw new Error(`Idempotency claim failed: ${claimError.message}`)}const claim=Array.isArray(claimRows)?claimRows[0]:claimRows;if(claim?.claimed!==true){if(claim?.status_code&&claim.response_body){statusCode=Number(claim.status_code);return new Response(JSON.stringify(claim.response_body),{status:statusCode,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Request-Id":requestId,"X-AAX-Model":identity.modelKey,"X-Idempotent-Replay":"true","Access-Control-Allow-Origin":"*"}})}statusCode=409;return errorResponse(409,"idempotency_in_progress","An identical request is already being processed. Use the original request ID or a new idempotency key.",requestId)}idempotencyClaimed=true}
-    const result=await executeZ2Intelligence(request,identity,body,requestId);statusCode=result.status;if(idempotencyKey&&idempotencyClaimed)await db.rpc("aether_api_idempotency_complete",{p_api_key_id:identity.apiKeyId,p_idempotency_key:idempotencyKey,p_request_record_id:result.recordId,p_response_body:result.responseBody,p_success:result.status>=200&&result.status<300});return new Response(JSON.stringify(result.responseBody),{status:result.status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Request-Id":requestId,"X-AAX-Model":identity.modelKey,"Access-Control-Allow-Origin":"*"});
-  }catch(error){if(idempotencyKey&&identity&&idempotencyClaimed)await db.rpc("aether_api_idempotency_complete",{p_api_key_id:identity.apiKeyId,p_idempotency_key:idempotencyKey,p_request_record_id:null,p_response_body:null,p_success:false}).catch(()=>undefined);if(error instanceof Response){statusCode=error.status;error.headers.set("X-Request-Id",requestId);error.headers.set("Access-Control-Allow-Origin","*");return error}statusCode=500;return errorResponse(500,"internal_error","Aether Intelligence API request failed",requestId)}finally{await db.from("aether_api_logs").insert({api_key_id:identity?.apiKeyId??null,owner_id:identity?.ownerId??null,method:request.method,path:"/api/v1/intelligence",status_code:statusCode,latency_ms:Math.max(0,Date.now()-started),request_id:requestId,idempotency_key:idempotencyKey,api_version:"z2",application_name:identity?.applicationName??null,environment:identity?.environment??null,model_id:identity?.modelId??null,model_key:identity?.modelKey??null,metadata:{apiKind:"aax",modelGeneration:identity?.modelGeneration??null,modelRevision:identity?.modelRevision??null}})}}
+const sseHeaders = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" };
+
+export const Route = createFileRoute("/api/v1/intelligence")({
+  server: {
+    handlers: {
+      POST: ({ request }) => handle(request),
+      OPTIONS: async () => new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-Id, Idempotency-Key", "Access-Control-Allow-Methods": "POST, OPTIONS" } }),
+    },
+  },
+});
+
+function requestIdFrom(request: Request): string {
+  const supplied = request.headers.get("x-request-id")?.trim();
+  return supplied && /^[A-Za-z0-9._:-]{1,128}$/.test(supplied) ? supplied : `req_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+function errorResponse(status: number, code: string, message: string, requestId: string): Response {
+  return new Response(JSON.stringify({ error: { code, message, requestId } }), { status, headers: { ...sseHeaders, "X-Request-Id": requestId } });
+}
+
+function requestFingerprint(body: unknown): string {
+  return createHash("sha256").update(JSON.stringify(body)).digest("hex");
+}
+
+async function handle(request: Request): Promise<Response> {
+  const started = Date.now();
+  const requestId = requestIdFrom(request);
+  let identity: Awaited<ReturnType<typeof authenticateZ2ApiKey>> = null;
+  let statusCode = 500;
+  let idempotencyKey: string | null = null;
+  let idempotencyClaimed = false;
+  try {
+    assertRequestSize(request);
+    identity = await authenticateZ2ApiKey(request);
+    if (!identity) { statusCode = 401; return errorResponse(401, "invalid_api_key", "A valid Aether Ascension API key is required", requestId); }
+    if (identity.status !== "active") { statusCode = 403; return errorResponse(403, "api_key_not_active", "This Aether API key is not currently authorized", requestId); }
+    if (!request.headers.get("content-type")?.includes("application/json")) { statusCode = 415; return errorResponse(415, "unsupported_media_type", "Requests must use application/json", requestId); }
+    let body: any;
+    try { body = await request.json(); } catch { statusCode = 400; return errorResponse(400, "invalid_json", "Request body must contain valid JSON", requestId); }
+
+    const scopes = new Set(identity.scopes ?? []);
+    if (!scopes.has("intelligence:invoke")) { statusCode = 403; return errorResponse(403, "capability_not_authorized", "This API key is not authorized to invoke AAX intelligence", requestId); }
+    const { data: keyPolicy } = await db.from("aether_api_keys").select("metadata").eq("id", identity.apiKeyId).eq("owner_id", identity.ownerId).maybeSingle();
+    const allowWebResearch = Boolean(keyPolicy?.metadata?.allowWebResearch) || scopes.has("web:research") || scopes.has("research:invoke");
+    if (Boolean(body?.webResearch) && !allowWebResearch) { statusCode = 403; return errorResponse(403, "capability_not_authorized", "Web research is not enabled for this API key", requestId); }
+    if (Boolean(body?.stream)) { statusCode = 501; return errorResponse(501, "streaming_not_supported", "External Z2 streaming is not currently exposed", requestId); }
+
+    idempotencyKey = request.headers.get("idempotency-key")?.trim() || null;
+    if (idempotencyKey) {
+      if (idempotencyKey.length > 255) { statusCode = 400; return errorResponse(400, "invalid_idempotency_key", "Idempotency-Key must be 255 characters or fewer", requestId); }
+      const { data: claimRows, error: claimError } = await db.rpc("aether_api_idempotency_claim", { p_api_key_id: identity.apiKeyId, p_owner_id: identity.ownerId, p_idempotency_key: idempotencyKey, p_request_hash: requestFingerprint(body) });
+      if (claimError) {
+        if (claimError.message?.includes("idempotency_conflict")) { statusCode = 409; return errorResponse(409, "idempotency_conflict", "This Idempotency-Key was already used with a different request body", requestId); }
+        throw new Error(`Idempotency claim failed: ${claimError.message}`);
+      }
+      const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
+      if (claim?.claimed !== true) {
+        if (claim?.status_code && claim.response_body) {
+          statusCode = Number(claim.status_code);
+          return new Response(JSON.stringify(claim.response_body), { status: statusCode, headers: { ...sseHeaders, "X-Request-Id": requestId, "X-AAX-Model": identity.modelKey, "X-Idempotent-Replay": "true" } });
+        }
+        statusCode = 409;
+        return errorResponse(409, "idempotency_in_progress", "An identical request is already being processed. Use the original request ID or a new idempotency key.", requestId);
+      }
+      idempotencyClaimed = true;
+    }
+
+    const result = await executeZ2Intelligence(request, identity, body, requestId);
+    statusCode = result.status;
+    if (idempotencyKey && idempotencyClaimed) {
+      await db.rpc("aether_api_idempotency_complete", { p_api_key_id: identity.apiKeyId, p_idempotency_key: idempotencyKey, p_request_record_id: result.recordId, p_response_body: result.responseBody, p_success: result.status >= 200 && result.status < 300 });
+    }
+    return new Response(JSON.stringify(result.responseBody), { status: result.status, headers: { ...sseHeaders, "X-Request-Id": requestId, "X-AAX-Model": identity.modelKey } });
+  } catch (error) {
+    if (idempotencyKey && identity && idempotencyClaimed) await db.rpc("aether_api_idempotency_complete", { p_api_key_id: identity.apiKeyId, p_idempotency_key: idempotencyKey, p_request_record_id: null, p_response_body: null, p_success: false }).catch(() => undefined);
+    if (error instanceof Response) { statusCode = error.status; error.headers.set("X-Request-Id", requestId); error.headers.set("Access-Control-Allow-Origin", "*"); return error; }
+    statusCode = 500;
+    return errorResponse(500, "internal_error", "Aether Intelligence API request failed", requestId);
+  } finally {
+    await db.from("aether_api_logs").insert({ api_key_id: identity?.apiKeyId ?? null, owner_id: identity?.ownerId ?? null, method: request.method, path: "/api/v1/intelligence", status_code: statusCode, latency_ms: Math.max(0, Date.now() - started), request_id: requestId, idempotency_key: idempotencyKey, api_version: "z2", application_name: identity?.applicationName ?? null, environment: identity?.environment ?? null, model_id: identity?.modelId ?? null, model_key: identity?.modelKey ?? null, metadata: { apiKind: "aax", modelGeneration: identity?.modelGeneration ?? null, modelRevision: identity?.modelRevision ?? null } });
+  }
+}
