@@ -1,0 +1,1 @@
+-- Legacy production migration reconciliation. The production database records this version; the current repository uses later canonical migrations for the same subsystem. This marker preserves migration-history parity without replaying the already-applied legacy change.
