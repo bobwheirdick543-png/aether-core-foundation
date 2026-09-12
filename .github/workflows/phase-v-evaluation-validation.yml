@@ -1,0 +1,35 @@
+name: Phase V Evaluation Lab Validation
+
+on:
+  push:
+    branches: [main, phase-v-evaluation-lab]
+    paths:
+      - 'src/lib/aether/evaluation-lab.ts'
+      - 'src/lib/aether/evaluation-lab.test.ts'
+      - 'src/lib/admin/phase-v-evaluation.functions.ts'
+      - 'src/routes/_authenticated/evaluation-lab.tsx'
+      - 'src/components/layout/AppShell.tsx'
+      - 'supabase/migrations/20260912110000_phase_v_evaluation_lab.sql'
+      - '.github/workflows/phase-v-evaluation-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/evaluation-lab.ts'
+      - 'src/lib/aether/evaluation-lab.test.ts'
+      - 'src/lib/admin/phase-v-evaluation.functions.ts'
+      - 'src/routes/_authenticated/evaluation-lab.tsx'
+      - 'src/components/layout/AppShell.tsx'
+      - 'supabase/migrations/20260912110000_phase_v_evaluation_lab.sql'
+      - '.github/workflows/phase-v-evaluation-validation.yml'
+
+jobs:
+  evaluation-lab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.21'
+      - run: bun install
+      - run: bun test src/lib/aether/evaluation-lab.test.ts
+      - run: bun run build:dev
