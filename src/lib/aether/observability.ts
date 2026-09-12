@@ -4,6 +4,8 @@
  * Server-side only. This is the shared telemetry boundary for the platform:
  * request/task/run correlation, structured events, spans and metric samples.
  * Callers provide real execution facts; this module never invents activity.
+ * Telemetry persistence is fail-open: an observability outage must not make
+ * the primary Aether request or durable worker fail.
  */
 
 import { randomUUID } from "node:crypto";
@@ -97,7 +99,7 @@ export async function recordObservabilityEvent(input: {
     error_code: input.errorCode?.slice(0, 160) ?? null,
     metadata: safeJson(input.metadata),
   });
-  if (error) throw new Error(`Observability event write failed: ${error.message}`);
+  if (error) console.error("[Aether observability] event write failed:", error.message);
 }
 
 export async function recordObservabilityMetric(input: {
@@ -108,7 +110,10 @@ export async function recordObservabilityMetric(input: {
   component: string;
   dimensions?: Record<string, unknown>;
 }): Promise<void> {
-  if (!Number.isFinite(input.value)) throw new Error("Observability metric value must be finite");
+  if (!Number.isFinite(input.value)) {
+    console.error("[Aether observability] metric value was not finite");
+    return;
+  }
   const context = input.context;
   const { error } = await supabaseAdmin.from("aether_observability_metric_samples").insert({
     metric_name: input.metricName.slice(0, 160),
@@ -122,7 +127,7 @@ export async function recordObservabilityMetric(input: {
     run_id: context?.runId ?? null,
     dimensions: safeJson(input.dimensions),
   });
-  if (error) throw new Error(`Observability metric write failed: ${error.message}`);
+  if (error) console.error("[Aether observability] metric write failed:", error.message);
 }
 
 export async function startObservabilitySpan(input: {
@@ -150,7 +155,7 @@ export async function startObservabilitySpan(input: {
     worker_id: context.workerId ?? null,
     attributes: safeJson(input.attributes),
   });
-  if (error) throw new Error(`Observability span start failed: ${error.message}`);
+  if (error) console.error("[Aether observability] span start failed:", error.message);
 
   return {
     spanId,
@@ -162,7 +167,7 @@ export async function startObservabilitySpan(input: {
         duration_ms: Math.max(0, endedAt - startedAt),
         error_code: errorCode,
       }).eq("span_id", spanId).eq("status", "running");
-      if (finishError) throw new Error(`Observability span finish failed: ${finishError.message}`);
+      if (finishError) console.error("[Aether observability] span finish failed:", finishError.message);
     },
   };
 }
