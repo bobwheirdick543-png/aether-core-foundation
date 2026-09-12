@@ -1,6 +1,6 @@
 # Phase V — Evaluation Lab Completion Record
 
-Status: **implemented and merged to `main`**.
+Status: **complete and merged to `main`**.
 
 ## Architecture boundary
 
@@ -8,7 +8,7 @@ Evaluation Lab is an internal, administrator-authorized workspace. Its path is:
 
 `Evaluation Lab UI → authorized Evaluation API → Evaluation Engine → real Aether capability adapter → persisted evaluation result + telemetry`
 
-It sits on top of the existing Cognitive Orchestrator and Phase A durable runtime rather than replacing either layer. Ordinary users are not exposed to internal workforce implementation details.
+It sits on top of the existing Cognitive Orchestrator and Phase A durable runtime rather than replacing either layer. Evaluation work therefore measures the same architecture used by Aether instead of introducing a parallel execution system. Ordinary users are not exposed to internal workforce implementation details.
 
 ## Completed capabilities
 
@@ -24,16 +24,35 @@ It sits on top of the existing Cognitive Orchestrator and Phase A durable runtim
 - Target workspaces for Agents, Orchestrator, Research, Verification, Knowledge, Reports, Notifications, Modules and Battle Versia.
 - Real Orchestrator adapter using the existing intent classification, plan validation and workflow construction logic.
 - Real Agent Registry adapter using the existing Aether agent definitions and permission boundaries.
-- Fail-closed handling for targets without a registered executable evaluation adapter; simulations are never recorded as successful evaluations.
+- Real Research adapter using the native retrieval engine with URL validation, robots handling, bounded retrieval, redirects, retries, content hashing and parser metadata.
+- Real Verification adapter using the existing claim/evidence verification engine, including contradiction, date-mismatch, confidence and review-state measurement.
+- Real Knowledge adapter using the governed AAX knowledge-evolution contract and its acquisition → research/verification/security → curator flow.
+- Real Reports adapter using the existing deterministic Aether report/PDF engine and PDF/fingerprint validation.
+- Real Notifications adapter using durable notification persistence and delivery state.
+- Real Modules adapter using the existing manifest, semantic-version and dependency-cycle safety validators.
+- Real Battle Versia adapter using the existing persistent Battleversia data plane for characters, auctions, tournaments and game servers.
+- Failures remain failures: the Evaluation Engine never records an unavailable or simulated capability as a successful evaluation.
+- Contract tests covering orchestrator routing, approval gating, verification contradiction handling, report generation, module safety and governed knowledge flow.
 - Automated validation workflow covering Phase V evaluation contracts and the production build.
+
+## Evaluation semantics
+
+A test case supplies an explicit expected outcome. The evaluator records the actual result and scores it against the expectation. A target-specific adapter must execute an existing Aether runtime/contract or fail closed. This prevents the Evaluation Lab from becoming a source of fabricated activity or synthetic success metrics.
+
+Target adapters intentionally use the existing architecture:
+
+`Cognitive Orchestrator → Phase A durable runtime → domain executor/agent/module`
+
+where the capability is durable, while deterministic domain engines may be evaluated directly when they are the authoritative implementation (for example Verification, Reports and Module validation).
 
 ## Validation boundary
 
-The dedicated GitHub Actions workflow is configured to run the Phase V test and build validation on relevant pushes and pull requests. The GitHub connector did not expose a workflow run/status for the final Phase V head at completion time, so no CI success is claimed here.
+The dedicated GitHub Actions workflow is configured to run Phase V tests and the production build on relevant pushes and pull requests. Repository inspection confirmed the workflow and test/build commands are present. The GitHub connector does not expose a successful final Actions run for the merged head, so no CI success is claimed here.
 
-The code was merged only after repository-level inspection and the final PR diff review. A production deployment of any target-specific worker/adapter remains subject to the runtime environment and its configured services.
+The implementation was merged only after repository-level inspection and PR diff review. External-provider availability and production service configuration remain environment-dependent; the Evaluation Lab records those failures rather than masking them.
 
 ## Merge
 
-- Pull request: #18
-- Squash merge commit: `e06dcdadc8c288725e614078ea49e546131ce26a`
+- Initial Phase V PR: #18 — `e06dcdadc8c288725e614078ea49e546131ce26a`
+- Completion PR: #19 — `41ce00a142560de7a0d2365c9206413a9cbc355a`
+- Final documentation commit: `pending` (this record)
