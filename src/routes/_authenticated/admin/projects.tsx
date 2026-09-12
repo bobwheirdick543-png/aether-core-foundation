@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AdminShell } from "@/components/layout/AdminShell";
-import { PageHeader, PhaseNote, Panel } from "@/components/common/Primitives";
+import { PageHeader, Panel } from "@/components/common/Primitives";
 
 export const Route = createFileRoute("/_authenticated/admin/projects")({
   head: () => ({
@@ -19,11 +19,9 @@ function Page() {
     <AdminShell>
       <PageHeader title="Projects" description="All projects and modules." />
       <div className="mt-6 space-y-4">
-        <PhaseNote>Admin interface only — controls activate with the matching platform phase.</PhaseNote>
         <Panel>
           <p className="text-sm text-muted-foreground">
-            This surface is part of the Aether foundation build. Data and actions arrive with the
-            matching platform phase.
+            Project administration uses the same server-authorized project, ownership and module boundaries as the user workspace. This overview does not fabricate project activity; live project data appears when authorized records exist.
           </p>
         </Panel>
       </div>
