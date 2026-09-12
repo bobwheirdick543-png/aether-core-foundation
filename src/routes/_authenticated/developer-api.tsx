@@ -1,10 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/layout/AppShell";
-import { PageHeader, Panel, StatCard, Tag, EmptyState } from "@/components/common/Primitives";
+import { PageHeader, Panel, StatCard, Tag } from "@/components/common/Primitives";
 import { listMyDeveloperApiKeys, listMyApiLogs, listMyApiWebhooks } from "@/lib/aether/developer-api.functions";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, KeyRound } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/developer-api")({
   head: () => ({
@@ -78,6 +78,16 @@ function Page() {
         backFallback="/dashboard"
       />
 
+      <div className="mt-4">
+        <Link
+          to="/api-keys"
+          className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/15"
+        >
+          <KeyRound className="h-3.5 w-3.5" />
+          Open AAX Intelligence API Keys (create / rotate / policy)
+        </Link>
+      </div>
+
       {anyError && (
         <div className="mt-4 flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -119,6 +129,7 @@ function Page() {
               "/v1/battleversia",
               "/v1/webhooks",
               "/v1/logs",
+              "/v1/intelligence",
             ].map((x) => (
               <div key={x} className="flex items-center justify-between rounded-md border px-3 py-2">
                 <code>{x}</code>
