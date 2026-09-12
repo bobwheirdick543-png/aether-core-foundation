@@ -48,13 +48,15 @@ async function executeClaim(claim: any): Promise<void> {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     const [{ data: currentRun }, { data: currentTask }] = await Promise.all([
-      supabaseAdmin.from("task_runs").select("status,cancel_requested_at").eq("id", runId).eq("worker_id", WORKER_ID).maybeSingle(),
-      supabaseAdmin.from("tasks").select("status,cancel_requested_at").eq("id", taskId).eq("worker_id", WORKER_ID).maybeSingle(),
+      supabaseAdmin.from("task_runs").select("status,cancel_requested_at").eq("id", runId).maybeSingle(),
+      supabaseAdmin.from("tasks").select("status,cancel_requested_at").eq("id", taskId).maybeSingle(),
     ]);
     const pausedByAdmin = currentTask?.status === "paused";
-    if (pausedByAdmin && currentRun?.status === "running") {
+    if (pausedByAdmin) {
       const now = new Date().toISOString();
-      await supabaseAdmin.from("task_runs").update({ status: "paused", cancel_requested_at: null, retryable: false, error: null, ended_at: now, worker_id: null, lease_expires_at: null, heartbeat_at: null, updated_at: now }).eq("id", runId).eq("worker_id", WORKER_ID).eq("status", "running");
+      if (currentRun?.status === "running") {
+        await supabaseAdmin.from("task_runs").update({ status: "paused", cancel_requested_at: null, retryable: false, error: null, ended_at: now, worker_id: null, lease_expires_at: null, heartbeat_at: null, updated_at: now }).eq("id", runId).eq("status", "running");
+      }
       await supabaseAdmin.from("tasks").update({ status: "paused", cancel_requested_at: null, completed_at: null, worker_id: null, lease_expires_at: null, heartbeat_at: null, updated_at: now }).eq("id", taskId).eq("status", "paused");
       if (taskKind === "knowledge-acquisition") await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ status: "paused", paused_at: now, updated_at: now, last_event_at: now }).eq("task_id", taskId);
       await supabaseAdmin.rpc("append_task_event", { p_task_id: taskId, p_run_id: runId, p_event_type: "run.paused", p_from_status: "running", p_to_status: "paused", p_message: "Runtime stopped at a safe cancellation boundary; acquisition is paused.", p_data: { reason: "administrator_pause", error: message }, p_worker_id: WORKER_ID });
