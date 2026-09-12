@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/lib/aether/developer-api.ts'
       - 'src/lib/aether/developer-api.functions.ts'
+      - 'src/lib/aether/developer-api-client.ts'
       - 'src/lib/aether/__tests__/developer-api.test.ts'
       - 'src/routes/api/v1/**'
       - 'src/routes/_authenticated/api-keys.tsx'
@@ -17,6 +18,7 @@ on:
     paths:
       - 'src/lib/aether/developer-api.ts'
       - 'src/lib/aether/developer-api.functions.ts'
+      - 'src/lib/aether/developer-api-client.ts'
       - 'src/lib/aether/__tests__/developer-api.test.ts'
       - 'src/routes/api/v1/**'
       - 'src/routes/_authenticated/api-keys.tsx'
@@ -37,4 +39,4 @@ jobs:
       - run: bunx tsc -p tsconfig.phase-s.json --noEmit
       - run: bunx vitest run src/lib/aether/__tests__/developer-api.test.ts
       - run: bun run build:dev
-      # Final security-integrated Phase S validation.
+      # Final SDK-integrated Phase S validation.
