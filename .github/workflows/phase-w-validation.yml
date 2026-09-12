@@ -1,0 +1,39 @@
+name: Phase W Observability Validation
+
+on:
+  push:
+    branches: [main, phase-w-observability-operations]
+    paths:
+      - 'src/lib/aether/observability.ts'
+      - 'src/lib/aether/observability.test.ts'
+      - 'src/lib/admin/phase-w-observability.functions.ts'
+      - 'src/routes/_authenticated/admin/observability.tsx'
+      - 'scripts/aether-runtime-worker.ts'
+      - 'supabase/migrations/*phase_w_observability*'
+      - '.github/workflows/phase-w-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/aether/observability.ts'
+      - 'src/lib/aether/observability.test.ts'
+      - 'src/lib/admin/phase-w-observability.functions.ts'
+      - 'src/routes/_authenticated/admin/observability.tsx'
+      - 'scripts/aether-runtime-worker.ts'
+      - 'supabase/migrations/*phase_w_observability*'
+      - '.github/workflows/phase-w-validation.yml'
+
+jobs:
+  observability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.21'
+      - run: bun install
+      - name: Validate observability contracts
+        run: bun test src/lib/aether/observability.test.ts src/lib/aether/evaluation-lab.test.ts
+      - name: Validate worker entrypoint
+        run: SUPABASE_URL=https://example.supabase.co SUPABASE_SERVICE_ROLE_KEY=validation-placeholder bun run scripts/aether-runtime-worker.ts --check
+      - name: Production build
+        run: bun run build:dev
