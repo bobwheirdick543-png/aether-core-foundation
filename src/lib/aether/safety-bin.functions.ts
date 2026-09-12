@@ -1,11 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { authorizeSecurityBoundary } from "./security-boundary";
 import { buildSafetyBinPdf, buildSafetyBinReportFileName, normalizeSafetyBinQuery, type SafetyBinItem } from "./safety-bin";
 
 const ADMIN_CAPABILITY = "safety_bin.admin";
 
-async function isAdmin(sb: Awaited<ReturnType<typeof requireSupabaseAuth>> extends never ? never : any, userId: string): Promise<boolean> {
+async function isAdmin(sb: SupabaseClient, userId: string): Promise<boolean> {
   const { data } = await sb.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
   return Boolean(data);
 }
@@ -55,7 +56,6 @@ export const restoreSafetyBinItem = createServerFn({ method: "POST" })
       resourceType: "platform",
       resourceId: data.id,
       ownerId: admin ? undefined : (item.source_owner_id ?? item.deleted_by_id),
-      projectOwnerId: admin ? undefined : undefined,
       requiredCapability: admin ? null : "safety_bin.restore",
     });
     const { data: result, error } = await context.supabase.rpc("restore_safety_bin_item", { p_item_id: data.id });
