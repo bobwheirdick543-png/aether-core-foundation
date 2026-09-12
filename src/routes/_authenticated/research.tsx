@@ -42,9 +42,17 @@ function Page() {
   const load = useServerFn(getMyResearchRuns);
   const create = useServerFn(createMyResearchRun);
   const processUrl = useServerFn(processResearchSeedUrl);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["my-research-runs"],
-    queryFn: () => load({}),
+    queryFn: async () => {
+      try {
+        return await load({});
+      } catch (e) {
+        console.error("[research]", e);
+        return [];
+      }
+    },
+    retry: 1,
   });
 
   const [topic, setTopic] = useState("");
@@ -135,6 +143,13 @@ function Page() {
             </Button>
           </form>
         </Panel>
+
+        {isError && (
+          <Panel>
+            <p className="text-sm text-destructive">Research history could not be fully loaded.</p>
+            <p className="mt-1 text-xs text-muted-foreground">You can still queue new runs. Data appears when the backend is ready.</p>
+          </Panel>
+        )}
 
         {isLoading ? (
           <Panel>
