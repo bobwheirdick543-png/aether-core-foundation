@@ -1,0 +1,2 @@
+-- Legacy production migration reconciliation marker for the historical version 002.
+-- Current canonical migrations contain the maintained schema implementation.
