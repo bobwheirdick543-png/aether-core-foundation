@@ -30,14 +30,14 @@ export const adminCancelKnowledgeAcquisition = createServerFn({ method: "POST" }
   if (error || !task || task.kind !== "knowledge-acquisition") throw new Response("Knowledge acquisition task not found", { status: 404 });
   const now = new Date().toISOString();
   if (["queued", "scheduled", "paused", "retrying"].includes(task.status)) {
-    const { error: taskError } = await supabaseAdmin.from("tasks").update({ status: "cancelled", cancel_requested_at: now, cancel_reason: data.reason, completed_at: now, updated_at: now }).eq("id", task.id).eq("status", task.status);
+    const { error: taskError } = await supabaseAdmin.from("tasks").update({ status: "cancelled", cancel_requested_at: now, completed_at: now, updated_at: now }).eq("id", task.id).eq("status", task.status);
     if (taskError) throw new Response(taskError.message, { status: 500 });
     await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ status: "cancelled", cancel_reason: data.reason, completed_at: now, last_event_at: now, updated_at: now }).eq("task_id", task.id);
   } else if (task.status === "running") {
-    const { error: cancelError } = await supabaseAdmin.from("tasks").update({ cancel_requested_at: now, cancel_reason: data.reason, updated_at: now }).eq("id", task.id).eq("status", "running");
+    const { error: cancelError } = await supabaseAdmin.from("tasks").update({ cancel_requested_at: now, updated_at: now }).eq("id", task.id).eq("status", "running");
     if (cancelError) throw new Response(cancelError.message, { status: 500 });
   } else if (task.status === "waiting_approval") {
-    const { error: cancelError } = await supabaseAdmin.from("tasks").update({ status: "cancelled", cancel_requested_at: now, cancel_reason: data.reason, completed_at: now, updated_at: now }).eq("id", task.id).eq("status", "waiting_approval");
+    const { error: cancelError } = await supabaseAdmin.from("tasks").update({ status: "cancelled", cancel_requested_at: now, completed_at: now, updated_at: now }).eq("id", task.id).eq("status", "waiting_approval");
     if (cancelError) throw new Response(cancelError.message, { status: 500 });
     await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ status: "cancelled", cancel_reason: data.reason, last_event_at: now, updated_at: now }).eq("task_id", task.id);
   } else {
