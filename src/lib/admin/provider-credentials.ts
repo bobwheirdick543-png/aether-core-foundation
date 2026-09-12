@@ -1,15 +1,14 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ProviderCredentialPurpose = "aax_inference" | "knowledge_research";
 
 function encryptionKey(): Buffer {
-  const raw = process.env.AETHER_PROVIDER_CREDENTIAL_ENCRYPTION_KEY?.trim();
-  if (!raw) throw new Error("Missing server configuration: AETHER_PROVIDER_CREDENTIAL_ENCRYPTION_KEY");
-  if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, "hex");
-  const decoded = Buffer.from(raw, "base64url");
-  if (decoded.length !== 32) throw new Error("AETHER_PROVIDER_CREDENTIAL_ENCRYPTION_KEY must encode exactly 32 bytes");
-  return decoded;
+  const raw = process.env.AETHER_PROVIDER_CREDENTIAL_ENCRYPTION_KEY?.trim() || process.env.AETHER_API_KEY_ENCRYPTION_KEY?.trim();
+  if (!raw) throw new Error("Missing server configuration: AETHER_API_KEY_ENCRYPTION_KEY");
+  const base = /^[0-9a-fA-F]{64}$/.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64url");
+  if (base.length !== 32) throw new Error("Provider credential encryption key must encode exactly 32 bytes");
+  return Buffer.from(hkdfSync("sha256", base, Buffer.alloc(0), Buffer.from("aether-provider-credentials-v1"), 32));
 }
 
 function encryptSecret(secret: string): string {
@@ -40,9 +39,12 @@ export async function saveProviderCredential(admin: SupabaseClient, input: { pro
   const apiKey = input.apiKey.trim();
   if (!provider || !label || !apiKey) throw new Response("Provider, label and API key are required", { status: 400 });
   if (!/^[a-z0-9._-]{1,80}$/.test(provider)) throw new Response("Invalid provider identifier", { status: 400 });
-  await admin.from("aether_provider_credentials").update({ active: false, updated_by: input.actorId, updated_at: new Date().toISOString() }).eq("provider", provider).eq("purpose", input.purpose).eq("active", true);
+  if (input.baseUrl && !/^https:\/\//i.test(input.baseUrl.trim())) throw new Response("Provider base URL must use HTTPS", { status: 400 });
+  const now = new Date().toISOString();
+  await admin.from("aether_provider_credentials").update({ active: false, updated_by: input.actorId, updated_at: now }).eq("provider", provider).eq("purpose", input.purpose).eq("active", true);
   const { data, error } = await admin.from("aether_provider_credentials").insert({ provider, purpose: input.purpose, label, base_url: input.baseUrl?.trim() || null, encrypted_api_key: encryptSecret(apiKey), active: true, metadata: input.metadata ?? {}, created_by: input.actorId, updated_by: input.actorId }).select("id,provider,purpose,label,base_url,active,created_at,updated_at").single();
   if (error || !data) throw new Response(`Could not save provider credential: ${error?.message ?? "unknown error"}`, { status: 500 });
+  await admin.from("audit_logs").insert({ actor_id: input.actorId, action: "provider.credential.saved", target_type: "aether_provider_credentials", target_id: data.id, metadata: { provider, purpose: input.purpose, label } });
   return data;
 }
 
@@ -58,5 +60,6 @@ export async function setProviderCredentialActive(admin: SupabaseClient, id: str
   if (active) await admin.from("aether_provider_credentials").update({ active: false, updated_by: actorId, updated_at: new Date().toISOString() }).eq("provider", current.provider).eq("purpose", current.purpose).eq("active", true).neq("id", id);
   const { error } = await admin.from("aether_provider_credentials").update({ active, updated_by: actorId, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) throw new Response(`Could not update provider credential: ${error.message}`, { status: 500 });
+  await admin.from("audit_logs").insert({ actor_id: actorId, action: active ? "provider.credential.activated" : "provider.credential.disabled", target_type: "aether_provider_credentials", target_id: id, metadata: {} });
   return { ok: true };
 }
