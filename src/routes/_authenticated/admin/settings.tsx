@@ -7,7 +7,7 @@ import { PageHeader, Panel, Tag } from "@/components/common/Primitives";
 import { getPhaseUSafeSettings, setPhaseUSafeSetting } from "@/lib/admin/phase-u-settings.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/settings")({
-  head: () => ({ head: undefined, meta: [{ title: "Admin settings — Aether" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({ meta: [{ title: "Admin settings — Aether" }, { name: "robots", content: "noindex" }] }),
   component: Page,
 });
 
@@ -41,12 +41,7 @@ function Page() {
   return (
     <AdminShell>
       <div className="space-y-6">
-        <PageHeader
-          eyebrow="Control plane"
-          title="Platform settings"
-          description="Validated administrator configuration with server-side authorization and an audit trail."
-          backFallback="/admin"
-        />
+        <PageHeader eyebrow="Control plane" title="Platform settings" description="Validated administrator configuration with server-side authorization and an audit trail." backFallback="/admin" />
         <Panel className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-[1fr_2fr_auto]">
             <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="setting.key" className="rounded-md border bg-background px-3 py-2 text-sm" />
