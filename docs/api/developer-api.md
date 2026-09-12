@@ -11,7 +11,7 @@ API keys are created from the authenticated Aether Developer API workspace. Stor
 - `GET /v1/auth` — validate the credential and inspect its scopes.
 - `GET /v1/projects`, `GET/DELETE /v1/projects/{id}`, `POST /v1/projects` — project access.
 - `GET /v1/conversations`, `GET /v1/conversations/{id}`, `POST /v1/conversations` — conversation access and a real AAX-backed message turn.
-- `GET /v1/models` — available AAX model catalogue exposed by the existing model layer.
+- `GET /v1/models` — available AAX model catalogue exposed by the existing model layer; requires `models:read`.
 - `GET/POST /v1/tasks`, `GET /v1/tasks/{id}` — durable Task/Run entry point.
 - `GET /v1/runs/{id}` — run state plus persisted task events.
 - `GET /v1/agents` — registered agent catalogue.
@@ -60,13 +60,15 @@ Conversation turns execute through the existing AAX chat runtime rather than a s
 
 API-key authentication and scopes are checked before domain handling. Developer API requests also pass through Phase O security policy authorization. Ownership is checked server-side. Sensitive credentials and provider secrets are never returned by the API.
 
+API keys reject invalid/past expiration timestamps at issuance. Secrets are returned only during creation/rotation; only the SHA-256 hash and display prefix are persisted.
+
 ## Errors
 
-Errors use JSON with `error.code`, `error.message`, and optional `error.details`. Common responses include `401 invalid_api_key`, `403 insufficient_scope`, `403 security_denied`, `202 approval_required`, `404 not_found`, `409 idempotency_conflict`, `415 unsupported_media_type`, `429 rate_limit_exceeded`, and `500 internal_error`.
+Errors use JSON with `error.code`, `error.message`, and optional `error.details`. Common responses include `401 invalid_api_key`, `403 insufficient_scope`, `403 security_denied`, `202 approval_required`, `404 not_found`, `409 idempotency_conflict`, `409 idempotency_in_progress`, `415 unsupported_media_type`, `429 rate_limit_exceeded`, and `500 internal_error`.
 
 ## Idempotency and request tracing
 
-Send `X-Request-Id` to correlate a request across API/security/audit records. Mutating requests may also send an `Idempotency-Key`; Aether persists the request hash and successful response for replay within the idempotency retention window. Reusing a key with a different request body returns `409 idempotency_conflict`.
+Send `X-Request-Id` to correlate a request across API/security/audit records. Mutating requests may also send an `Idempotency-Key`. The database atomically claims a key before execution, persists the request hash and response for replay within the retention window, rejects reuse with a different body, and reports an in-progress duplicate rather than executing the mutation twice.
 
 ## SDK
 
