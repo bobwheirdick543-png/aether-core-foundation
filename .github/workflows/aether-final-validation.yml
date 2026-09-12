@@ -24,6 +24,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: TypeScript check
         run: bun x tsc --noEmit
+      - name: Unit tests
+        run: bun run test
       - name: Lint
         run: bun run lint
       - name: Production build
