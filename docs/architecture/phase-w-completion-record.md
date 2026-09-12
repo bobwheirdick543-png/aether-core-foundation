@@ -1,6 +1,6 @@
 # Phase W — Observability & Operations Completion Record
 
-Status: **implemented on `phase-w-observability-operations`; ready for merge after validation.**
+Status: **complete and merged to `main`.**
 
 ## Architecture boundary
 
@@ -29,6 +29,23 @@ Global observability follows that same path through shared trace/request correla
 
 Observability is intentionally global where the concern is platform-wide: correlation, structured logging/events, spans, metrics, redaction and operational health. User/project/evaluation/task data remains scoped by its existing ownership boundaries. Detailed internal traces remain an authorized operational surface and are not exposed through the public product surface.
 
-## Validation boundary
+## Validation
 
-The validation workflow runs Bun tests, the worker configuration check and the existing production build command. External Supabase state is not fabricated by the workflow. A successful local/CI build validates code and contracts; actual worker health and production telemetry require the configured runtime and database environment.
+Phase W validation run: **34687866096** — completed successfully.
+
+The dedicated workflow passed:
+- Bun dependency installation
+- Observability contract tests
+- Phase V evaluation contract tests
+- Durable worker entrypoint validation
+- Production build
+
+The implementation was merged through **PR #20** using squash merge.
+
+Merge commit: `70e0ab85c6ec57bcc4ceb24c4beac017847fc1bc`
+
+The later documentation-only update to this record does not change runtime behavior.
+
+## Operational boundary
+
+The repository now contains the complete Phase W observability implementation. Actual worker health, telemetry volume and resource measurements depend on the configured Supabase/runtime environment; the code does not fabricate those values.
