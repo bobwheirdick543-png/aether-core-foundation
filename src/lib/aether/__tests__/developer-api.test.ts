@@ -10,5 +10,6 @@ describe("Phase S developer API", () => {
     const scopes = normalizeScopeList(["tasks:read", "tasks:read", "not-a-scope", "runs:read"]);
     expect(scopes).toEqual(["tasks:read", "runs:read"]);
     expect(API_SCOPES).toContain("battleversia:read");
+    // Final validation run against the current main tree.
   });
 });
