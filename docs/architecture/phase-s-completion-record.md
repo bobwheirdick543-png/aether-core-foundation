@@ -27,6 +27,7 @@ Developer API keys are separate from AAX model credentials and separate from thi
 - Phase O policy authorization before domain handling.
 - CORS preflight handling and request IDs.
 - Structured JSON error responses and rate-limit responses.
+- Provider-independent TypeScript client helper and human-readable API reference/examples.
 - Focused Vitest coverage for key hashing and scope validation.
 - TypeScript/build validation workflow.
 
@@ -44,4 +45,4 @@ A real Phase O authorization call for a Developer API task-read action returned 
 
 ## Validation
 
-Final security-integrated Phase S validation ran on commit `00d4f69776c271f1c533950d7c1719d1048b6568`: Bun install, focused Phase S TypeScript, focused Phase S Vitest, and `bun run build:dev` all completed successfully. The validation run was `34678652796` / job `103512986301`. Vercel was intentionally not used for validation or deployment.
+Final SDK-integrated Phase S validation ran on commit `b04a0132a787f168e9724ac337e9e1854864c8b1`: Bun install, focused Phase S TypeScript, focused Phase S Vitest, and `bun run build:dev` all completed successfully. The validation run was `34678753605` / job `103513267858`. Vercel was intentionally not used for validation or deployment.
