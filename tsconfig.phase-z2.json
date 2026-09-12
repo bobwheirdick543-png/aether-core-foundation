@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": [
+    "src/lib/aether/phase-z2-api.ts",
+    "src/lib/aether/phase-z2-api.functions.ts",
+    "src/lib/aether/phase-z2-client.ts",
+    "src/lib/admin/phase-z2.functions.ts",
+    "src/lib/aether/__tests__/phase-z2-api.test.ts"
+  ],
+  "exclude": ["src/routes", "src/components"]
+}
