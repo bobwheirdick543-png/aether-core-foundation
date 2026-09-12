@@ -52,8 +52,24 @@ create policy "knowledge acquisition admin read" on public.aether_knowledge_acqu
 revoke all on public.aether_knowledge_acquisition_jobs from anon, public;
 grant select on public.aether_knowledge_acquisition_jobs to authenticated;
 
+-- runtime_quotas historically permits more than one NULL-scoped platform row.
+-- Collapse that legacy shape before applying the bounded acquisition limits.
+delete from public.runtime_quotas
+where scope_type = 'platform' and scope_id is null
+  and id not in (
+    select id from public.runtime_quotas
+    where scope_type = 'platform' and scope_id is null
+    order by created_at asc, id asc limit 1
+  );
+insert into public.runtime_quotas(scope_type,scope_id,max_concurrent,max_queue_depth,max_runtime_ms,max_retries)
+select 'platform',null,10,5000,18000000,3
+where not exists (select 1 from public.runtime_quotas where scope_type='platform' and scope_id is null);
 update public.runtime_quotas
-set max_concurrent = 10, max_queue_depth = greatest(max_queue_depth, 5000), max_runtime_ms = greatest(max_runtime_ms, 3600000), max_retries = 3, updated_at = now()
+set max_concurrent = 10,
+    max_queue_depth = greatest(max_queue_depth, 5000),
+    max_runtime_ms = greatest(max_runtime_ms, 3600000),
+    max_retries = 3,
+    updated_at = now()
 where scope_type = 'platform' and scope_id is null;
 
 commit;
