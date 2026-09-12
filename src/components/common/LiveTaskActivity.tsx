@@ -14,7 +14,13 @@ function labelFor(event: EventRow): string {
   const map: Record<string, string> = {
     "knowledge.scope.created": "Scope created",
     "knowledge.research.started": "Source research",
+    "knowledge.source.searching": "Searching sources",
+    "knowledge.source.reading": "Reading source",
+    "knowledge.terminology.extracted": "Terminology analysis",
+    "knowledge.verification.started": "Cross-source verification",
+    "knowledge.synthesis.started": "Synthesizing knowledge",
     "knowledge.candidate.created": "Knowledge candidate prepared",
+    "knowledge.report.created": "Report generated",
     "research.plan.started": "Research planning",
     "research.plan.completed": "Research plan completed",
     "worker.execution_started": "Execution started",
@@ -62,14 +68,15 @@ export function LiveTaskActivity({ admin = false, className }: { admin?: boolean
 }
 
 function TaskTree({ task, events }: { task: ActivityTask["task"]; events: EventRow[] }) {
-  const activeIndex = events.length && !["completed","failed","cancelled"].includes(events[events.length - 1]?.event_type?.split(".").at(-1) ?? "") ? events.length - 1 : -1;
-  const elapsed = task.started_at ? Math.max(0, Date.now() - Date.parse(task.started_at)) : 0;
+  const activeIndex = task.status === "running" && events.length ? events.length - 1 : -1;
+  const elapsedEnd = task.completed_at ? Date.parse(task.completed_at) : Date.now();
+  const elapsed = task.started_at ? Math.max(0, elapsedEnd - Date.parse(task.started_at)) : 0;
   return <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
     <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{task.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{task.kind} · {task.status} · {task.progress}%</p></div><span className="inline-flex items-center gap-1 text-[10px] font-mono text-muted-foreground"><Clock3 className="h-3 w-3" />{formatDuration(elapsed)}</span></div>
     <div className="mt-3 space-y-1">
       {events.slice(-24).map((event, index, visible) => {
         const actualIndex = events.length - visible.length + index;
-        const active = actualIndex === activeIndex && !["completed","failed","cancelled"].includes(task.status);
+        const active = actualIndex === activeIndex;
         const next = visible[index + 1];
         const failed = event.event_type.endsWith("failed") || event.event_type.endsWith("error");
         return <div key={event.id} className="flex items-start gap-2 rounded-md px-1.5 py-1">
