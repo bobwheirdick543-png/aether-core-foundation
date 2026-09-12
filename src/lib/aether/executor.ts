@@ -13,6 +13,7 @@ import { runPlannedResearch, createResearchPlan } from "./research-planner";
 import { persistAetherWebResearch, type AetherWebResearchResult } from "./aax-web-intelligence";
 import { transitionRunStatus, transitionTaskStatus, appendTaskEvent } from "./task-service";
 import { notifyTaskCompleted } from "./hooks";
+import { executeKnowledgeAcquisitionStep } from "./knowledge-acquisition-runtime";
 import type { TaskStatus } from "./task-runtime";
 import type { AgentResult } from "./agent-sdk";
 
@@ -45,4 +46,8 @@ export async function executeResearchStep(admin: SupabaseClient, opts: { taskId:
     const result: AgentResult = { taskId: opts.taskId, runId: opts.runId, agentKey: "research", status: sources.length > 0 ? "completed" : "failed", result: { topic: null, research_session_id: researchSessionId, source_count: sources.length, sources }, artifacts: sources.map((s) => ({ type: "source", path: s.url, title: s.title ?? undefined, metadata: { domain: s.domain, contentHash: s.contentHash } })), findings: [], warnings: pages.filter((p) => p.error).map((p) => `${p.url}: ${p.error}`), errors: sources.length === 0 && safeUrls.length > 0 ? ["No pages could be retrieved"] : [], confidence: sources.length > 0 ? 0.5 : 0, requiresReview: false, timestamp: new Date().toISOString(), metrics: { tool_calls: safeUrls.length } };
     const finalStatus: TaskStatus = result.status === "completed" ? "completed" : "failed"; await transitionRunStatus(admin, opts.runId, "running", finalStatus, { outputs: result.result, error: result.errors?.[0], failureCode: finalStatus === "failed" ? "research_no_sources" : undefined, retryable: finalStatus === "failed", workerId: opts.workerId }); await transitionTaskStatus(admin, opts.taskId, "running", finalStatus, { progress: finalStatus === "completed" ? 100 : 0, workerId: opts.workerId }); try { await notifyTaskCompleted(admin, { ownerId: opts.ownerId, taskId: opts.taskId, runId: opts.runId, title: finalStatus === "completed" ? `Research completed (${sources.length} sources)` : "Research failed", eventType: finalStatus === "completed" ? "research.completed" : "task.failed" }); } catch { /* notification failure is independent of task truth */ } return result;
   } finally { runtimeAbort.stop(); }
+}
+
+export async function executeKnowledgeAcquisitionRuntimeStep(admin: SupabaseClient, opts: { taskId: string; runId: string; ownerId: string; projectId?: string | null; deadlineAt?: string; workerId?: string }): Promise<void> {
+  await executeKnowledgeAcquisitionStep(admin, opts);
 }
