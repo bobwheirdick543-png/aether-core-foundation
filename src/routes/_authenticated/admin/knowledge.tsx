@@ -4,5 +4,128 @@ import { useServerFn } from "@tanstack/react-start";
 import { AdminShell } from "@/components/layout/AdminShell";
 import { PageHeader, Panel, Tag } from "@/components/common/Primitives";
 import { decidePhaseUKnowledge, getPhaseUKnowledge } from "@/lib/admin/phase-u.functions";
-export const Route=createFileRoute("/_authenticated/admin/knowledge")({head:()=>({meta:[{title:"Knowledge control — Aether"},{name:"robots",content:"noindex"}]}),component:Page});
-function Page(){const qc=useQueryClient();const load=useServerFn(getPhaseUKnowledge);const decide=useServerFn(decidePhaseUKnowledge);const {data=[],isLoading}=useQuery({queryKey:["phase-u-knowledge"],queryFn:()=>load({})});const act=async(id:string,decision:"approve"|"reject")=>{try{await decide({entryId:id,decision});await qc.invalidateQueries({queryKey:["phase-u-knowledge"]});}catch(e){alert(e instanceof Error?e.message:"Knowledge action failed");}};return <AdminShell><div className="space-y-6"><PageHeader eyebrow="Governance" title="Knowledge control" description="Review candidate knowledge, publish approved versions and preserve provenance." backFallback="/admin"/><Panel><p className="text-xs text-muted-foreground">Production knowledge is published only through an explicit administrator decision. Every decision is versioned and audited.</p></Panel><div className="space-y-3">{isLoading?<Panel><p className="text-sm text-muted-foreground">Loading knowledge…</p></Panel>:data.length===0?<Panel><p className="text-sm text-muted-foreground">No knowledge entries require administrative review.</p></Panel>:data.map((e:any)=><Panel key={e.id}><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">{e.title}</h2><p className="mt-1 text-xs text-muted-foreground">Version {e.current_version??0} · confidence {e.confidence??"—"} · owner {e.owner_id}</p></div><Tag tone={e.stage==="production"?"success":e.stage==="verified"?"primary":"warning"}>{e.stage}</Tag></div><div className="mt-4 flex flex-wrap gap-2">{(e.tags??[]).map((x:string)=><Tag key={x}>{x}</Tag>)}</div>{e.stage!=="production"&&<div className="mt-4 flex gap-2"><button className="rounded border px-3 py-2 text-xs hover:bg-muted" onClick={()=>act(e.id,"approve")}>Approve & publish</button><button className="rounded border border-destructive/30 px-3 py-2 text-xs text-destructive hover:bg-destructive/10" onClick={()=>act(e.id,"reject")}>Reject</button></div>}</Panel>)}</div></div></AdminShell>}
+
+export const Route = createFileRoute("/_authenticated/admin/knowledge")({
+  head: () => ({
+    meta: [
+      { title: "Knowledge control — Aether" },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
+  component: Page,
+});
+
+function Page() {
+  const qc = useQueryClient();
+  const load = useServerFn(getPhaseUKnowledge);
+  const decide = useServerFn(decidePhaseUKnowledge);
+  const { data = [], isLoading, isError } = useQuery({
+    queryKey: ["phase-u-knowledge"],
+    queryFn: async () => {
+      try {
+        return await load({});
+      } catch (e) {
+        console.error("[admin/knowledge]", e);
+        return [];
+      }
+    },
+    retry: 1,
+  });
+
+  const act = async (id: string, decision: "approve" | "reject") => {
+    try {
+      await decide({ data: { entryId: id, decision } });
+      await qc.invalidateQueries({ queryKey: ["phase-u-knowledge"] });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Knowledge action failed");
+    }
+  };
+
+  return (
+    <AdminShell>
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Governance"
+          title="Knowledge control"
+          description="Review candidate knowledge, publish approved versions and preserve provenance."
+          backFallback="/admin"
+        />
+        <Panel>
+          <p className="text-xs text-muted-foreground">
+            Production knowledge is published only through an explicit administrator decision. Every
+            decision is versioned and audited. No silent writes.
+          </p>
+        </Panel>
+        {isError && (
+          <Panel>
+            <p className="text-sm text-destructive">Some knowledge data could not be loaded.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The page remains usable. Check backend tables if this persists.
+            </p>
+          </Panel>
+        )}
+        <div className="space-y-3">
+          {isLoading ? (
+            <Panel>
+              <p className="text-sm text-muted-foreground">Loading knowledge…</p>
+            </Panel>
+          ) : data.length === 0 ? (
+            <Panel>
+              <p className="text-sm text-muted-foreground">
+                No knowledge entries require administrative review.
+              </p>
+            </Panel>
+          ) : (
+            data.map((e: any) => (
+              <Panel key={e.id}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold">{e.title}</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Version {e.current_version ?? 0} · confidence {e.confidence ?? "—"} · owner{" "}
+                      {e.owner_id}
+                    </p>
+                  </div>
+                  <Tag
+                    tone={
+                      e.stage === "production"
+                        ? "success"
+                        : e.stage === "verified"
+                          ? "primary"
+                          : "warning"
+                    }
+                  >
+                    {e.stage}
+                  </Tag>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {(e.tags ?? []).map((x: string) => (
+                    <Tag key={x}>{x}</Tag>
+                  ))}
+                </div>
+                {e.stage !== "production" && (
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      className="rounded border px-3 py-2 text-xs hover:bg-muted"
+                      onClick={() => void act(e.id, "approve")}
+                    >
+                      Approve & publish
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-destructive/30 px-3 py-2 text-xs text-destructive hover:bg-destructive/10"
+                      onClick={() => void act(e.id, "reject")}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </Panel>
+            ))
+          )}
+        </div>
+      </div>
+    </AdminShell>
+  );
+}
