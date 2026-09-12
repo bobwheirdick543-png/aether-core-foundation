@@ -1,32 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AdminShell } from "@/components/layout/AdminShell";
-import { PageHeader, PhaseNote, Panel } from "@/components/common/Primitives";
+import { PageHeader, Panel, Tag } from "@/components/common/Primitives";
+import { cancelPhaseUTask, getPhaseUTasks, retryPhaseUTask } from "@/lib/admin/phase-u.functions";
 
-export const Route = createFileRoute("/_authenticated/admin/tasks")({
-  head: () => ({
-    meta: [
-      { title: "Task queue — Aether" },
-      { name: "description", content: "Background jobs across the platform." },
-      { property: "og:title", content: "Task queue — Aether" },
-      { property: "og:description", content: "Background jobs across the platform." },
-    ],
-  }),
-  component: Page,
-});
-
-function Page() {
-  return (
-    <AdminShell>
-      <PageHeader title="Task queue" description="Background jobs across the platform." />
-      <div className="mt-6 space-y-4">
-        <PhaseNote>Admin interface only — controls activate with the matching platform phase.</PhaseNote>
-        <Panel>
-          <p className="text-sm text-muted-foreground">
-            This surface is part of the Aether foundation build. Data and actions arrive with the
-            matching platform phase.
-          </p>
-        </Panel>
-      </div>
-    </AdminShell>
-  );
-}
+export const Route = createFileRoute("/_authenticated/admin/tasks")({ head: () => ({ meta: [{ title: "Task queue — Aether" }, { name: "robots", content: "noindex" }] }), component: Page });
+function Page() { const qc=useQueryClient(); const load=useServerFn(getPhaseUTasks); const cancel=useServerFn(cancelPhaseUTask); const retry=useServerFn(retryPhaseUTask); const {data=[],isLoading,error}=useQuery({queryKey:["phase-u-tasks"],queryFn:()=>load({}),refetchInterval:10000}); const act=async(fn:()=>Promise<unknown>)=>{try{await fn();await qc.invalidateQueries({queryKey:["phase-u-tasks"]});}catch(e){alert(e instanceof Error?e.message:"Operation failed");}}; return <AdminShell><div className="space-y-6"><PageHeader eyebrow="Runtime control" title="Task queue" description="Durable task state, retry budgets, workers and administrator recovery controls." backFallback="/admin"/>{error?<Panel><p className="text-sm text-destructive">Unable to load the task queue.</p></Panel>:isLoading?<Panel><p className="text-sm text-muted-foreground">Loading durable tasks…</p></Panel>:<Panel className="space-y-0 p-0">{data.length===0?<p className="px-5 py-5 text-sm text-muted-foreground">No persisted tasks.</p>:data.map((t:any,i:number)=><div key={t.id} className={`px-5 py-4 ${i<data.length-1?"border-b border-border/50":""}`}><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{t.title}</p><p className="mt-1 text-xs text-muted-foreground">{t.kind} · owner {t.user_id} · {new Date(t.created_at).toLocaleString()}</p></div><Tag tone={t.status==="completed"?"success":t.status==="failed"?"danger":t.status==="running"?"primary":t.status==="cancelled"?"neutral":"warning"}>{t.status}</Tag></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-admin" style={{width:`${Math.max(0,Math.min(100,Number(t.progress??0)))}%`}}/></div><div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground"><span>Retry {t.retry_count}/{t.max_retries}</span><span>Worker {t.worker_id??"—"}</span><span>Priority {t.priority}</span>{t.last_error_code&&<span className="text-destructive">{t.last_error_code}</span>}<span className="ml-auto flex gap-2">{t.status==="failed"&&<button className="rounded border px-2 py-1 hover:bg-muted" onClick={()=>act(()=>retry({taskId:t.id}))}>Retry</button>}{!["completed","failed","cancelled"].includes(t.status)&&<button className="rounded border border-destructive/30 px-2 py-1 text-destructive hover:bg-destructive/10" onClick={()=>act(()=>cancel({taskId:t.id}))}>Cancel</button>}</span></div></div>)}</Panel>}</div></AdminShell> }
