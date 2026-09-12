@@ -54,39 +54,54 @@ export const adminSetKnowledgeAcquisitionPriority = createServerFn({ method: "PO
 
 export const adminPauseKnowledgeAcquisition = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { taskId: string; reason?: string }) => ({ taskId: String(d.taskId), reason: d.reason?.trim().slice(0, 500) || "Paused by administrator" })).handler(async ({ context, data }) => {
   await requireAdmin(context);
-  const { data: task } = await supabaseAdmin.from("tasks").select("id,status,kind,detail").eq("id", data.taskId).maybeSingle();
+  const { data: task } = await supabaseAdmin.from("tasks").select("id,status,kind,detail,deadline_at").eq("id", data.taskId).maybeSingle();
   if (!task || task.kind !== "knowledge-acquisition") throw new Response("Knowledge acquisition task not found", { status: 404 });
   if (!["queued", "scheduled", "running"].includes(task.status)) throw new Response("Only queued, scheduled or running acquisition can be paused", { status: 409 });
   const now = new Date().toISOString();
   const detail = task.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
-  const nextDetail = { ...detail, pause_requested: task.status === "running", pause_reason: data.reason };
+  const remainingBudgetMs = task.status === "running" && task.deadline_at ? Math.max(0, new Date(task.deadline_at).getTime() - Date.now()) : null;
+  if (task.status === "running" && remainingBudgetMs !== null && remainingBudgetMs <= 0) throw new Response("The acquisition budget has already expired; cancel or restart the mission", { status: 409 });
+  const nextDetail = { ...detail, pause_requested: task.status === "running", pause_reason: data.reason, ...(remainingBudgetMs !== null ? { remaining_budget_ms: remainingBudgetMs } : {}) };
   const { error } = await supabaseAdmin.from("tasks").update(task.status === "running"
     ? { status: "paused", cancel_requested_at: now, cancellation_reason: data.reason, updated_at: now, detail: nextDetail }
     : { status: "paused", updated_at: now, detail: nextDetail }).eq("id", task.id).eq("status", task.status);
   if (error) throw new Response(error.message, { status: 500 });
   if (task.status === "running") {
-    const { error: runError } = await supabaseAdmin.from("task_runs").update({ status: "paused", cancel_requested_at: now, error: null, retryable: false, worker_id: null, lease_expires_at: null, heartbeat_at: null, updated_at: now }).eq("id", (await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("run_id").eq("task_id", task.id).maybeSingle()).data?.run_id).eq("status", "running");
-    if (runError) throw new Response(runError.message, { status: 500 });
+    const { data: job } = await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("run_id").eq("task_id", task.id).maybeSingle();
+    if (job?.run_id) {
+      const { error: runError } = await supabaseAdmin.from("task_runs").update({ status: "paused", cancel_requested_at: now, error: null, retryable: false, worker_id: null, lease_expires_at: null, heartbeat_at: null, updated_at: now }).eq("id", job.run_id).eq("status", "running");
+      if (runError) throw new Response(runError.message, { status: 500 });
+    }
   }
   await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ status: "paused", paused_at: now, updated_at: now, last_event_at: now }).eq("task_id", task.id);
-  await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.paused", target_type: "task", target_id: task.id, metadata: { reason: data.reason, was_running: task.status === "running" } });
+  await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.paused", target_type: "task", target_id: task.id, metadata: { reason: data.reason, was_running: task.status === "running", remaining_budget_ms: remainingBudgetMs } });
   return { ok: true };
 });
 
 export const adminResumeKnowledgeAcquisition = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { taskId: string }) => ({ taskId: String(d.taskId) })).handler(async ({ context, data }) => {
   await requireAdmin(context);
-  const { data: task } = await supabaseAdmin.from("tasks").select("id,status,kind").eq("id", data.taskId).maybeSingle();
+  const { data: task } = await supabaseAdmin.from("tasks").select("id,status,kind,detail").eq("id", data.taskId).maybeSingle();
   if (!task || task.kind !== "knowledge-acquisition") throw new Response("Knowledge acquisition task not found", { status: 404 });
   if (task.status !== "paused") throw new Response("Only paused acquisition can be resumed", { status: 409 });
-  const now = new Date().toISOString();
-  const { error } = await supabaseAdmin.from("tasks").update({ status: "queued", cancel_requested_at: null, cancellation_reason: null, updated_at: now }).eq("id", task.id).eq("status", "paused");
+  const detail = task.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
+  const storedRemaining = Number(detail.remaining_budget_ms);
+  const budgetMs = Number.isFinite(storedRemaining) && storedRemaining > 0 ? storedRemaining : null;
+  if (detail.pause_requested === true && !budgetMs) throw new Response("The paused acquisition has no remaining research budget; restart it instead", { status: 409 });
+  const now = new Date();
+  const newDeadline = budgetMs ? new Date(now.getTime() + budgetMs).toISOString() : null;
+  const nextDetail = { ...detail, pause_requested: false, resumed_at: now.toISOString() };
+  const taskPatch: Record<string, unknown> = { status: "queued", cancel_requested_at: null, cancellation_reason: null, updated_at: now.toISOString(), detail: nextDetail };
+  if (newDeadline) taskPatch.deadline_at = newDeadline;
+  const { error } = await supabaseAdmin.from("tasks").update(taskPatch).eq("id", task.id).eq("status", "paused");
   if (error) throw new Response(error.message, { status: 500 });
   const { data: job } = await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("run_id").eq("task_id", task.id).maybeSingle();
   if (job?.run_id) {
-    const { error: runError } = await supabaseAdmin.from("task_runs").update({ status: "queued", cancel_requested_at: null, error: null, retryable: false, next_attempt_at: null, updated_at: now }).eq("id", job.run_id).eq("status", "paused");
+    const runPatch: Record<string, unknown> = { status: "queued", cancel_requested_at: null, error: null, retryable: false, next_attempt_at: null, ended_at: null, updated_at: now.toISOString() };
+    if (newDeadline) runPatch.deadline_at = newDeadline;
+    const { error: runError } = await supabaseAdmin.from("task_runs").update(runPatch).eq("id", job.run_id).eq("status", "paused");
     if (runError) throw new Response(runError.message, { status: 500 });
   }
-  await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ status: "queued", paused_at: null, updated_at: now, last_event_at: now }).eq("task_id", task.id);
-  await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.resumed", target_type: "task", target_id: task.id });
+  await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ status: "queued", paused_at: null, updated_at: now.toISOString(), last_event_at: now.toISOString() }).eq("task_id", task.id);
+  await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.resumed", target_type: "task", target_id: task.id, metadata: { preserved_budget_ms: budgetMs } });
   return { ok: true };
 });
