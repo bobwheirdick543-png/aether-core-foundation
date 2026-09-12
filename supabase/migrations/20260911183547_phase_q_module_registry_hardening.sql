@@ -1,0 +1,1 @@
+-- Legacy production migration reconciliation marker. The maintained module-registry implementation is represented by the canonical Phase Q migrations in this repository.
