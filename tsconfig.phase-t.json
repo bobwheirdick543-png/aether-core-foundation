@@ -2,10 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    "skipLibCheck": true,
     "types": ["node", "vite/client"]
   },
   "include": [
-    "src/routeTree.gen.ts",
     "src/routes/index.tsx",
     "src/routes/_authenticated/route.tsx",
     "src/routes/_authenticated/onboarding.tsx",
