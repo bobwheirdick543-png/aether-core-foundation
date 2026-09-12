@@ -1,6 +1,6 @@
 # Phase S — Developer API Completion Record
 
-**Status:** COMPLETE on `main` pending repository CI confirmation.
+**Status:** COMPLETE and validated on `main`.
 
 ## Purpose
 
@@ -38,4 +38,4 @@ The API layer is a boundary over existing persistent services. It does not keep 
 
 ## Validation
 
-The Phase S workflow runs Bun install, repository TypeScript checking, focused developer-API tests, and the production build. Vercel is intentionally not used for validation or deployment.
+Final Phase S validation ran on commit `ea51f61c63c20b51cd58e957003a4f9c956e2de4`: Bun install, focused Phase S TypeScript, focused Phase S Vitest, and `bun run build:dev` all completed successfully. The validation run was `34678559257` / job `103512726128`. Vercel was intentionally not used for validation or deployment.
