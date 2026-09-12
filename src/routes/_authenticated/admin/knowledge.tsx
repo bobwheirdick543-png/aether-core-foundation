@@ -1,32 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AdminShell } from "@/components/layout/AdminShell";
-import { PageHeader, PhaseNote, Panel } from "@/components/common/Primitives";
-
-export const Route = createFileRoute("/_authenticated/admin/knowledge")({
-  head: () => ({
-    meta: [
-      { title: "Knowledge control — Aether" },
-      { name: "description", content: "Approve or reject knowledge entries." },
-      { property: "og:title", content: "Knowledge control — Aether" },
-      { property: "og:description", content: "Approve or reject knowledge entries." },
-    ],
-  }),
-  component: Page,
-});
-
-function Page() {
-  return (
-    <AdminShell>
-      <PageHeader title="Knowledge control" description="Approve or reject knowledge entries." />
-      <div className="mt-6 space-y-4">
-        <PhaseNote>Admin interface only — controls activate with the matching platform phase.</PhaseNote>
-        <Panel>
-          <p className="text-sm text-muted-foreground">
-            This surface is part of the Aether foundation build. Data and actions arrive with the
-            matching platform phase.
-          </p>
-        </Panel>
-      </div>
-    </AdminShell>
-  );
-}
+import { PageHeader, Panel, Tag } from "@/components/common/Primitives";
+import { decidePhaseUKnowledge, getPhaseUKnowledge } from "@/lib/admin/phase-u.functions";
+export const Route=createFileRoute("/_authenticated/admin/knowledge")({head:()=>({meta:[{title:"Knowledge control — Aether"},{name:"robots",content:"noindex"}]}),component:Page});
+function Page(){const qc=useQueryClient();const load=useServerFn(getPhaseUKnowledge);const decide=useServerFn(decidePhaseUKnowledge);const {data=[],isLoading}=useQuery({queryKey:["phase-u-knowledge"],queryFn:()=>load({})});const act=async(id:string,decision:"approve"|"reject")=>{try{await decide({entryId:id,decision});await qc.invalidateQueries({queryKey:["phase-u-knowledge"]});}catch(e){alert(e instanceof Error?e.message:"Knowledge action failed");}};return <AdminShell><div className="space-y-6"><PageHeader eyebrow="Governance" title="Knowledge control" description="Review candidate knowledge, publish approved versions and preserve provenance." backFallback="/admin"/><Panel><p className="text-xs text-muted-foreground">Production knowledge is published only through an explicit administrator decision. Every decision is versioned and audited.</p></Panel><div className="space-y-3">{isLoading?<Panel><p className="text-sm text-muted-foreground">Loading knowledge…</p></Panel>:data.length===0?<Panel><p className="text-sm text-muted-foreground">No knowledge entries require administrative review.</p></Panel>:data.map((e:any)=><Panel key={e.id}><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold">{e.title}</h2><p className="mt-1 text-xs text-muted-foreground">Version {e.current_version??0} · confidence {e.confidence??"—"} · owner {e.owner_id}</p></div><Tag tone={e.stage==="production"?"success":e.stage==="verified"?"primary":"warning"}>{e.stage}</Tag></div><div className="mt-4 flex flex-wrap gap-2">{(e.tags??[]).map((x:string)=><Tag key={x}>{x}</Tag>)}</div>{e.stage!=="production"&&<div className="mt-4 flex gap-2"><button className="rounded border px-3 py-2 text-xs hover:bg-muted" onClick={()=>act(e.id,"approve")}>Approve & publish</button><button className="rounded border border-destructive/30 px-3 py-2 text-xs text-destructive hover:bg-destructive/10" onClick={()=>act(e.id,"reject")}>Reject</button></div>}</Panel>)}</div></div></AdminShell>}
