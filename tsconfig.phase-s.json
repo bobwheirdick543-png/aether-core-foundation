@@ -4,6 +4,7 @@
   "include": [
     "src/lib/aether/developer-api.ts",
     "src/lib/aether/developer-api.functions.ts",
+    "src/lib/aether/developer-api-client.ts",
     "src/lib/aether/__tests__/developer-api.test.ts"
   ]
 }
