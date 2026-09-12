@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": [
+    "src/routes/index.tsx",
+    "src/routes/_authenticated/route.tsx",
+    "src/routes/_authenticated/onboarding.tsx",
+    "src/components/layout/SiteChrome.tsx"
+  ]
+}
