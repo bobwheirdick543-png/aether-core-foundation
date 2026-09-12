@@ -32,7 +32,13 @@ jobs:
           done
           test -f src/lib/admin/phase-u.functions.ts
           test -f src/lib/admin/phase-u-logs.functions.ts
+          test -f src/lib/admin/phase-u-security.ts
+          test -f src/lib/admin/phase-u-settings.functions.ts
           test -f supabase/migrations/20260912090000_phase_u_admin_command_center.sql
+          grep -q 'getPhaseUSafeSettings' src/routes/_authenticated/admin/settings.tsx
+          grep -q 'setPhaseUSafeSetting' src/routes/_authenticated/admin/settings.tsx
+          grep -q 'isUnsafePhaseUSettingKey' src/lib/admin/phase-u-settings.functions.ts
+          grep -q 'redactPhaseUAuditMetadata' src/lib/admin/phase-u-settings.functions.ts
           if grep -R -n "controls activate with the matching platform phase" src/routes/_authenticated/admin; then
             echo "Found an unactivated Phase U admin surface"
             exit 1
