@@ -1,0 +1,55 @@
+name: Phase Y Data Lifecycle Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/migrations/20260912095900_phase_y_prerequisites.sql"
+      - "supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql"
+      - "supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql"
+      - "src/lib/aether/safety-bin.ts"
+      - "src/lib/aether/safety-bin.functions.ts"
+      - "src/lib/aether/safety-bin.test.ts"
+      - "src/lib/aether/agents.ts"
+      - "src/lib/aether/security-boundary.ts"
+      - "src/routes/_authenticated/safety-bin.tsx"
+      - "src/components/layout/AppShell.tsx"
+      - ".github/workflows/phase-y-validation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/20260912095900_phase_y_prerequisites.sql"
+      - "supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql"
+      - "supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql"
+      - "src/lib/aether/safety-bin.ts"
+      - "src/lib/aether/safety-bin.functions.ts"
+      - "src/lib/aether/safety-bin.test.ts"
+      - "src/lib/aether/agents.ts"
+      - "src/lib/aether/security-boundary.ts"
+      - "src/routes/_authenticated/safety-bin.tsx"
+      - "src/components/layout/AppShell.tsx"
+      - ".github/workflows/phase-y-validation.yml"
+
+jobs:
+  phase-y-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.21"
+      - run: bun install
+      - name: Safety Bin unit tests
+        run: bunx vitest run src/lib/aether/safety-bin.test.ts
+      - name: Migration contract checks
+        run: |
+          test -f supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql
+          test -f supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql
+          grep -q "capture_deleted_row_to_safety_bin" supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql
+          grep -q "restore_safety_bin_item" supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql
+          grep -q "purge_safety_bin_item" supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql
+          grep -q "process_user_deletion_request" supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql
+          grep -q "export_user_data" supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql
+      - name: Production build
+        run: bun run build:dev
