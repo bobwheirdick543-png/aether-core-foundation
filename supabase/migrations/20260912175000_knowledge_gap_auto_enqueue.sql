@@ -54,7 +54,7 @@ begin
   insert into public.aether_knowledge_acquisition_jobs(task_id, run_id, owner_id, title, subject, scope, depth_tier, time_budget_ms, target_type, source_type, dedupe_key, status, last_event_at)
   values(task_id, run_id, new.owner_id, 'Knowledge gap: ' || left(subject,120), subject, scope, 'A', 900000, 'global', 'background', dedupe, 'queued', now_ts)
   returning id into job_id;
-  perform public.append_task_event(task_id, run_id, 'knowledge_acquisition.queued', null, 'queued', 'Automatic bounded knowledge-gap acquisition queued', jsonb_build_object('job_id',job_id,'origin_message_id',new.id,'trigger','background_knowledge_gap'), null);
+  perform public.append_task_event(task_id, run_id, 'knowledge_acquisition.queued', null, 'queued', 'Automatic bounded knowledge-gap acquisition queued', jsonb_build_object('job_id',job_id,'origin_message_id',new.id,'trigger','background_knowledge_gap'), null, null);
   return new;
 exception when others then
   raise warning 'knowledge gap enqueue skipped: %', sqlerrm;
