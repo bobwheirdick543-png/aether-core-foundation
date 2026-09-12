@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/lib/aether/phase-z2-api.ts'
       - 'src/lib/aether/phase-z2-api.functions.ts'
+      - 'src/lib/aether/phase-z2-client.ts'
       - 'src/lib/aether/__tests__/phase-z2-api.test.ts'
       - 'src/routes/api/v1/intelligence.ts'
       - 'src/routes/_authenticated/api-keys.tsx'
@@ -12,12 +13,14 @@ on:
       - 'src/routes/_authenticated/admin/api-keys.tsx'
       - 'supabase/migrations/**phase_z2**'
       - 'docs/api/phase-z2-intelligence-api.md'
+      - 'tsconfig.phase-z2.json'
       - '.github/workflows/phase-z2-validation.yml'
   push:
     branches: [main]
     paths:
       - 'src/lib/aether/phase-z2-api.ts'
       - 'src/lib/aether/phase-z2-api.functions.ts'
+      - 'src/lib/aether/phase-z2-client.ts'
       - 'src/lib/aether/__tests__/phase-z2-api.test.ts'
       - 'src/routes/api/v1/intelligence.ts'
       - 'src/routes/_authenticated/api-keys.tsx'
@@ -25,6 +28,7 @@ on:
       - 'src/routes/_authenticated/admin/api-keys.tsx'
       - 'supabase/migrations/**phase_z2**'
       - 'docs/api/phase-z2-intelligence-api.md'
+      - 'tsconfig.phase-z2.json'
       - '.github/workflows/phase-z2-validation.yml'
   workflow_dispatch:
 jobs:
@@ -36,6 +40,6 @@ jobs:
         with:
           bun-version: '1.2.21'
       - run: bun install
-      - run: bunx tsc -p tsconfig.json --noEmit
+      - run: bunx tsc -p tsconfig.phase-z2.json --noEmit
       - run: bunx vitest run src/lib/aether/__tests__/phase-z2-api.test.ts
       - run: bun run build:dev
