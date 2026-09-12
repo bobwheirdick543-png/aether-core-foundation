@@ -1,32 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery,useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AdminShell } from "@/components/layout/AdminShell";
-import { PageHeader, PhaseNote, Panel } from "@/components/common/Primitives";
-
-export const Route = createFileRoute("/_authenticated/admin/api-keys")({
-  head: () => ({
-    meta: [
-      { title: "API keys — Aether" },
-      { name: "description", content: "Every issued key across accounts." },
-      { property: "og:title", content: "API keys — Aether" },
-      { property: "og:description", content: "Every issued key across accounts." },
-    ],
-  }),
-  component: Page,
-});
-
-function Page() {
-  return (
-    <AdminShell>
-      <PageHeader title="API keys" description="Every issued key across accounts." />
-      <div className="mt-6 space-y-4">
-        <PhaseNote>Admin interface only — controls activate with the matching platform phase.</PhaseNote>
-        <Panel>
-          <p className="text-sm text-muted-foreground">
-            This surface is part of the Aether foundation build. Data and actions arrive with the
-            matching platform phase.
-          </p>
-        </Panel>
-      </div>
-    </AdminShell>
-  );
-}
+import { PageHeader,Panel,Tag } from "@/components/common/Primitives";
+import { getPhaseUApiKeys,revokePhaseUApiKey,rotatePhaseUApiKey } from "@/lib/admin/phase-u.functions";
+export const Route=createFileRoute("/_authenticated/admin/api-keys")({head:()=>({meta:[{title:"API keys — Aether"},{name:"robots",content:"noindex"}]}),component:Page});
+function Page(){const qc=useQueryClient();const load=useServerFn(getPhaseUApiKeys);const revoke=useServerFn(revokePhaseUApiKey);const rotate=useServerFn(rotatePhaseUApiKey);const {data=[],isLoading}=useQuery({queryKey:["phase-u-api-keys"],queryFn:()=>load({})});const act=async(fn:()=>Promise<any>)=>{try{const r=await fn();if(r?.key)alert(`Replacement key (shown once): ${r.key}`);await qc.invalidateQueries({queryKey:["phase-u-api-keys"]});}catch(e){alert(e instanceof Error?e.message:"API key action failed");}};return <AdminShell><div className="space-y-6"><PageHeader eyebrow="Developer platform" title="API keys" description="Platform-wide scoped credentials, lifecycle controls and usage timestamps." backFallback="/admin"/><Panel><p className="text-xs text-muted-foreground">Raw secrets are never stored or displayed. Rotation returns the replacement secret once, exactly like the user developer flow.</p></Panel><Panel className="space-y-0 p-0">{isLoading?<p className="px-5 py-5 text-sm text-muted-foreground">Loading API keys…</p>:data.length===0?<p className="px-5 py-5 text-sm text-muted-foreground">No API keys have been issued.</p>:data.map((k:any,i:number)=><div key={k.id} className={`px-5 py-4 ${i<data.length-1?"border-b border-border/50":""}`}><div className="flex flex-wrap items-start gap-3"><div className="min-w-0 flex-1"><p className="text-sm font-medium">{k.name}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{k.key_prefix}… · owner {k.owner_id}</p><p className="mt-1 text-[11px] text-muted-foreground">Scopes: {(k.scopes??[]).join(", ")}</p></div><Tag tone={k.revoked_at?"danger":k.expires_at&&new Date(k.expires_at)<new Date()?"warning":"success"}>{k.revoked_at?"revoked":k.expires_at&&new Date(k.expires_at)<new Date()?"expired":"active"}</Tag></div><div className="mt-3 flex flex-wrap gap-2 text-xs"><span className="text-muted-foreground">Last used {k.last_used_at?new Date(k.last_used_at).toLocaleString():"never"}</span>{!k.revoked_at&&<><button className="rounded border px-2 py-1 hover:bg-muted" onClick={()=>act(()=>rotate({keyId:k.id,ownerId:k.owner_id}))}>Rotate</button><button className="rounded border border-destructive/30 px-2 py-1 text-destructive hover:bg-destructive/10" onClick={()=>act(()=>revoke({keyId:k.id,ownerId:k.owner_id}))}>Revoke</button></>}</div></div>)}</Panel></div></AdminShell>}
