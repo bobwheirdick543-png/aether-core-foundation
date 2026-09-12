@@ -37,3 +37,4 @@ jobs:
       - run: bunx tsc -p tsconfig.phase-s.json --noEmit
       - run: bunx vitest run src/lib/aether/__tests__/developer-api.test.ts
       - run: bun run build:dev
+      # Final Phase S main-branch validation trigger.
