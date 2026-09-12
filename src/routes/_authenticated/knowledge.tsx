@@ -6,6 +6,7 @@ import { Check, Database, GitBranch, History, RefreshCw, ShieldCheck, X } from "
 import { AppShell } from "@/components/layout/AppShell";
 import { EmptyState, PageHeader, Panel, StatCard, Tag } from "@/components/common/Primitives";
 import { Button } from "@/components/ui/button";
+import { KnowledgeAcquisitionLauncher } from "@/components/common/KnowledgeAcquisitionLauncher";
 import { acquireKnowledgeCandidate, curateKnowledgeCandidate, getKnowledgeCandidate, listKnowledgeCandidates, publishKnowledgeCandidate, rollbackKnowledgeEntry } from "@/lib/aether/knowledge-curator.functions";
 import { getProductionKnowledgeVersions, listProductionKnowledge } from "@/lib/aether/knowledge-production.functions";
 
@@ -48,6 +49,7 @@ function Page() {
   const counts = { candidates: candidates.filter((c) => ["candidate", "needs_review", "conflicted"].includes(c.status)).length, approved: candidates.filter((c) => c.status === "approved").length, published: entries.length, conflicts: candidates.filter((c) => c.status === "conflicted" || c.freshness_state === "stale").length };
   return <AppShell>
     <PageHeader title="Knowledge" description="Acquire → Structure → Verify → Curate → Approve → Publish → Version." actions={<Button size="sm" onClick={() => void seedExample()} disabled={busy}><RefreshCw className="mr-1.5 h-4 w-4" />Acquire candidate</Button>} />
+    <div className="mt-4"><KnowledgeAcquisitionLauncher /></div>
     <div className="mt-6 grid gap-4 sm:grid-cols-4"><StatCard label="Candidates" value={String(counts.candidates)} hint="Review queue" tone="warning" /><StatCard label="Approved" value={String(counts.approved)} hint="Ready for publication" tone="success" /><StatCard label="Production" value={String(counts.published)} hint="Trusted entries" tone="primary" /><StatCard label="Conflicts / stale" value={String(counts.conflicts)} hint="Requires curator attention" tone="neutral" /></div>
     {error ? <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
     <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
