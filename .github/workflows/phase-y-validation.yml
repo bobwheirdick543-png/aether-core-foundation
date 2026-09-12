@@ -7,6 +7,8 @@ on:
       - "supabase/migrations/20260912095900_phase_y_prerequisites.sql"
       - "supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql"
       - "supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql"
+      - "supabase/migrations/20260912120000_phase_y_pgcrypto_schema_hardening.sql"
+      - "supabase/migrations/20260912121000_phase_y_security_definer_execute_hardening.sql"
       - "src/lib/aether/safety-bin.ts"
       - "src/lib/aether/safety-bin.functions.ts"
       - "src/lib/aether/safety-bin.test.ts"
@@ -21,6 +23,8 @@ on:
       - "supabase/migrations/20260912095900_phase_y_prerequisites.sql"
       - "supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql"
       - "supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql"
+      - "supabase/migrations/20260912120000_phase_y_pgcrypto_schema_hardening.sql"
+      - "supabase/migrations/20260912121000_phase_y_security_definer_execute_hardening.sql"
       - "src/lib/aether/safety-bin.ts"
       - "src/lib/aether/safety-bin.functions.ts"
       - "src/lib/aether/safety-bin.test.ts"
@@ -44,12 +48,17 @@ jobs:
         run: bunx vitest run src/lib/aether/safety-bin.test.ts
       - name: Migration contract checks
         run: |
+          test -f supabase/migrations/20260912095900_phase_y_prerequisites.sql
           test -f supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql
           test -f supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql
+          test -f supabase/migrations/20260912120000_phase_y_pgcrypto_schema_hardening.sql
+          test -f supabase/migrations/20260912121000_phase_y_security_definer_execute_hardening.sql
           grep -q "capture_deleted_row_to_safety_bin" supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql
           grep -q "restore_safety_bin_item" supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql
           grep -q "purge_safety_bin_item" supabase/migrations/20260912100000_phase_y_data_lifecycle_safety_bin.sql
           grep -q "process_user_deletion_request" supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql
           grep -q "export_user_data" supabase/migrations/20260912102000_phase_y_recycling_agent_and_lifecycle_workflows.sql
+          grep -q "extensions.digest" supabase/migrations/20260912120000_phase_y_pgcrypto_schema_hardening.sql
+          grep -q "REVOKE ALL ON FUNCTION public.purge_safety_bin_item" supabase/migrations/20260912121000_phase_y_security_definer_execute_hardening.sql
       - name: Production build
         run: bun run build:dev
