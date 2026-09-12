@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { apiError, authenticateDeveloperApiKey, handleDeveloperApi, logApiRequest } from "@/lib/aether/developer-api";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const Route = createFileRoute("/api/v1/$")({
   server: {
@@ -22,8 +23,10 @@ async function handle({ request }: { request: Request }) {
   let identity: Awaited<ReturnType<typeof authenticateDeveloperApiKey>> = null;
   let status = 200;
   try {
-    if (!identity) identity = await authenticateDeveloperApiKey(request);
+    identity = await authenticateDeveloperApiKey(request);
     if (!identity) { status = 401; return apiError(401, "invalid_api_key", "A valid Aether API key is required"); }
+    const security = await authorizeDeveloperRequest(identity.ownerId, request, path);
+    if (!security.allowed) { status = security.requiresApproval ? 202 : 403; return apiError(status, security.requiresApproval ? "approval_required" : "security_denied", security.reason ?? "Developer API request was blocked by the security policy", { requestId: security.requestId }); }
     let body: unknown = {};
     if (["POST","PUT","PATCH"].includes(request.method)) {
       const contentType = request.headers.get("content-type") ?? "";
@@ -42,4 +45,21 @@ async function handle({ request }: { request: Request }) {
   } finally {
     if (identity) await logApiRequest(identity, request, `/api/v1/${path}`, status, started);
   }
+}
+
+async function authorizeDeveloperRequest(ownerId: string, request: Request, path: string) {
+  const resource = path.split("/")[0] || "root";
+  const action = `api.${request.method.toLowerCase()}.${resource}`;
+  const idempotency = request.headers.get("x-request-id") || crypto.randomUUID();
+  const { data, error } = await (supabaseAdmin as any).rpc("security_authorize_action", {
+    p_idempotency_key: `developer-api:${idempotency}`,
+    p_actor_id: ownerId,
+    p_agent_key: "developer-api",
+    p_action: action,
+    p_resource_type: resource,
+    p_resource_id: path,
+    p_context: { api_version: "v1", method: request.method },
+  });
+  if (error) throw new Error(`Security authorization failed: ${error.message}`);
+  return data as { allowed: boolean; requires_approval: boolean; decision: string; reason?: string; request_id?: string };
 }
