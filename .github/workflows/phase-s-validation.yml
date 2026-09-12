@@ -40,3 +40,4 @@ jobs:
       - run: bunx vitest run src/lib/aether/__tests__/developer-api.test.ts
       - run: bun run build:dev
       # Final SDK-integrated Phase S validation.
+      # This workflow is intentionally limited to the Developer API boundary and its production build.
