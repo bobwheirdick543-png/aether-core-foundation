@@ -54,14 +54,22 @@ export const adminSetKnowledgeAcquisitionPriority = createServerFn({ method: "PO
 
 export const adminPauseKnowledgeAcquisition = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { taskId: string; reason?: string }) => ({ taskId: String(d.taskId), reason: d.reason?.trim().slice(0, 500) || "Paused by administrator" })).handler(async ({ context, data }) => {
   await requireAdmin(context);
-  const { data: task } = await supabaseAdmin.from("tasks").select("id,status,kind").eq("id", data.taskId).maybeSingle();
+  const { data: task } = await supabaseAdmin.from("tasks").select("id,status,kind,detail").eq("id", data.taskId).maybeSingle();
   if (!task || task.kind !== "knowledge-acquisition") throw new Response("Knowledge acquisition task not found", { status: 404 });
-  if (task.status !== "queued" && task.status !== "scheduled") throw new Response("Only queued or scheduled acquisition can be paused safely", { status: 409 });
+  if (!["queued", "scheduled", "running"].includes(task.status)) throw new Response("Only queued, scheduled or running acquisition can be paused", { status: 409 });
   const now = new Date().toISOString();
-  const { error } = await supabaseAdmin.from("tasks").update({ status: "paused", updated_at: now, detail: { pause_reason: data.reason } }).eq("id", task.id).eq("status", task.status);
+  const detail = task.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
+  const nextDetail = { ...detail, pause_requested: task.status === "running", pause_reason: data.reason };
+  const { error } = await supabaseAdmin.from("tasks").update(task.status === "running"
+    ? { status: "paused", cancel_requested_at: now, cancellation_reason: data.reason, updated_at: now, detail: nextDetail }
+    : { status: "paused", updated_at: now, detail: nextDetail }).eq("id", task.id).eq("status", task.status);
   if (error) throw new Response(error.message, { status: 500 });
+  if (task.status === "running") {
+    const { error: runError } = await supabaseAdmin.from("task_runs").update({ status: "paused", cancel_requested_at: now, error: null, retryable: false, worker_id: null, lease_expires_at: null, heartbeat_at: null, updated_at: now }).eq("id", (await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("run_id").eq("task_id", task.id).maybeSingle()).data?.run_id).eq("status", "running");
+    if (runError) throw new Response(runError.message, { status: 500 });
+  }
   await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ status: "paused", paused_at: now, updated_at: now, last_event_at: now }).eq("task_id", task.id);
-  await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.paused", target_type: "task", target_id: task.id, metadata: { reason: data.reason } });
+  await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.paused", target_type: "task", target_id: task.id, metadata: { reason: data.reason, was_running: task.status === "running" } });
   return { ok: true };
 });
 
@@ -71,8 +79,13 @@ export const adminResumeKnowledgeAcquisition = createServerFn({ method: "POST" }
   if (!task || task.kind !== "knowledge-acquisition") throw new Response("Knowledge acquisition task not found", { status: 404 });
   if (task.status !== "paused") throw new Response("Only paused acquisition can be resumed", { status: 409 });
   const now = new Date().toISOString();
-  const { error } = await supabaseAdmin.from("tasks").update({ status: "queued", updated_at: now }).eq("id", task.id).eq("status", "paused");
+  const { error } = await supabaseAdmin.from("tasks").update({ status: "queued", cancel_requested_at: null, cancellation_reason: null, updated_at: now }).eq("id", task.id).eq("status", "paused");
   if (error) throw new Response(error.message, { status: 500 });
+  const { data: job } = await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("run_id").eq("task_id", task.id).maybeSingle();
+  if (job?.run_id) {
+    const { error: runError } = await supabaseAdmin.from("task_runs").update({ status: "queued", cancel_requested_at: null, error: null, retryable: false, next_attempt_at: null, updated_at: now }).eq("id", job.run_id).eq("status", "paused");
+    if (runError) throw new Response(runError.message, { status: 500 });
+  }
   await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ status: "queued", paused_at: null, updated_at: now, last_event_at: now }).eq("task_id", task.id);
   await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.resumed", target_type: "task", target_id: task.id });
   return { ok: true };
