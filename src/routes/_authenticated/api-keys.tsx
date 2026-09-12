@@ -1,32 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { PageHeader, PhaseNote, Panel } from "@/components/common/Primitives";
+import { PageHeader, Panel, Tag, EmptyState } from "@/components/common/Primitives";
+import { Button } from "@/components/ui/button";
+import { createMyDeveloperApiKey, listMyDeveloperApiKeys, revokeMyDeveloperApiKey, rotateMyDeveloperApiKey } from "@/lib/aether/developer-api.functions";
 
-export const Route = createFileRoute("/_authenticated/api-keys")({
-  head: () => ({
-    meta: [
-      { title: "API keys — Aether" },
-      { name: "description", content: "Scoped keys for external applications." },
-      { property: "og:title", content: "API keys — Aether" },
-      { property: "og:description", content: "Scoped keys for external applications." },
-    ],
-  }),
-  component: Page,
-});
-
-function Page() {
-  return (
-    <AppShell>
-      <PageHeader title="API keys" description="Scoped keys for external applications." />
-      <div className="mt-6 space-y-4">
-        <PhaseNote>Interface only — backend behaviour lands in a later phase.</PhaseNote>
-        <Panel>
-          <p className="text-sm text-muted-foreground">
-            This surface is part of the Aether foundation build. Data and actions arrive with the
-            matching platform phase.
-          </p>
-        </Panel>
-      </div>
-    </AppShell>
-  );
-}
+export const Route = createFileRoute("/_authenticated/api-keys")({ head: () => ({ meta: [{ title: "API keys — Aether" }, { name: "description", content: "Create and manage scoped Aether Developer API keys." }] }), component: Page });
+const scopes = ["projects:read","projects:write","conversations:read","conversations:write","tasks:read","tasks:write","runs:read","agents:read","orchestration:read","orchestration:write","memory:read","memory:write","research:read","research:write","knowledge:read","knowledge:write","reports:read","notifications:read","schedules:read","schedules:write","modules:read","modules:write","battleversia:read","battleversia:write","webhooks:read","webhooks:write","logs:read"];
+function Page() { const qc=useQueryClient(); const list=useServerFn(listMyDeveloperApiKeys); const create=useServerFn(createMyDeveloperApiKey); const revoke=useServerFn(revokeMyDeveloperApiKey); const rotate=useServerFn(rotateMyDeveloperApiKey); const {data:keys=[],isLoading}=useQuery({queryKey:["developer-api-keys"],queryFn:()=>list({})}); const [name,setName]=useState(""); const [rate,setRate]=useState("60"); const [selected,setSelected]=useState<string[]>(["tasks:read","tasks:write","runs:read"]); const [newKey,setNewKey]=useState<string|null>(null); const [busy,setBusy]=useState(false); const toggle=(scope:string)=>setSelected((s)=>s.includes(scope)?s.filter(x=>x!==scope):[...s,scope]); const make=async()=>{setBusy(true);try{const r=await create({data:{name,scopes:selected,rateLimitPerMinute:Number(rate)||60}});setNewKey(r.key);setName("");await qc.invalidateQueries({queryKey:["developer-api-keys"]});}finally{setBusy(false)}}; return <AppShell><PageHeader title="Developer API" description="Versioned, scoped access for external applications." backFallback="/dashboard"/><div className="mt-6 space-y-5"><Panel><h2 className="text-sm font-semibold">Create API key</h2><p className="mt-1 text-xs text-muted-foreground">The full secret is shown only once. Aether stores only a one-way hash.</p><div className="mt-4 grid gap-3 md:grid-cols-[1fr_140px]"><input className="h-9 rounded-md border bg-background px-3 text-sm" value={name} onChange={e=>setName(e.target.value)} placeholder="Key name" maxLength={120}/><input className="h-9 rounded-md border bg-background px-3 text-sm" value={rate} onChange={e=>setRate(e.target.value)} placeholder="Requests/min" type="number" min={1} max={10000}/></div><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{scopes.map(s=><label key={s} className="flex items-center gap-2 rounded-md border p-2 text-xs"><input type="checkbox" checked={selected.includes(s)} onChange={()=>toggle(s)}/><span>{s}</span></label>)}</div><Button className="mt-4" disabled={busy||!name.trim()||!selected.length} onClick={()=>void make()}>Generate key</Button>{newKey?<div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-3"><p className="text-xs font-semibold">Copy this key now — it will not be shown again.</p><code className="mt-2 block break-all text-xs">{newKey}</code><Button className="mt-3" size="sm" variant="outline" onClick={()=>void navigator.clipboard?.writeText(newKey)}>Copy</Button></div>:null}</Panel><Panel><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Active and historical keys</h2><p className="mt-1 text-xs text-muted-foreground">Revocation is immediate. Rotation revokes the old key before issuing a new one.</p></div></div>{isLoading?<p className="mt-4 text-sm text-muted-foreground">Loading…</p>:keys.length===0?<EmptyState title="No API keys" description="Generate a scoped key to connect an external application."/>:<div className="mt-4 divide-y divide-border">{keys.map((k:any)=><div key={k.id} className="flex flex-wrap items-center gap-3 py-3"><div className="min-w-0 flex-1"><p className="text-sm font-medium">{k.name}</p><p className="font-mono text-[11px] text-muted-foreground">{k.key_prefix}•••• · {k.scopes.length} scopes · {k.rate_limit_per_minute}/min</p><p className="text-[11px] text-muted-foreground">Created {new Date(k.created_at).toLocaleString()} {k.last_used_at?`· Last used ${new Date(k.last_used_at).toLocaleString()}`:""}</p></div><Tag tone={k.revoked_at?"neutral":"success"}>{k.revoked_at?"REVOKED":"ACTIVE"}</Tag>{!k.revoked_at&&<><Button size="sm" variant="outline" onClick={async()=>{const r=await rotate({data:{keyId:k.id}});setNewKey(r.key);await qc.invalidateQueries({queryKey:["developer-api-keys"]})}}>Rotate</Button><Button size="sm" variant="ghost" onClick={async()=>{await revoke({data:{keyId:k.id}});await qc.invalidateQueries({queryKey:["developer-api-keys"]})}}>Revoke</Button></>}</div>)}</div>}</Panel><Panel><h2 className="text-sm font-semibold">API base URL</h2><p className="mt-1 font-mono text-xs text-muted-foreground">/api/v1/</p><p className="mt-2 text-xs text-muted-foreground">Authenticate with <code>Authorization: Bearer &lt;your_aether_key&gt;</code>. Every request is scoped, rate-limited and recorded in the API audit log.</p></Panel></div></AppShell>; }
