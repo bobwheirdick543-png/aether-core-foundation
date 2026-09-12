@@ -1,26 +1,19 @@
 /**
  * AETHER SECURITY & COMPLIANCE FOUNDATION
  *
- * The Security Agent monitors and flags.
- * Backend authorization (RLS + server functions + agentAllows) remains authoritative.
- * No agent can grant itself permissions.
+ * This module is the agent-specific compatibility boundary. Backend
+ * authorization, ownership/RLS and server-side policy remain authoritative.
+ * No agent can grant itself permissions or escalate its own privileges.
  */
-
 import type { AgentKey } from "./agents";
 import { agentAllows } from "./agent-sdk";
+import { recordObservabilityEvent } from "./observability";
 
 export type SecurityEventSeverity = "low" | "medium" | "high" | "critical";
-
 export type SecurityEventType =
-  | "permission_violation"
-  | "cross_user_access_attempt"
-  | "unauthorized_agent_action"
-  | "escalation_attempt"
-  | "abnormal_task_behavior"
-  | "repeated_auth_failure"
-  | "suspicious_api_activity"
-  | "dangerous_config_change"
-  | "boundary_violation";
+  | "permission_violation" | "cross_user_access_attempt" | "unauthorized_agent_action"
+  | "escalation_attempt" | "abnormal_task_behavior" | "repeated_auth_failure"
+  | "suspicious_api_activity" | "dangerous_config_change" | "boundary_violation";
 
 export interface SecurityEvent {
   id?: string;
@@ -39,29 +32,16 @@ export interface SecurityEvent {
   acknowledged?: boolean;
 }
 
-/**
- * Deterministic boundary check.
- * Call before any agent side-effect.
- * Returns a SecurityEvent if the action is forbidden.
- */
 export function checkAgentBoundary(
   agentKey: AgentKey,
   permission: string,
-  context: {
-    actorId?: string;
-    taskId?: string;
-    runId?: string;
-    resourceType?: string;
-    resourceId?: string;
-  } = {},
+  context: { actorId?: string; taskId?: string; runId?: string; resourceType?: string; resourceId?: string } = {},
 ): { allowed: true } | { allowed: false; event: SecurityEvent } {
   const check = agentAllows(agentKey, permission);
-  if (check.allowed) {
-    return { allowed: true };
-  }
+  if (check.allowed) return { allowed: true };
 
-  const event: SecurityEvent = {
-    event_type: "permission_violation",
+  return { allowed: false, event: {
+    event_type: check.reason === "Permission not granted" ? "permission_violation" : "unauthorized_agent_action",
     severity: "high",
     agent_key: agentKey,
     actor_id: context.actorId ?? null,
@@ -74,23 +54,29 @@ export function checkAgentBoundary(
     metadata: { requiresApproval: check.requiresApproval },
     created_at: new Date().toISOString(),
     acknowledged: false,
-  };
-
-  return { allowed: false, event };
+  }};
 }
 
-/**
- * Assert boundary or throw.
- * Use in server functions before performing the action.
- */
 export function assertAgentBoundary(
   agentKey: AgentKey,
   permission: string,
   context: Parameters<typeof checkAgentBoundary>[2] = {},
 ): void {
   const result = checkAgentBoundary(agentKey, permission, context);
-  if (!result.allowed) {
-    // Caller should also persist the event to audit / security tables
-    throw new Error(result.event.message);
-  }
+  if (result.allowed) return;
+  throw new Error(result.event.message);
+}
+
+/** Persist a security denial through the Phase W global observability boundary. */
+export async function recordSecurityEvent(event: SecurityEvent): Promise<void> {
+  await recordObservabilityEvent({
+    context: { traceId: crypto.randomUUID(), taskId: event.task_id ?? null, runId: event.run_id ?? null, agentKey: event.agent_key ?? null, userId: event.actor_id ?? null },
+    level: event.severity === "critical" || event.severity === "high" ? "error" : event.severity === "medium" ? "warn" : "info",
+    component: "security",
+    eventType: `security.${event.event_type}`,
+    message: event.message,
+    success: false,
+    retryable: false,
+    metadata: { resource_type: event.resource_type ?? null, resource_id: event.resource_id ?? null, attempted_action: event.attempted_action ?? null, ...(event.metadata ?? {}) },
+  });
 }
