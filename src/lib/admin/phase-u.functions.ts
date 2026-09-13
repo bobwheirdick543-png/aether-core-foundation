@@ -63,21 +63,50 @@ export const getPhaseUApiKeys = createServerFn({ method: "GET" }).middleware([re
 export const revokePhaseUApiKey = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { keyId: string; ownerId: string }) => d).handler(async ({ context, data }) => { await admin(context); const result = await revokeDeveloperApiKey(data.ownerId, data.keyId); await audit(context.userId, "admin.api_key_revoked", "api_key", data.keyId, { owner_id: data.ownerId }); return result; });
 export const rotatePhaseUApiKey = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { keyId: string; ownerId: string }) => d).handler(async ({ context, data }) => { await admin(context); const result = await rotateDeveloperApiKey(data.ownerId, data.keyId); await audit(context.userId, "admin.api_key_rotated", "api_key", data.keyId, { owner_id: data.ownerId, replacement_id: result.id }); return result; });
 
-export const getPhaseUUsage = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async ({ context }) => { await admin(context); const [{ data: api }, { data: runs }, { data: tasks }, { data: modelMetrics }, { data: agentMetrics }] = await Promise.all([
-  supabaseAdmin.from("aether_api_logs").select("status_code,latency_ms,created_at").order("created_at", { ascending: false }).limit(5000),
-  supabaseAdmin.from("task_runs").select("status,attempt,duration_ms,created_at,ended_at").order("created_at", { ascending: false }).limit(5000),
-  supabaseAdmin.from("tasks").select("status,created_at").order("created_at", { ascending: false }).limit(5000),
-  supabaseAdmin.from("model_productivity_metrics").select("model_role,request_count,completed_count,failed_count,productivity_percent,window_end").order("window_end", { ascending: false }).limit(1000),
-  supabaseAdmin.from("agent_productivity_metrics").select("agent_key,source_run_count,completed_count,failed_count,productivity_percent,window_end").order("window_end", { ascending: false }).limit(1000),
- ]); const requests = api?.length ?? 0; const errors = (api ?? []).filter(x => Number(x.status_code) >= 400).length; const latency = (api ?? []).map(x => Number(x.latency_ms ?? 0)); const avgLatencyMs = latency.length ? Math.round(latency.reduce((a,b)=>a+b,0)/latency.length) : 0; const completedRuns=(runs??[]).filter(r=>r.status==='completed').length; return { requests, errors, errorRate: requests ? Number((errors/requests*100).toFixed(2)) : 0, avgLatencyMs, runs: runs?.length ?? 0, completedRuns, tasks: tasks?.length ?? 0, modelMetrics: modelMetrics ?? [], agentMetrics: agentMetrics ?? [] }; });
+export const getPhaseUUsage = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
+  await admin(context);
+  const [{ data: api, error: apiError }, { data: runs, error: runsError }, { data: tasks, error: tasksError }, { data: aaxModels, error: modelsError }, { data: agentMetrics, error: agentMetricsError }] = await Promise.all([
+    supabaseAdmin.from("aether_api_logs").select("status_code,latency_ms,created_at,model_id,model_key,outcome").order("created_at", { ascending: false }).limit(5000),
+    supabaseAdmin.from("task_runs").select("status,attempt,duration_ms,created_at,ended_at,aax_model_id,retry_count").order("created_at", { ascending: false }).limit(5000),
+    supabaseAdmin.from("tasks").select("status,created_at").order("created_at", { ascending: false }).limit(5000),
+    supabaseAdmin.from("aax_models").select("id,model_key,display_name").order("generation").order("revision"),
+    supabaseAdmin.from("agent_productivity_metrics").select("agent_key,source_run_count,completed_count,failed_count,productivity_percent,window_end").order("window_end", { ascending: false }).limit(1000),
+  ]);
+  if (apiError || runsError || tasksError || modelsError || agentMetricsError) throw new Response("Could not load telemetry", { status: 500 });
+  const requests = api?.length ?? 0;
+  const errors = (api ?? []).filter(x => Number(x.status_code) >= 400).length;
+  const latency = (api ?? []).map(x => Number(x.latency_ms ?? 0)).filter(x => Number.isFinite(x));
+  const avgLatencyMs = latency.length ? Math.round(latency.reduce((a, b) => a + b, 0) / latency.length) : 0;
+  const completedRuns = (runs ?? []).filter(r => r.status === "completed").length;
+  const modelMap = new Map<string, { model_key: string; display_name: string; request_count: number; completed_count: number; failed_count: number; productivity_percent: number | null }>();
+  for (const model of aaxModels ?? []) modelMap.set(model.id, { model_key: model.model_key, display_name: model.display_name, request_count: 0, completed_count: 0, failed_count: 0, productivity_percent: null });
+  for (const row of api ?? []) {
+    const key = row.model_id ?? row.model_key; if (!key) continue;
+    let metric = modelMap.get(key);
+    if (!metric) { const model = (aaxModels ?? []).find(m => m.model_key === key); metric = { model_key: model?.model_key ?? String(key), display_name: model?.display_name ?? String(key), request_count: 0, completed_count: 0, failed_count: 0, productivity_percent: null }; modelMap.set(key, metric); }
+    metric.request_count += 1;
+    if (row.outcome === "success" || (row.outcome == null && Number(row.status_code) < 400)) metric.completed_count += 1;
+    else if (Number(row.status_code) >= 400 || row.outcome === "failure" || row.outcome === "failed") metric.failed_count += 1;
+  }
+  for (const run of runs ?? []) { if (!run.aax_model_id) continue; const metric = modelMap.get(run.aax_model_id); if (!metric) continue; if (run.status === "completed") metric.completed_count += 1; if (run.status === "failed") metric.failed_count += 1; }
+  for (const metric of modelMap.values()) { const attempts = metric.completed_count + metric.failed_count; metric.productivity_percent = attempts ? Number((metric.completed_count / attempts * 100).toFixed(2)) : null; }
+  const modelMetrics = [...modelMap.values()].filter(m => m.request_count > 0 || m.completed_count > 0 || m.failed_count > 0);
+  return { requests, errors, errorRate: requests ? Number((errors / requests * 100).toFixed(2)) : 0, avgLatencyMs, runs: runs?.length ?? 0, completedRuns, tasks: tasks?.length ?? 0, modelMetrics, agentMetrics: agentMetrics ?? [] };
+});
 
-export const getPhaseUSystem = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async ({ context }) => { await admin(context); const now = Date.now(); const [{ data: workers }, { data: quotas }, { data: tasks }, { data: models }, { data: agents }] = await Promise.all([
-  supabaseAdmin.from("runtime_workers").select("worker_id,status,capacity,current_run_id,last_heartbeat_at,started_at,metadata,updated_at").order("worker_id"),
-  supabaseAdmin.from("runtime_quotas").select("scope_type,scope_id,max_concurrent,max_queue_depth,max_runtime_ms,max_retries,updated_at").order("scope_type"),
-  supabaseAdmin.from("tasks").select("status", { count: "exact", head: false }).limit(5000),
-  supabaseAdmin.from("model_configs").select("role_key,display_name,status,provider,provider_model,sort_order").order("sort_order"),
-  supabaseAdmin.from("agents").select("agent_key,name,status,last_activity_at").order("name"),
- ]); const healthyWorkers=(workers??[]).filter(w=>w.status!=="offline" && now-new Date(w.last_heartbeat_at).getTime()<120000).length; return { workers: workers ?? [], quotas: quotas ?? [], models: models ?? [], agents: agents ?? [], queueDepth:(tasks??[]).filter(t=>["queued","retrying","scheduled"].includes(t.status)).length, running:(tasks??[]).filter(t=>t.status==="running").length, healthyWorkers }; });
+export const getPhaseUSystem = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
+  await admin(context); const now = Date.now();
+  const [{ data: workers, error: workersError }, { data: quotas, error: quotasError }, { data: tasks, error: tasksError }, { data: models, error: modelsError }, { data: agents, error: agentsError }] = await Promise.all([
+    supabaseAdmin.from("runtime_workers").select("worker_id,status,capacity,current_run_id,last_heartbeat_at,started_at,metadata,updated_at").order("worker_id"),
+    supabaseAdmin.from("runtime_quotas").select("scope_type,scope_id,max_concurrent,max_queue_depth,max_runtime_ms,max_retries,updated_at").order("scope_type"),
+    supabaseAdmin.from("tasks").select("status", { count: "exact", head: false }).limit(5000),
+    supabaseAdmin.from("aax_models").select("id,model_key,display_name,provider,provider_model,release_status,available_at,disabled_at,generation,revision").order("generation").order("revision"),
+    supabaseAdmin.from("agents").select("agent_key,name,status,last_activity_at").order("name"),
+  ]);
+  if (workersError || quotasError || tasksError || modelsError || agentsError) throw new Response("Could not load system health", { status: 500 });
+  const healthyWorkers = (workers ?? []).filter(w => { const heartbeat = w.last_heartbeat_at ? new Date(w.last_heartbeat_at).getTime() : 0; return w.status !== "offline" && heartbeat > 0 && now - heartbeat < 120000; }).length;
+  return { workers: workers ?? [], quotas: quotas ?? [], models: models ?? [], agents: agents ?? [], queueDepth: (tasks ?? []).filter(t => ["queued", "retrying", "scheduled"].includes(t.status)).length, running: (tasks ?? []).filter(t => t.status === "running").length, healthyWorkers };
+});
 
 export const getPhaseUSettings = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async ({ context }) => { await admin(context); const { data, error } = await supabaseAdmin.from("platform_settings").select("key,value,description,updated_at,updated_by").order("key"); if (error) throw new Response(error.message, { status: 500 }); return data ?? []; });
 export const setPhaseUSetting = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { key: string; value: unknown; description?: string }) => ({ key: String(d.key).trim().slice(0, 120), value: d.value, description: d.description?.trim().slice(0, 500) })).handler(async ({ context, data }) => { await admin(context); if (!data.key) throw new Response("Setting key is required", { status: 400 }); const { data: row, error } = await supabaseAdmin.from("platform_settings").upsert({ key: data.key, value: data.value, description: data.description ?? null, updated_by: context.userId, updated_at: new Date().toISOString() }).select("key,value,description,updated_at,updated_by").single(); if (error || !row) throw new Response(error?.message ?? "Could not save setting", { status: 500 }); await audit(context.userId, "admin.platform_setting_changed", "platform_setting", data.key, { value: data.value }); return row; });
