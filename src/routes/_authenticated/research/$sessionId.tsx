@@ -1,9 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Activity, AlertTriangle, CheckCircle2, Link2, Search } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Copy, Link2, Search } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Panel, Tag, EmptyState } from "@/components/common/Primitives";
+import { Button } from "@/components/ui/button";
 import { getMyResearchSession } from "@/lib/aether/research.functions";
 
 export const Route = createFileRoute("/_authenticated/research/$sessionId")({
@@ -11,7 +13,6 @@ export const Route = createFileRoute("/_authenticated/research/$sessionId")({
   component: Page,
 });
 
-/** PDF Phase F + Part 9B — stage vs agent separated; stages from durable state only */
 const RESEARCH_STAGES = [
   { key: "queued", label: "Queued" },
   { key: "planning", label: "Planning" },
@@ -54,7 +55,8 @@ function ProgressiveStages({
         <h2 className="text-sm font-semibold">Live research stages (Part 9B)</h2>
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Stages are derived from persisted session state only — not fabricated. Current stage and agent work remain separate concepts.
+        Stages are derived from persisted session state only — not fabricated. Current stage and agent work remain
+        separate concepts.
       </p>
       <div className="flex flex-wrap gap-1.5">
         {RESEARCH_STAGES.map((stage, i) => (
@@ -83,6 +85,7 @@ function ProgressiveStages({
 function Page() {
   const { sessionId } = Route.useParams();
   const load = useServerFn(getMyResearchSession);
+  const [copied, setCopied] = useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: ["my-research-session", sessionId],
     queryFn: async () => {
@@ -95,6 +98,16 @@ function Page() {
     },
     retry: 1,
   });
+
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
 
   if (isLoading)
     return (
@@ -123,6 +136,23 @@ function Page() {
           description="Durable native research session reconstructed from persisted state."
           backFallback="/research"
         />
+
+        <Panel className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Session ID</p>
+            <code className="mt-1 block truncate font-mono text-xs">{sessionId}</code>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" type="button" onClick={() => void copyId()}>
+              <Copy className="mr-1.5 h-3.5 w-3.5" />
+              {copied ? "Copied" : "Copy ID"}
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/reports">Generate report →</Link>
+            </Button>
+          </div>
+        </Panel>
+
         <div className="grid gap-3 sm:grid-cols-4">
           <Panel>
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Status</p>
