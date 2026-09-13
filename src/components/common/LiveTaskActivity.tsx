@@ -5,8 +5,27 @@ import { Check, ChevronDown, CircleDot, Clock3, Pause, Sparkles, XCircle } from 
 import { getLiveTaskActivity } from "@/lib/aether/task-activity.functions";
 import { cn } from "@/lib/utils";
 
-type EventRow = { id: string; sequence: number; event_type: string; message: string | null; data: Record<string, unknown> | null; created_at: string };
-type ActivityTask = { task: { id: string; title: string; kind: string; status: string; progress: number; started_at: string | null; completed_at: string | null; deadline_at: string | null }; events: EventRow[] };
+type EventRow = {
+  id: string;
+  sequence: number;
+  event_type: string;
+  message: string | null;
+  data: Record<string, unknown> | null;
+  created_at: string;
+};
+type ActivityTask = {
+  task: {
+    id: string;
+    title: string;
+    kind: string;
+    status: string;
+    progress: number;
+    started_at: string | null;
+    completed_at: string | null;
+    deadline_at: string | null;
+  };
+  events: EventRow[];
+};
 
 function labelFor(event: EventRow): string {
   const explicit = typeof event.data?.label === "string" ? event.data.label : null;
@@ -28,10 +47,14 @@ function labelFor(event: EventRow): string {
     "tool.completed": "Source retrieved",
     "tool.failed": "Source retrieval failed",
     "knowledge_acquisition.queued": "Queued for acquisition",
+    "agent.handoff": "Agent handoff",
+    "agent.started": "Agent started",
+    "stage.changed": "Stage changed",
   };
   if (map[event.event_type]) return map[event.event_type];
   return event.message || event.event_type.replace(/[._-]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
+
 function durationMs(event: EventRow, next?: EventRow, active = false): number {
   const explicit = Number(event.data?.duration_ms);
   if (Number.isFinite(explicit) && explicit >= 0) return explicit;
@@ -39,52 +62,155 @@ function durationMs(event: EventRow, next?: EventRow, active = false): number {
   const end = active ? Date.now() : next ? Date.parse(next.created_at) : start;
   return Math.max(0, end - start);
 }
+
 function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000);
   if (seconds < 60) return `${(ms / 1000).toFixed(seconds < 10 ? 1 : 0)}s`;
-  const minutes = Math.floor(seconds / 60); const remainder = seconds % 60;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
   return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
+}
+
+/** PDF Part 9B.2 / 9B.4 — current agent and current stage are separate */
+function currentAgentFrom(events: EventRow[]): string | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const d = events[i].data;
+    if (!d) continue;
+    if (typeof d.agent_key === "string") return d.agent_key;
+    if (typeof d.agentKey === "string") return d.agentKey;
+    if (typeof d.agent === "string") return d.agent;
+  }
+  return null;
+}
+
+function currentStageFrom(events: EventRow[], taskStatus: string): string {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const d = events[i].data;
+    if (d && typeof d.stage === "string") return d.stage;
+    if (d && typeof d.current_stage === "string") return d.current_stage;
+  }
+  if (taskStatus === "completed") return "complete";
+  if (taskStatus === "failed") return "failed";
+  if (taskStatus === "running") return "executing";
+  if (taskStatus === "waiting_approval") return "awaiting approval";
+  return taskStatus || "unknown";
 }
 
 export function LiveTaskActivity({ admin = false, className }: { admin?: boolean; className?: string }) {
   const load = useServerFn(getLiveTaskActivity);
-  const { data = [], isFetching } = useQuery({ queryKey: ["aether-live-task-activity", admin], queryFn: () => load({ data: { admin, limit: admin ? 12 : 6 } }) as Promise<ActivityTask[]>, refetchInterval: 1000, staleTime: 0 });
+  const { data = [], isFetching } = useQuery({
+    queryKey: ["aether-live-task-activity", admin],
+    queryFn: async () => {
+      try {
+        return (await load({ data: { admin, limit: admin ? 12 : 6 } })) as ActivityTask[];
+      } catch {
+        return [];
+      }
+    },
+    refetchInterval: 1000,
+    staleTime: 0,
+    retry: 0,
+  });
   const [open, setOpen] = useState(true);
   const hasTasks = data.length > 0;
   const count = useMemo(() => data.filter((item) => item.task.status === "running").length, [data]);
   if (!hasTasks) return null;
-  return <section className={cn("fixed bottom-4 right-4 z-50 w-[min(430px,calc(100vw-2rem))]", className)} aria-live="polite">
-    <div className="overflow-hidden rounded-2xl border border-primary/20 bg-background/95 shadow-2xl backdrop-blur-xl">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-3 border-b border-border/70 px-4 py-3 text-left">
-        <span className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-primary"><Sparkles className="h-4 w-4" /></span>
-        <span className="min-w-0 flex-1"><span className="block text-xs font-semibold">Aether live activity</span><span className="block text-[10px] text-muted-foreground">{count} active · {data.length} visible task{data.length === 1 ? "" : "s"}{isFetching ? " · syncing" : ""}</span></span>
-        <ChevronDown className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")} />
-      </button>
-      {open ? <div className="max-h-[min(70vh,620px)] space-y-2 overflow-y-auto p-2">
-        {data.map(({ task, events }) => <TaskTree key={task.id} task={task} events={events} />)}
-      </div> : null}
-    </div>
-  </section>;
+  return (
+    <section className={cn("fixed bottom-4 right-4 z-50 w-[min(430px,calc(100vw-2rem))]", className)} aria-live="polite">
+      <div className="overflow-hidden rounded-2xl border border-primary/20 bg-background/95 shadow-2xl backdrop-blur-xl">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center gap-3 border-b border-border/70 px-4 py-3 text-left"
+        >
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-primary">
+            <Sparkles className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-xs font-semibold">Aether live activity</span>
+            <span className="block text-[10px] text-muted-foreground">
+              {count} active · {data.length} visible task{data.length === 1 ? "" : "s"}
+              {isFetching ? " · syncing" : ""} · Part 9B
+            </span>
+          </span>
+          <ChevronDown className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")} />
+        </button>
+        {open ? (
+          <div className="max-h-[min(70vh,620px)] space-y-2 overflow-y-auto p-2">
+            {data.map(({ task, events }) => (
+              <TaskTree key={task.id} task={task} events={events} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
 }
 
 function TaskTree({ task, events }: { task: ActivityTask["task"]; events: EventRow[] }) {
   const activeIndex = task.status === "running" && events.length ? events.length - 1 : -1;
   const elapsedEnd = task.completed_at ? Date.parse(task.completed_at) : Date.now();
   const elapsed = task.started_at ? Math.max(0, elapsedEnd - Date.parse(task.started_at)) : 0;
-  return <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
-    <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{task.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{task.kind} · {task.status} · {task.progress}%</p></div><span className="inline-flex items-center gap-1 text-[10px] font-mono text-muted-foreground"><Clock3 className="h-3 w-3" />{formatDuration(elapsed)}</span></div>
-    <div className="mt-3 space-y-1">
-      {events.slice(-24).map((event, index, visible) => {
-        const actualIndex = events.length - visible.length + index;
-        const active = actualIndex === activeIndex;
-        const next = visible[index + 1];
-        const failed = event.event_type.endsWith("failed") || event.event_type.endsWith("error");
-        return <div key={event.id} className="flex items-start gap-2 rounded-md px-1.5 py-1">
-          <span className="mt-0.5 shrink-0">{failed ? <XCircle className="h-3.5 w-3.5 text-destructive" /> : active ? <CircleDot className="h-3.5 w-3.5 animate-pulse text-primary" /> : event.event_type.includes("paused") ? <Pause className="h-3.5 w-3.5 text-muted-foreground" /> : <Check className="h-3.5 w-3.5 text-primary" />}</span>
-          <span className="min-w-0 flex-1"><span className={cn("block text-[11px]", active && "font-medium text-primary")}>{labelFor(event)}</span><span className="block text-[9px] text-muted-foreground">{formatDuration(durationMs(event, next, active))}{event.message && event.message !== labelFor(event) ? ` · ${event.message}` : ""}</span></span>
-        </div>;
-      })}
+  const agent = currentAgentFrom(events);
+  const stage = currentStageFrom(events, task.status);
+
+  return (
+    <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-semibold">{task.title}</p>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">
+            {task.kind} · {task.status} · {task.progress}%
+          </p>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            <span className="font-medium text-foreground">Stage:</span> {stage}
+            {" · "}
+            <span className="font-medium text-foreground">Agent:</span> {agent ?? "—"}
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
+          <Clock3 className="h-3 w-3" />
+          {formatDuration(elapsed)}
+        </span>
+      </div>
+      <div className="mt-3 space-y-1">
+        {events.slice(-24).map((event, index, visible) => {
+          const actualIndex = events.length - visible.length + index;
+          const active = actualIndex === activeIndex;
+          const next = visible[index + 1];
+          const failed = event.event_type.endsWith("failed") || event.event_type.endsWith("error");
+          return (
+            <div key={event.id} className="flex items-start gap-2 rounded-md px-1.5 py-1">
+              <span className="mt-0.5 shrink-0">
+                {failed ? (
+                  <XCircle className="h-3.5 w-3.5 text-destructive" />
+                ) : active ? (
+                  <CircleDot className="h-3.5 w-3.5 animate-pulse text-primary" />
+                ) : event.event_type.includes("paused") ? (
+                  <Pause className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <Check className="h-3.5 w-3.5 text-primary" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className={cn("block text-[11px]", active && "font-medium text-primary")}>
+                  {labelFor(event)}
+                </span>
+                <span className="block text-[9px] text-muted-foreground">
+                  {formatDuration(durationMs(event, next, active))}
+                  {event.message && event.message !== labelFor(event) ? ` · ${event.message}` : ""}
+                </span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {task.deadline_at ? (
+        <div className="mt-2 flex items-center justify-between border-t border-border/50 pt-2 text-[9px] text-muted-foreground">
+          <span>Research budget</span>
+          <span>{new Date(task.deadline_at).toLocaleTimeString()}</span>
+        </div>
+      ) : null}
     </div>
-    {task.deadline_at ? <div className="mt-2 flex items-center justify-between border-t border-border/50 pt-2 text-[9px] text-muted-foreground"><span>Research budget</span><span>{new Date(task.deadline_at).toLocaleTimeString()}</span></div> : null}
-  </div>;
+  );
 }
