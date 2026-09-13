@@ -16,6 +16,28 @@ export const Route = createFileRoute("/_authenticated/developer-api")({
   component: Page,
 });
 
+/** PDF: advertised capability must have real path — do not mark everything LIVE */
+const API_SURFACE: { path: string; status: "implemented" | "partial" | "planned" }[] = [
+  { path: "/v1/intelligence", status: "implemented" },
+  { path: "/v1/auth", status: "partial" },
+  { path: "/v1/projects", status: "partial" },
+  { path: "/v1/conversations", status: "partial" },
+  { path: "/v1/tasks", status: "partial" },
+  { path: "/v1/runs", status: "partial" },
+  { path: "/v1/agents", status: "partial" },
+  { path: "/v1/orchestration", status: "partial" },
+  { path: "/v1/memory", status: "partial" },
+  { path: "/v1/research", status: "partial" },
+  { path: "/v1/knowledge", status: "partial" },
+  { path: "/v1/reports", status: "planned" },
+  { path: "/v1/notifications", status: "partial" },
+  { path: "/v1/schedules", status: "partial" },
+  { path: "/v1/modules", status: "partial" },
+  { path: "/v1/battleversia", status: "partial" },
+  { path: "/v1/webhooks", status: "partial" },
+  { path: "/v1/logs", status: "partial" },
+];
+
 function Page() {
   const keysFn = useServerFn(listMyDeveloperApiKeys);
   const logsFn = useServerFn(listMyApiLogs);
@@ -74,7 +96,7 @@ function Page() {
     <AppShell>
       <PageHeader
         title="Developer API"
-        description="Build external applications on Aether through the versioned /api/v1/ interface."
+        description="Build external applications on Aether through the versioned /api/v1/ interface. Status tags reflect implementation honesty, not marketing."
         backFallback="/dashboard"
       />
 
@@ -94,8 +116,7 @@ function Page() {
           <div>
             <p className="font-medium text-destructive">Some Developer API data could not be loaded</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              The page is still usable. This usually means the backend tables or permissions are not fully ready yet.
-              You can continue — keys, logs and webhooks will appear once the backend is connected.
+              The page is still usable. Backend tables or permissions may not be fully ready yet.
             </p>
           </div>
         </div>
@@ -110,30 +131,20 @@ function Page() {
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <Panel>
           <h2 className="text-sm font-semibold">API surface</h2>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Implemented = production path present. Partial = route/scaffold exists. Planned = contract only.
+          </p>
           <div className="mt-3 grid gap-2 text-xs">
-            {[
-              "/v1/auth",
-              "/v1/projects",
-              "/v1/conversations",
-              "/v1/tasks",
-              "/v1/runs",
-              "/v1/agents",
-              "/v1/orchestration",
-              "/v1/memory",
-              "/v1/research",
-              "/v1/knowledge",
-              "/v1/reports",
-              "/v1/notifications",
-              "/v1/schedules",
-              "/v1/modules",
-              "/v1/battleversia",
-              "/v1/webhooks",
-              "/v1/logs",
-              "/v1/intelligence",
-            ].map((x) => (
-              <div key={x} className="flex items-center justify-between rounded-md border px-3 py-2">
-                <code>{x}</code>
-                <Tag tone="success">LIVE</Tag>
+            {API_SURFACE.map((x) => (
+              <div key={x.path} className="flex items-center justify-between rounded-md border px-3 py-2">
+                <code>{x.path}</code>
+                <Tag
+                  tone={
+                    x.status === "implemented" ? "success" : x.status === "partial" ? "warning" : "neutral"
+                  }
+                >
+                  {x.status.toUpperCase()}
+                </Tag>
               </div>
             ))}
           </div>
