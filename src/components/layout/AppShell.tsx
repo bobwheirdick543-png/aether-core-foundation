@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, MessagesSquare, Boxes, FolderKanban, Library, Brain, Telescope, FileText, ListChecks, KeyRound, Settings, Menu, X, LogOut, ShieldCheck, Bell, Activity, Swords, FlaskConical, Recycle } from "lucide-react";
+import { LayoutDashboard, MessagesSquare, Boxes, FolderKanban, Library, Brain, Telescope, FileText, ListChecks, KeyRound, Settings, Menu, X, LogOut, ShieldCheck, Bell, Activity, Swords, FlaskConical, Recycle, CalendarClock } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { LiveTaskActivity } from "@/components/common/LiveTaskActivity";
 
 const NAV = [
-  { label: "Dashboard", to: "/dashboard" as const, icon: LayoutDashboard }, { label: "Chat", to: "/chat" as const, icon: MessagesSquare }, { label: "Models", to: "/models" as const, icon: Boxes }, { label: "Projects", to: "/projects" as const, icon: FolderKanban }, { label: "Knowledge", to: "/knowledge" as const, icon: Library }, { label: "Memory", to: "/memory" as const, icon: Brain }, { label: "Research", to: "/research" as const, icon: Telescope }, { label: "Operations", to: "/operations" as const, icon: Activity }, { label: "Reports", to: "/reports" as const, icon: FileText }, { label: "Tasks", to: "/tasks" as const, icon: ListChecks }, { label: "Battleversia", to: "/battleversia" as const, icon: Swords }, { label: "Notifications", to: "/notifications" as const, icon: Bell }, { label: "API / Developers", to: "/api-keys" as const, icon: KeyRound }, { label: "Settings", to: "/settings" as const, icon: Settings },
+  { label: "Dashboard", to: "/dashboard" as const, icon: LayoutDashboard }, { label: "Chat", to: "/chat" as const, icon: MessagesSquare }, { label: "Models", to: "/models" as const, icon: Boxes }, { label: "Projects", to: "/projects" as const, icon: FolderKanban }, { label: "Knowledge", to: "/knowledge" as const, icon: Library }, { label: "Memory", to: "/memory" as const, icon: Brain }, { label: "Research", to: "/research" as const, icon: Telescope }, { label: "Operations", to: "/operations" as const, icon: Activity }, { label: "Reports", to: "/reports" as const, icon: FileText }, { label: "Tasks", to: "/tasks" as const, icon: ListChecks }, { label: "Schedules", to: "/schedules" as const, icon: CalendarClock }, { label: "Battleversia", to: "/battleversia" as const, icon: Swords }, { label: "Notifications", to: "/notifications" as const, icon: Bell }, { label: "API / Developers", to: "/api-keys" as const, icon: KeyRound }, { label: "Settings", to: "/settings" as const, icon: Settings },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
