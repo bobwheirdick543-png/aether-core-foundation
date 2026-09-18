@@ -1,24 +1,166 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
 import { AdminShell } from "@/components/layout/AdminShell";
-import { PageHeader, Panel, Tag } from "@/components/common/Primitives";
+import { PageHeader, Panel, Tag, PhaseNote } from "@/components/common/Primitives";
 import { getAdminOrchestrationPlans, getOrchestratorConfigHistory } from "@/lib/admin/console.functions";
-import { activateOrchestratorConfig, saveOrchestratorConfig } from "@/lib/admin/orchestrator.functions";
+import { activateOrchestratorConfig } from "@/lib/admin/orchestrator.functions";
 
-export const Route = createFileRoute("/_authenticated/admin/orchestrator")({ head: () => ({ meta: [{ title: "Orchestrator — Aether admin" }, { name: "robots", content: "noindex" }] }), component: Page });
+export const Route = createFileRoute("/_authenticated/admin/orchestrator")({
+  head: () => ({
+    meta: [
+      { title: "Orchestrator — Aether admin" },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
+  component: Page,
+});
 
 function Page() {
-  const queryClient = useQueryClient(); const fetchHistory = useServerFn(getOrchestratorConfigHistory); const fetchPlans = useServerFn(getAdminOrchestrationPlans); const save = useServerFn(saveOrchestratorConfig); const activate = useServerFn(activateOrchestratorConfig);
-  const { data: configs = [], isLoading } = useQuery({ queryKey: ["admin-orchestrator-configs"], queryFn: () => fetchHistory({}) });
-  const { data: plans = [] } = useQuery({ queryKey: ["admin-orchestrator-plans"], queryFn: () => fetchPlans({}) });
-  const [text, setText] = useState(JSON.stringify({ intentConfidenceThreshold: 0.75, requireClarificationBelow: 0.55, contextBudgetPolicy: "relevance_first", defaultRiskLevel: "low", showPlanPreviewForRisk: "high", userProgressEnabled: true, traceAllActions: true }, null, 2)); const [note, setNote] = useState("");
-  const saveMutation = useMutation({ mutationFn: () => save({ data: { config: JSON.parse(text), changeNote: note } }), onSuccess: () => { setNote(""); void queryClient.invalidateQueries({ queryKey: ["admin-orchestrator-configs"] }); } });
-  const activateMutation = useMutation({ mutationFn: (configId: string) => activate({ data: { configId } }), onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-orchestrator-configs"] }) });
-  return <AdminShell><div className="animate-in-up space-y-6"><PageHeader eyebrow="Orchestrator" title="Control center" description="Administrator-only orchestration policy, trace history and activation controls. Every configuration and traceable action is persisted." backFallback="/admin" />
-    <Panel className="space-y-4"><div><h2 className="text-sm font-semibold">Edit configuration</h2><p className="mt-1 text-xs text-muted-foreground">Changes are saved as a new version. Saving does not activate it.</p></div><textarea value={text} onChange={(e)=>setText(e.target.value)} rows={15} className="w-full rounded-md border border-border bg-background p-3 font-mono text-xs outline-none focus:ring-1 focus:ring-primary" /><input value={note} onChange={(e)=>setNote(e.target.value)} placeholder="Change note (recommended)" className="w-full rounded-md border border-border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary" /><div className="flex items-center gap-2"><button type="button" disabled={saveMutation.isPending} onClick={()=>void saveMutation.mutateAsync()} className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-50">{saveMutation.isPending?"Saving…":"Save new version"}</button>{saveMutation.error?<span className="text-xs text-destructive">Invalid JSON or save failed.</span>:null}</div></Panel>
-    <Panel><div><h2 className="text-sm font-semibold">Orchestration trace</h2><p className="mt-1 text-xs text-muted-foreground">Recent plans with their persisted event counts. Opened plans retain task/run/step provenance.</p></div><div className="mt-4 space-y-2">{plans.length===0?<p className="text-xs text-muted-foreground">No orchestration plans recorded yet.</p>:plans.map((plan:any)=><div key={plan.id} className="rounded-md border border-border/60 p-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-medium">{plan.title}</p><p className="mt-1 text-[10px] font-mono text-muted-foreground">{plan.id}</p></div><div className="flex items-center gap-2"><Tag tone={plan.risk_level==="high"||plan.risk_level==="critical"?"warning":"neutral"}>{plan.risk_level}</Tag><Tag tone={plan.status==="completed"?"success":"neutral"}>{plan.status}</Tag></div></div><div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground"><span>Intent: {plan.intent}</span><span>Events: {plan.eventCount}</span><span>Approval: {plan.approval_status}</span></div></div>)}</div></Panel>
-    <Panel><div><h2 className="text-sm font-semibold">Configuration history</h2><p className="mt-1 text-xs text-muted-foreground">Only an administrator can activate a version.</p></div><div className="mt-4 space-y-2">{isLoading?<p className="text-xs text-muted-foreground">Loading…</p>:configs.map((config:any)=><div key={config.id} className="rounded-md border border-border/60 p-3"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2"><span className="text-xs font-medium">v{config.version}</span><Tag tone={config.status==="active"?"success":"neutral"}>{config.status}</Tag></div>{config.status!=="active"&&<button type="button" disabled={activateMutation.isPending} onClick={()=>void activateMutation.mutateAsync(config.id)} className="rounded-md border border-admin/25 px-3 py-1.5 text-xs hover:bg-admin/10">Activate</button>}</div><p className="mt-2 text-[11px] text-muted-foreground">{config.change_note||"No change note"} · {new Date(config.created_at).toLocaleString()}</p><pre className="mt-2 max-h-40 overflow-auto rounded bg-muted/40 p-2 text-[10px] text-muted-foreground">{JSON.stringify(config.config,null,2)}</pre></div>)}</div></Panel>
-  </div></AdminShell>;
+  const queryClient = useQueryClient();
+  const fetchHistory = useServerFn(getOrchestratorConfigHistory);
+  const fetchPlans = useServerFn(getAdminOrchestrationPlans);
+  const activate = useServerFn(activateOrchestratorConfig);
+
+  const { data: configs = [], isLoading } = useQuery({
+    queryKey: ["admin-orchestrator-configs"],
+    queryFn: () => fetchHistory({}),
+  });
+  const { data: plans = [] } = useQuery({
+    queryKey: ["admin-orchestrator-plans"],
+    queryFn: () => fetchPlans({}),
+  });
+
+  const activateMutation = useMutation({
+    mutationFn: (configId: string) => activate({ data: { configId } }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-orchestrator-configs"] }),
+  });
+
+  const activeConfig = (configs as any[]).find((c) => c.status === "active") ?? null;
+
+  return (
+    <AdminShell>
+      <div className="animate-in-up space-y-6">
+        <PageHeader
+          eyebrow="Orchestrator"
+          title="Control center"
+          description="Administrator-only orchestration policy, trace history and activation controls. Policy is defined in the repository; this surface only activates versioned configs and shows real traces."
+          backFallback="/admin"
+        />
+
+        <PhaseNote>
+          Raw JSON configuration editing has been removed. Orchestration policy lives in the codebase. Use
+          Configuration history below only to activate an already-versioned config if needed.
+        </PhaseNote>
+
+        {activeConfig ? (
+          <Panel className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold">Active policy</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  v{activeConfig.version} · {activeConfig.change_note || "No change note"} ·{" "}
+                  {new Date(activeConfig.created_at).toLocaleString()}
+                </p>
+              </div>
+              <Tag tone="success">ACTIVE</Tag>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Policy is read-only here. Changes are made in the repository and deployed with the app.
+            </p>
+          </Panel>
+        ) : (
+          <Panel>
+            <p className="text-sm text-muted-foreground">
+              No active orchestrator config is marked in the database. Repository defaults still apply at
+              runtime.
+            </p>
+          </Panel>
+        )}
+
+        <Panel>
+          <div>
+            <h2 className="text-sm font-semibold">Orchestration trace</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Recent plans with persisted event counts. Opened plans retain task/run/step provenance.
+            </p>
+          </div>
+          <div className="mt-4 space-y-2">
+            {plans.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No orchestration plans recorded yet.</p>
+            ) : (
+              (plans as any[]).map((plan) => (
+                <div key={plan.id} className="rounded-md border border-border/60 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium">{plan.title}</p>
+                      <p className="mt-1 text-[10px] font-mono text-muted-foreground">{plan.id}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Tag
+                        tone={
+                          plan.risk_level === "high" || plan.risk_level === "critical"
+                            ? "warning"
+                            : "neutral"
+                        }
+                      >
+                        {plan.risk_level}
+                      </Tag>
+                      <Tag tone={plan.status === "completed" ? "success" : "neutral"}>{plan.status}</Tag>
+                    </div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+                    <span>Intent: {plan.intent}</span>
+                    <span>Events: {plan.eventCount}</span>
+                    <span>Approval: {plan.approval_status}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </Panel>
+
+        <Panel>
+          <div>
+            <h2 className="text-sm font-semibold">Configuration history</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Versioned configs only. Activate an existing version if required — do not edit JSON here.
+            </p>
+          </div>
+          <div className="mt-4 space-y-2">
+            {isLoading ? (
+              <p className="text-xs text-muted-foreground">Loading…</p>
+            ) : (configs as any[]).length === 0 ? (
+              <p className="text-xs text-muted-foreground">No config versions recorded yet.</p>
+            ) : (
+              (configs as any[]).map((config) => (
+                <div key={config.id} className="rounded-md border border-border/60 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium">v{config.version}</span>
+                      <Tag tone={config.status === "active" ? "success" : "neutral"}>{config.status}</Tag>
+                    </div>
+                    {config.status !== "active" && (
+                      <button
+                        type="button"
+                        disabled={activateMutation.isPending}
+                        onClick={() => void activateMutation.mutateAsync(config.id)}
+                        className="rounded-md border border-admin/25 px-3 py-1.5 text-xs hover:bg-admin/10"
+                      >
+                        Activate
+                      </button>
+                    )}
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    {config.change_note || "No change note"} ·{" "}
+                    {new Date(config.created_at).toLocaleString()}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </Panel>
+      </div>
+    </AdminShell>
+  );
 }
