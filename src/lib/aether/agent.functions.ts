@@ -13,6 +13,12 @@ async function assertAdmin(userId: string) {
   if (error || !data) throw new Response("Administrator authorization required", { status: 403 });
 }
 
+function nextPatchVersion(version: string | null | undefined): string {
+  const match = String(version || "").match(/^(\\d+)\\.(\\d+)\\.(\\d+)$/);
+  if (!match) return "1.0.0";
+  return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+}
+
 function keyOf(value: unknown): AgentKey {
   const key = String(value || "") as AgentKey;
   if (!AGENTS.some((agent) => agent.key === key)) throw new Response("Unknown agent", { status: 400 });
@@ -278,8 +284,50 @@ export const activateAgent = createServerFn({ method: "POST" })
       version = created;
     }
 
-    const validation = validateAgentDefinition(version.definition);
-    if (!validation.ok) throw new Response(validation.message, { status: 409 });
+    let validation = validateAgentDefinition(version.definition);
+
+    // Some legacy seed rows contain only display metadata. Do not make the
+    // administrator repair those rows manually: rebuild a canonical contract
+    // from the checked-in agent definition and let the same server-side
+    // activation preflight govern it.
+    if (!validation.ok) {
+      const canonical = mergeStaticContract(data.agentKey, {
+        version: nextPatchVersion(version.version),
+      });
+      validation = validateAgentDefinition(canonical);
+      if (!validation.ok) throw new Response(validation.message, { status: 409 });
+
+      const { data: replacement, error: replacementError } = await db
+        .from("agent_versions")
+        .insert({
+          agent_id: agent.id,
+          version: canonical.version,
+          lifecycle_state: "draft",
+          definition: canonical,
+          config_hash: makeVersionHash(canonical),
+          parent_version_id: version.id,
+          created_by: context.userId,
+        })
+        .select("id,version,lifecycle_state,definition,created_at")
+        .single();
+
+      if (replacementError || !replacement) {
+        throw new Response(
+          replacementError?.message ?? "Could not initialize the canonical agent contract",
+          { status: 500 },
+        );
+      }
+
+      await db.from("agent_config_history").insert({
+        agent_id: agent.id,
+        version_id: replacement.id,
+        action: "created",
+        before_config: version.definition,
+        after_config: canonical,
+        actor_id: context.userId,
+        reason: "Automatic canonical contract repair during one-click activation",
+      });
+    }
 
     const { data: activated, error } = await db.rpc("agent_activate_operational", {
       p_agent_id: agent.id,
