@@ -2,11 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { Activity, Bot, CheckCircle2, Clock3, Plus, Send, XCircle, Play, Pencil, Trash2 } from "lucide-react";
+import { Activity, Bot, CheckCircle2, Clock3, Plus, Send, XCircle, Play, Pencil, Trash2, FileUp } from "lucide-react";
 import { AdminShell } from "@/components/layout/AdminShell";
 import { PageHeader, Panel, StatCard, Tag } from "@/components/common/Primitives";
 import { getAgentWorkspace } from "@/lib/admin/console.functions";
 import { appendAgentConversationMessage, createAgentConversation, createOrchestration, getAgentConversation, updateAgentConversationMessage, deleteAgentConversationMessage } from "@/lib/aether/orchestrator.functions";
+import { adminEnqueueKnowledgeAcquisitionFromPrompt } from "@/lib/aether/knowledge-acquisition-admin.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/team/$agentKey")({
   head: () => ({
@@ -91,6 +92,7 @@ function Page() {
   const orchestrate = useServerFn(createOrchestration);
   const updateMessage = useServerFn(updateAgentConversationMessage);
   const binMessage = useServerFn(deleteAgentConversationMessage);
+  const enqueueKa = useServerFn(adminEnqueueKnowledgeAcquisitionFromPrompt);
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-agent-workspace", agentKey],
     queryFn: async () => {
@@ -108,6 +110,10 @@ function Page() {
   const [chatError, setChatError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [kaPrompt, setKaPrompt] = useState("");
+  const [kaDeadline, setKaDeadline] = useState("");
+  const [kaBusy, setKaBusy] = useState(false);
+  const [kaMsg, setKaMsg] = useState("");
   const conversationId = selectedConversation ?? data?.conversations?.[0]?.id ?? null;
   const { data: conversationData } = useQuery({
     queryKey: ["agent-conversation", conversationId],
@@ -225,6 +231,29 @@ function Page() {
     }
   }
 
+  async function submitKnowledgePrompt() {
+    if (!kaPrompt.trim() || kaBusy) return;
+    setKaBusy(true);
+    setKaMsg("");
+    try {
+      const result = await enqueueKa({
+        data: {
+          prompt: kaPrompt.trim(),
+          subject: kaPrompt.trim().slice(0, 80),
+          deadlineISO: kaDeadline ? new Date(kaDeadline).toISOString() : null,
+        },
+      });
+      setKaMsg(`Mission queued (task ${result.taskId}). Approve results from Knowledge Acquisition when ready.`);
+      setKaPrompt("");
+      setKaDeadline("");
+      await queryClient.invalidateQueries({ queryKey: ["admin-agent-workspace", agentKey] });
+    } catch (e) {
+      setKaMsg(e instanceof Error ? e.message : "Could not enqueue acquisition mission.");
+    } finally {
+      setKaBusy(false);
+    }
+  }
+
   return (
     <AdminShell>
       <div className="animate-in-up space-y-6">
@@ -237,10 +266,7 @@ function Page() {
         <div className="flex flex-wrap items-center gap-2">
           <Tag tone={agent.status === "enabled" ? "success" : "neutral"}>{agent.status}</Tag>
           <span className="font-mono text-xs text-muted-foreground">{agent.agent_key}</span>
-          <Link
-            to="/admin/agents"
-            className="ml-auto text-xs text-primary hover:underline"
-          >
+          <Link to="/admin/agents" className="ml-auto text-xs text-primary hover:underline">
             ← Agents control plane
           </Link>
         </div>
@@ -257,6 +283,53 @@ function Page() {
         </div>
 
         <ProgressiveWorkflow status={agent.status} hasRuns={runs.length > 0} />
+
+        {agentKey === "knowledge-acquisition" ? (
+          <Panel className="space-y-3">
+            <div className="flex items-center gap-2">
+              <FileUp className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold">Knowledge intake</h2>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Submit a research prompt (and optional stop time). The mission is durable server-side. When the
+              window ends or the job finishes, approve on the Knowledge Acquisition page before knowledge becomes
+              global for AAX API keys.
+            </p>
+            <textarea
+              value={kaPrompt}
+              onChange={(e) => setKaPrompt(e.target.value)}
+              rows={4}
+              placeholder="What should this agent research and learn?"
+              className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+            />
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-[11px] text-muted-foreground">
+                Optional deadline
+                <input
+                  type="datetime-local"
+                  value={kaDeadline}
+                  onChange={(e) => setKaDeadline(e.target.value)}
+                  className="mt-1 block h-9 rounded-md border border-border bg-background px-2 text-xs"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={kaBusy || !kaPrompt.trim()}
+                onClick={() => void submitKnowledgePrompt()}
+                className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-50"
+              >
+                {kaBusy ? "Queuing…" : "Enqueue mission"}
+              </button>
+              <Link
+                to="/admin/knowledge-acquisition"
+                className="rounded-md border px-3 py-2 text-xs hover:bg-muted"
+              >
+                Open approval queue
+              </Link>
+            </div>
+            {kaMsg ? <p className="text-xs text-muted-foreground">{kaMsg}</p> : null}
+          </Panel>
+        ) : null}
 
         <Panel>
           <Productivity
@@ -285,7 +358,7 @@ function Page() {
               Each chat is isolated. Edit or bin messages from the thread.
             </p>
             <div className="space-y-1">
-              {(data.conversations ?? []).map((chat) => (
+              {(data.conversations ?? []).map((chat: any) => (
                 <button
                   key={chat.id}
                   type="button"
@@ -309,10 +382,12 @@ function Page() {
           <Panel className="flex min-h-[520px] flex-col">
             <div className="border-b border-border/60 pb-3">
               <h2 className="text-sm font-semibold">{conversationData?.conversation.title ?? "New chat"}</h2>
-              <p className="mt-1 text-[11px] text-muted-foreground">Independent {agent.name} conversation · Open chat / workstation</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Independent {agent.name} conversation · Open chat / workstation
+              </p>
             </div>
             <div className="flex-1 space-y-3 overflow-auto py-4">
-              {(conversationData?.messages ?? []).map((m) => (
+              {(conversationData?.messages ?? []).map((m: any) => (
                 <div
                   key={m.id}
                   className={`group max-w-[90%] rounded-lg border border-border/60 p-3 text-xs ${
