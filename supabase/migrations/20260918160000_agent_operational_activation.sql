@@ -88,10 +88,10 @@ BEGIN
     END IF;
 
     IF NOT (v_definition ? 'agent_id')
-      THEN v_definition := jsonb_set(v_definition, '{agent_id}', to_jsonb('agent_' || v_agent.agent_key), true);
+      THEN v_definition := jsonb_set(v_definition, '{agent_id}', to_jsonb(('agent_' || v_agent.agent_key)::text), true);
     END IF;
     IF NOT (v_definition ? 'version')
-      THEN v_definition := jsonb_set(v_definition, '{version}', to_jsonb('1.0.0'), true);
+      THEN v_definition := jsonb_set(v_definition, '{version}', to_jsonb('1.0.0'::text), true);
     END IF;
 
     INSERT INTO public.agent_versions (
