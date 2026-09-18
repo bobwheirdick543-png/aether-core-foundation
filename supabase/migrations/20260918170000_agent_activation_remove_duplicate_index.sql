@@ -1,0 +1,1 @@
+drop index if exists public.agent_versions_operational_lookup_idx;
