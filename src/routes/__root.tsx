@@ -23,12 +23,19 @@ function NotFoundComponent() {
         <p className="mt-2 text-sm text-muted-foreground">
           This route does not exist in the Aether platform.
         </p>
-        <div className="mt-6">
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.history.back()}
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            Go back
+          </button>
           <Link
-            to="/"
+            to="/dashboard"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Go home
+            Open dashboard
           </Link>
         </div>
       </div>
@@ -43,29 +50,54 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
     reportLovableError(error, { boundary: "tanstack_root_error_component" });
   }, [error]);
 
+  const message =
+    error?.message && error.message.length < 200
+      ? error.message
+      : "A temporary failure occurred while rendering this view.";
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">This page didn't load</h1>
+      <div className="max-w-lg rounded-xl border border-border/70 bg-card p-6 text-center shadow-sm">
+        <h1 className="text-lg font-semibold tracking-tight text-foreground">
+          This view could not finish loading
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong. You can try again or head back home.
+          You can retry in place. Your session is not cleared. Prefer staying in the app rather than
+          leaving to a blank home screen.
+        </p>
+        <p className="mt-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-left font-mono text-[11px] text-muted-foreground">
+          {message}
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
+            type="button"
             onClick={() => {
-              router.invalidate();
+              void router.invalidate();
               reset();
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Try again
+            Retry this view
           </button>
-          <a
-            href="/"
+          <button
+            type="button"
+            onClick={() => window.history.back()}
             className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Go home
-          </a>
+            Go back
+          </button>
+          <Link
+            to="/dashboard"
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            Dashboard
+          </Link>
+          <Link
+            to="/admin"
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            Admin
+          </Link>
         </div>
       </div>
     </div>
