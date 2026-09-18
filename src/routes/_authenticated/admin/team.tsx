@@ -1,17 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Bot } from "lucide-react";
+import { Bot, MessageSquare, Monitor } from "lucide-react";
 import { AdminShell } from "@/components/layout/AdminShell";
-import { PageHeader, Panel, Tag, StatCard, EmptyState } from "@/components/common/Primitives";
+import { PageHeader, Panel, Tag, StatCard, EmptyState, PhaseNote } from "@/components/common/Primitives";
 import { getTeamOverview } from "@/lib/admin/console.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/team")({
-  head: () => ({ meta: [
-    { title: "Team — Aether admin" },
-    { name: "description", content: "The internal Aether agent workforce, permissions, productivity and telemetry." },
-    { name: "robots", content: "noindex" },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Team — Aether admin" },
+      {
+        name: "description",
+        content: "The internal Aether agent workforce, permissions, productivity and telemetry.",
+      },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
   component: Page,
 });
 
@@ -20,10 +25,17 @@ function Productivity({ value, hasData }: { value: number | null; hasData: boole
     <div className="space-y-1.5">
       <div className="flex items-center justify-between text-[11px]">
         <span className="text-muted-foreground">Productivity</span>
-        <span className="font-medium">{hasData && value != null ? `${value.toFixed(1)}%` : "No measured data"}</span>
+        <span className="font-medium">
+          {hasData && value != null ? `${value.toFixed(1)}%` : "No measured data"}
+        </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${hasData && value != null ? Math.max(0, Math.min(100, value)) : 0}%` }} />
+        <div
+          className="h-full rounded-full bg-primary transition-all"
+          style={{
+            width: `${hasData && value != null ? Math.max(0, Math.min(100, value)) : 0}%`,
+          }}
+        />
       </div>
     </div>
   );
@@ -31,32 +43,149 @@ function Productivity({ value, hasData }: { value: number | null; hasData: boole
 
 function Page() {
   const fetchTeam = useServerFn(getTeamOverview);
-  const { data, isLoading } = useQuery({ queryKey: ["admin-team"], queryFn: () => fetchTeam({}) });
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["admin-team"],
+    queryFn: () => fetchTeam({}),
+    retry: 1,
+  });
   const team = data?.team ?? [];
-  const active = team.filter((a) => a.status === "enabled").length;
+  const active = team.filter((a: any) => a.status === "enabled").length;
 
   return (
     <AdminShell>
       <div className="animate-in-up space-y-6">
-        <PageHeader eyebrow="Team" title="Internal workforce" description="Every agent that works inside Aether, with real permissions, independent workspaces and measured activity. No fabricated metrics." backFallback="/admin" />
+        <PageHeader
+          eyebrow="Team"
+          title="Internal workforce"
+          description="Every agent that works inside Aether, with real permissions, independent workstations and measured activity. No fabricated metrics."
+          backFallback="/admin"
+        />
+
+        <PhaseNote>
+          Open workstation opens the full agent station (chat, runs, tools). Open chat jumps to the same
+          workstation focused on conversation history. Each agent is independent.
+        </PhaseNote>
+
         <div className="grid gap-3 sm:grid-cols-3">
           <StatCard label="Agents defined" value={String(team.length)} />
           <StatCard label="Active" value={String(active)} />
-          <StatCard label="Recorded runs" value={String(data?.totalRuns ?? 0)} hint="From real execution history" />
+          <StatCard
+            label="Recorded runs"
+            value={String(data?.totalRuns ?? 0)}
+            hint="From real execution history"
+          />
         </div>
-        {isLoading ? <Panel><p className="text-sm text-muted-foreground">Loading the team…</p></Panel> : team.length === 0 ? <EmptyState title="No agents defined yet" description="Agents appear here as soon as they are registered in the platform." icon={<Bot className="h-5 w-5" />} /> : (
+
+        {error ? (
+          <Panel className="space-y-3">
+            <p className="text-sm text-destructive">Team overview could not be loaded right now.</p>
+            <p className="text-xs text-muted-foreground">
+              {error instanceof Error ? error.message : "Temporary backend issue."}
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted"
+            >
+              {isFetching ? "Retrying…" : "Retry"}
+            </button>
+          </Panel>
+        ) : isLoading ? (
+          <Panel>
+            <p className="text-sm text-muted-foreground">Loading the team…</p>
+          </Panel>
+        ) : team.length === 0 ? (
+          <EmptyState
+            title="No agents defined yet"
+            description="Agents appear here as soon as they are registered in the platform."
+            icon={<Bot className="h-5 w-5" />}
+          />
+        ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            {team.map((agent) => (
+            {team.map((agent: any) => (
               <Panel key={agent.id} className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0"><h3 className="text-sm font-semibold">{agent.name}</h3><p className="mt-1 text-xs text-muted-foreground">{agent.description}</p></div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold">{agent.name}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">{agent.description}</p>
+                  </div>
                   <Tag tone={agent.status === "enabled" ? "success" : "neutral"}>{agent.status}</Tag>
                 </div>
                 <p className="text-xs text-muted-foreground">{agent.purpose}</p>
-                <Productivity value={agent.productivity?.productivity_percent == null ? null : Number(agent.productivity.productivity_percent)} hasData={Boolean(agent.productivity)} />
-                <div><p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Permissions</p><div className="mt-2 flex flex-wrap gap-1.5">{agent.permissions.length === 0 ? <span className="text-xs text-muted-foreground">No permissions granted.</span> : agent.permissions.map((p) => <Tag key={p.permission} tone={p.allowed ? (p.requires_approval ? "warning" : "primary") : "neutral"}>{p.permission}{p.requires_approval ? " · approval" : ""}</Tag>)}</div></div>
-                <div className="rounded-lg border border-border/60 p-3 text-xs">{agent.telemetry.hasData ? <div className="grid grid-cols-4 gap-2"><div><p className="text-muted-foreground">Runs</p><p className="font-medium">{agent.telemetry.totalRuns}</p></div><div><p className="text-muted-foreground">Succeeded</p><p className="font-medium">{agent.telemetry.succeeded}</p></div><div><p className="text-muted-foreground">Failed</p><p className="font-medium">{agent.telemetry.failed}</p></div><div><p className="text-muted-foreground">Retried</p><p className="font-medium">{agent.telemetry.retried}</p></div></div> : <p className="text-muted-foreground">No execution data recorded yet — metrics appear after real runs.</p>}</div>
-                <div className="flex flex-wrap gap-2"><Link to="/admin/team/$agentKey" params={{ agentKey: agent.agent_key }} className="inline-flex rounded-md border border-admin/25 px-3 py-2 text-xs font-medium text-foreground hover:bg-admin/10">Open workstation</Link><Link to="/admin/team/$agentKey" params={{ agentKey: agent.agent_key }} className="inline-flex rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted">Open chats</Link></div>
+                <Productivity
+                  value={
+                    agent.productivity?.productivity_percent == null
+                      ? null
+                      : Number(agent.productivity.productivity_percent)
+                  }
+                  hasData={Boolean(agent.productivity)}
+                />
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                    Permissions
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {agent.permissions.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">No permissions granted.</span>
+                    ) : (
+                      agent.permissions.map((p: any) => (
+                        <Tag
+                          key={p.permission}
+                          tone={p.allowed ? (p.requires_approval ? "warning" : "primary") : "neutral"}
+                        >
+                          {p.permission}
+                          {p.requires_approval ? " · approval" : ""}
+                        </Tag>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border/60 p-3 text-xs">
+                  {agent.telemetry.hasData ? (
+                    <div className="grid grid-cols-4 gap-2">
+                      <div>
+                        <p className="text-muted-foreground">Runs</p>
+                        <p className="font-medium">{agent.telemetry.totalRuns}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Succeeded</p>
+                        <p className="font-medium">{agent.telemetry.succeeded}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Failed</p>
+                        <p className="font-medium">{agent.telemetry.failed}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Retried</p>
+                        <p className="font-medium">{agent.telemetry.retried}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      No execution data recorded yet — metrics appear after real runs.
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to="/admin/team/$agentKey"
+                    params={{ agentKey: agent.agent_key }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-admin/25 px-3 py-2 text-xs font-medium text-foreground hover:bg-admin/10"
+                  >
+                    <Monitor className="h-3.5 w-3.5" />
+                    Open workstation
+                  </Link>
+                  <Link
+                    to="/admin/team/$agentKey"
+                    params={{ agentKey: agent.agent_key }}
+                    search={{ focus: "chat" } as any}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted"
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Open chat
+                  </Link>
+                </div>
               </Panel>
             ))}
           </div>
