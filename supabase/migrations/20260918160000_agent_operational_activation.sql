@@ -249,7 +249,7 @@ BEGIN
   END IF;
 
   UPDATE public.agents
-  SET status = p_target_state,
+  SET status = p_target_state::public.agent_status,
       updated_at = now()
   WHERE id = p_agent_id;
 
