@@ -15,7 +15,7 @@ async function assertAdmin(userId: string) {
 
 function keyOf(value: unknown): AgentKey {
   const key = String(value || "") as AgentKey;
-  if (!AGENTS.some((a) => a.key === key)) throw new Response("Unknown agent", { status: 400 });
+  if (!AGENTS.some((agent) => agent.key === key)) throw new Response("Unknown agent", { status: 400 });
   return key;
 }
 
@@ -91,17 +91,13 @@ export const getAgentControlPlane = createServerFn({ method: "GET" })
     };
   });
 
-/**
- * Advanced contract-management API remains available for administrators who
- * intentionally need to create a new version. Normal activation never calls it.
- */
 export const createAgentVersion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: any) => ({
-    agentKey: keyOf(x?.agentKey),
-    version: String(x?.version || ""),
-    definition: x?.definition && typeof x.definition === "object" ? x.definition : {},
-    reason: x?.reason ? String(x.reason) : null,
+  .inputValidator((input: any) => ({
+    agentKey: keyOf(input?.agentKey),
+    version: String(input?.version || ""),
+    definition: input?.definition && typeof input.definition === "object" ? input.definition : {},
+    reason: input?.reason ? String(input.reason) : null,
   }))
   .handler(async ({ context, data }) => {
     await assertAdmin(context.userId);
@@ -146,7 +142,7 @@ export const createAgentVersion = createServerFn({ method: "POST" })
       .select("*")
       .single();
 
-    if (error || !row) throw new Response(error?.message ?? "Could not create agent version", { status: 500 });
+    if (error || !row) throw new Response(error?.message ?? "Could not create version", { status: 500 });
 
     await db.from("agent_config_history").insert({
       agent_id: agent.id,
@@ -179,7 +175,7 @@ async function transition(
 
 export const validateAgentVersion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: { versionId: string }) => x)
+  .inputValidator((input: { versionId: string }) => input)
   .handler(async ({ context, data }) => {
     await assertAdmin(context.userId);
     const { data: version, error } = await db
@@ -189,20 +185,18 @@ export const validateAgentVersion = createServerFn({ method: "POST" })
       .single();
 
     if (error || !version) throw new Response("Agent version not found", { status: 404 });
-    if (!["draft", "disabled", "maintenance", "validated", "tested"].includes(version.lifecycle_state)) {
-      throw new Response("Only an inactive agent version can be validated", { status: 409 });
+    if (version.lifecycle_state !== "draft") {
+      throw new Response("Only draft versions can be validated", { status: 409 });
     }
 
     const result = validateAgentDefinition(version.definition);
     if (!result.ok) throw new Response(result.message, { status: 400 });
-
-    if (version.lifecycle_state !== "draft") return version;
     return transition(context.userId, data.versionId, "validated", "Contract validation passed");
   });
 
 export const testAgentVersion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: { versionId: string }) => x)
+  .inputValidator((input: { versionId: string }) => input)
   .handler(async ({ context, data }) => {
     await assertAdmin(context.userId);
     const { data: version, error } = await db
@@ -212,104 +206,150 @@ export const testAgentVersion = createServerFn({ method: "POST" })
       .single();
 
     if (error || !version) throw new Response("Agent version not found", { status: 404 });
-    if (!["validated", "tested"].includes(version.lifecycle_state)) {
-      throw new Response("Agent must be validated before testing", { status: 409 });
+    if (version.lifecycle_state !== "validated") {
+      throw new Response("Only validated versions can be tested", { status: 409 });
     }
 
     const result = validateAgentDefinition(version.definition);
     if (!result.ok) throw new Response(result.message, { status: 400 });
 
     const permissions = (version.definition as any).permissions ?? [];
-    const names = permissions.map((p: any) => String(p.permission || ""));
+    const names = permissions.map((permission: any) => String(permission.permission || ""));
     if (new Set(names).size !== names.length) {
       throw new Response("Agent contract contains duplicate permissions", { status: 400 });
     }
 
-    if (version.lifecycle_state === "tested") return version;
     return transition(context.userId, data.versionId, "tested", "Contract structural test passed");
   });
 
 /**
  * Primary operational action.
- * The administrator supplies only the agent key. The server resolves the
- * current configuration/version, runs its validation/test preflight, persists
- * the lifecycle/audit trail, and keeps the agent active until explicitly
- * moved to Maintenance or Disabled.
+ * The admin supplies only the agent key. The server resolves the current
+ * contract, runs the contract safety preflight, and performs the complete
+ * activation transaction. No version/code/JSON entry is required.
  */
 export const activateAgent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: { agentKey: unknown }) => ({ agentKey: keyOf(x.agentKey) }))
+  .inputValidator((input: { agentKey: unknown }) => ({ agentKey: keyOf(input.agentKey) }))
   .handler(async ({ context, data }) => {
     await assertAdmin(context.userId);
 
     const { data: agent, error: agentError } = await db
       .from("agents")
-      .select("id,agent_key")
+      .select("id,agent_key,name,config,status")
       .eq("agent_key", data.agentKey)
       .single();
 
     if (agentError || !agent) throw new Response("Agent not found", { status: 404 });
 
-    const { data: version, error } = await db.rpc("agent_activate_operational", {
+    const { data: versions, error: versionsError } = await db
+      .from("agent_versions")
+      .select("id,version,lifecycle_state,definition,created_at")
+      .eq("agent_id", agent.id)
+      .not("lifecycle_state", "eq", "rolled_back")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (versionsError) throw new Response(versionsError.message, { status: 500 });
+
+    let version = versions?.find((item: any) => item.lifecycle_state === "active") ?? versions?.[0];
+
+    if (!version) {
+      const definition = mergeStaticContract(data.agentKey);
+      const validation = validateAgentDefinition(definition);
+      if (!validation.ok) throw new Response(validation.message, { status: 400 });
+
+      const { data: created, error } = await db
+        .from("agent_versions")
+        .insert({
+          agent_id: agent.id,
+          version: definition.version,
+          lifecycle_state: "draft",
+          definition,
+          config_hash: makeVersionHash(definition),
+          created_by: context.userId,
+        })
+        .select("id,version,lifecycle_state,definition,created_at")
+        .single();
+
+      if (error || !created) {
+        throw new Response(error?.message ?? "Could not initialize agent contract", { status: 500 });
+      }
+      version = created;
+    }
+
+    const validation = validateAgentDefinition(version.definition);
+    if (!validation.ok) throw new Response(validation.message, { status: 409 });
+
+    const { data: activated, error } = await db.rpc("agent_activate_operational", {
       p_agent_id: agent.id,
       p_actor_id: context.userId,
       p_reason: "One-click administrator activation",
     });
 
-    if (error || !version) {
+    if (error || !activated) {
       throw new Response(error?.message ?? "Agent activation failed during safety preflight", { status: 409 });
     }
 
-    return version;
+    return activated;
   });
+
+/** Backward-compatible advanced activation. Ordinary UI does not use this path. */
+export const activateAgentVersion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { versionId: string }) => input)
+  .handler(async ({ context, data }) => transition(context.userId, data.versionId, "active", "Explicit version activation"));
 
 export const setAgentOperationalState = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: { agentKey: unknown; state: "maintenance" | "disabled" }) => ({
-    agentKey: keyOf(x.agentKey),
-    state: x.state,
-  }))
+  .inputValidator((input: { agentKey?: unknown; versionId?: string; state: "maintenance" | "disabled" }) => input)
   .handler(async ({ context, data }) => {
     await assertAdmin(context.userId);
 
-    const { data: agent, error: agentError } = await db
-      .from("agents")
-      .select("id")
-      .eq("agent_key", data.agentKey)
-      .single();
+    let versionId = data.versionId;
 
-    if (agentError || !agent) throw new Response("Agent not found", { status: 404 });
+    if (!versionId && data.agentKey !== undefined) {
+      const key = keyOf(data.agentKey);
+      const { data: agent, error } = await db.from("agents").select("id").eq("agent_key", key).single();
+      if (error || !agent) throw new Response("Agent not found", { status: 404 });
 
-    const { data: version, error } = await db.rpc("agent_set_operational_state", {
-      p_agent_id: agent.id,
-      p_target_state: data.state,
-      p_actor_id: context.userId,
-      p_reason: `Agent moved to ${data.state} by administrator`,
-    });
+      const { data: active } = await db
+        .from("agent_versions")
+        .select("id")
+        .eq("agent_id", agent.id)
+        .in("lifecycle_state", ["active", "maintenance"])
+        .order("activated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (error || !version) {
-      throw new Response(error?.message ?? `Could not move agent to ${data.state}`, { status: 409 });
+      versionId = active?.id;
+      if (!versionId) {
+        const { data: latest } = await db
+          .from("agent_versions")
+          .select("id")
+          .eq("agent_id", agent.id)
+          .not("lifecycle_state", "eq", "rolled_back")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        versionId = latest?.id;
+      }
     }
 
-    return version;
+    if (!versionId) throw new Response("No agent version is available for this operation", { status: 409 });
+    return transition(context.userId, versionId, data.state, `Agent moved to ${data.state} by administrator`);
   });
 
 export const rollbackAgentVersion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: { agentKey: AgentKey; versionId: string; reason?: string }) => ({
-    agentKey: keyOf(x.agentKey),
-    versionId: x.versionId,
-    reason: x.reason ? String(x.reason) : null,
+  .inputValidator((input: { agentKey: AgentKey; versionId: string; reason?: string }) => ({
+    agentKey: keyOf(input.agentKey),
+    versionId: input.versionId,
+    reason: input.reason ? String(input.reason) : null,
   }))
   .handler(async ({ context, data }) => {
     await assertAdmin(context.userId);
-
-    const { data: agent, error } = await db
-      .from("agents")
-      .select("id")
-      .eq("agent_key", data.agentKey)
-      .single();
-
+    const { data: agent, error } = await db.from("agents").select("id").eq("agent_key", data.agentKey).single();
     if (error || !agent) throw new Response("Agent not found", { status: 404 });
 
     const { data: row, error: rpcError } = await db.rpc("agent_rollback_to_version", {
@@ -325,51 +365,45 @@ export const rollbackAgentVersion = createServerFn({ method: "POST" })
 
 export const authorizeAgentToolAction = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: any) => ({
-    agentKey: keyOf(x?.agentKey),
-    permission: String(x?.permission || ""),
-    action: String(x?.action || ""),
-    taskId: x?.taskId ? String(x.taskId) : null,
-    runId: x?.runId ? String(x.runId) : null,
-    metadata: x?.metadata && typeof x.metadata === "object" ? x.metadata : {},
+  .inputValidator((input: any) => ({
+    agentKey: keyOf(input?.agentKey),
+    permission: String(input?.permission || ""),
+    action: String(input?.action || ""),
+    taskId: input?.taskId ? String(input.taskId) : null,
+    runId: input?.runId ? String(input.runId) : null,
+    metadata: input?.metadata && typeof input.metadata === "object" ? input.metadata : {},
   }))
   .handler(async ({ context, data }) => authorizeAgentAction({ ...data, actorId: context.userId }));
 
 export const sendAgentHandoff = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: any) => ({
-    taskId: String(x?.taskId || ""),
-    runId: x?.runId ? String(x.runId) : null,
-    fromAgent: keyOf(x?.fromAgent),
-    toAgent: keyOf(x?.toAgent),
-    payload: x?.payload && typeof x.payload === "object" ? x.payload : {},
+  .inputValidator((input: any) => ({
+    taskId: String(input?.taskId || ""),
+    runId: input?.runId ? String(input.runId) : null,
+    fromAgent: keyOf(input?.fromAgent),
+    toAgent: keyOf(input?.toAgent),
+    payload: input?.payload && typeof input.payload === "object" ? input.payload : {},
   }))
-  .handler(async ({ context, data }) =>
-    requestAgentHandoff({ ...data, actorId: context.userId }),
-  );
+  .handler(async ({ context, data }) => requestAgentHandoff({ ...data, actorId: context.userId }));
 
 export const openAgentSandboxSession = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: any) => ({
-    taskId: String(x?.taskId || ""),
-    runId: x?.runId ? String(x.runId) : null,
-    agentKey: keyOf(x?.agentKey),
-    ttlSeconds: x?.ttlSeconds === undefined ? 900 : Number(x.ttlSeconds),
+  .inputValidator((input: any) => ({
+    taskId: String(input?.taskId || ""),
+    runId: input?.runId ? String(input.runId) : null,
+    agentKey: keyOf(input?.agentKey),
+    ttlSeconds: input?.ttlSeconds === undefined ? 900 : Number(input.ttlSeconds),
   }))
-  .handler(async ({ context, data }) =>
-    openAgentSandbox({ ...data, actorId: context.userId }),
-  );
+  .handler(async ({ context, data }) => openAgentSandbox({ ...data, actorId: context.userId }));
 
 export const appendAgentMessageFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((x: any) => ({
-    taskId: String(x?.taskId || ""),
-    runId: x?.runId ? String(x.runId) : null,
-    fromAgent: keyOf(x?.fromAgent),
-    toAgent: keyOf(x?.toAgent),
-    type: String(x?.type || ""),
-    payload: x?.payload && typeof x.payload === "object" ? x.payload : {},
+  .inputValidator((input: any) => ({
+    taskId: String(input?.taskId || ""),
+    runId: input?.runId ? String(input.runId) : null,
+    fromAgent: keyOf(input?.fromAgent),
+    toAgent: keyOf(input?.toAgent),
+    type: String(input?.type || ""),
+    payload: input?.payload && typeof input.payload === "object" ? input.payload : {},
   }))
-  .handler(async ({ context, data }) =>
-    appendAgentMessage({ ...data, actorId: context.userId }),
-  );
+  .handler(async ({ context, data }) => appendAgentMessage({ ...data, actorId: context.userId }));
