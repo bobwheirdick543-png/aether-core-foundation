@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { appendTaskEvent, createRun, createTask } from "./task-service";
 import { classifyIntent, validateOrchestrationPlan } from "./orchestrator";
+import { filterRunnableAgents, loadAgentStatusMap } from "./agent-status";
 
 async function isAdmin(supabase: any, userId: string) {
   const { data } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
@@ -23,8 +24,12 @@ export const createOrchestration = createServerFn({ method: "POST" })
   }))
   .handler(async ({ context, data }) => {
     const draft = classifyIntent(data.message);
-    validateOrchestrationPlan(draft);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Bypass Notification & Delivery (and any other disabled agents) until activated
+    const statusMap = await loadAgentStatusMap(supabaseAdmin);
+    draft.agents = filterRunnableAgents(draft.agents as any, statusMap) as typeof draft.agents;
+    if (!draft.agents.length) draft.agents = ["orchestrator"] as typeof draft.agents;
+    validateOrchestrationPlan(draft);
     const task = await createTask(supabaseAdmin, {
       owner_id: context.userId,
       project_id: data.projectId,
@@ -100,6 +105,7 @@ export const createOrchestration = createServerFn({ method: "POST" })
         capabilities: draft.capabilities,
         agents: draft.agents,
         risk_level: draft.riskLevel,
+        notification_bypassed: !statusMap.get("notification") || statusMap.get("notification") !== "enabled",
       },
     });
     await appendTaskEvent(supabaseAdmin, {
@@ -210,7 +216,6 @@ export const getAgentConversation = createServerFn({ method: "GET" })
       .eq("conversation_id", conversation.id)
       .order("created_at", { ascending: true });
     if (messageError) throw new Error(messageError.message);
-    // Hide soft-deleted messages from the default view
     const visible = (messages ?? []).filter((m: any) => !m.metadata?.deleted);
     return { conversation, messages: visible };
   });
@@ -266,7 +271,6 @@ export const appendAgentConversationMessage = createServerFn({ method: "POST" })
     return message;
   });
 
-/** Edit an existing agent conversation message (owner only). */
 export const updateAgentConversationMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { messageId: string; content: string }) => ({
@@ -307,7 +311,6 @@ export const updateAgentConversationMessage = createServerFn({ method: "POST" })
     return updated;
   });
 
-/** Soft-delete (bin) an agent conversation message. Recoverable via metadata. */
 export const deleteAgentConversationMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { messageId: string }) => ({
@@ -436,14 +439,14 @@ export const getAgentProductivity = createServerFn({ method: "GET" })
       .not("agent_key", "is", null)
       .limit(5000);
     const windowStart = new Date(Date.now() - 30 * 86400000);
-    return (agents ?? []).map((agent) => {
+    return (agents ?? []).map((agent: any) => {
       const mine = (runs ?? []).filter(
-        (r) => r.agent_key === agent.agent_key && new Date(r.started_at ?? r.ended_at ?? 0) >= windowStart,
+        (r: any) => r.agent_key === agent.agent_key && new Date(r.started_at ?? r.ended_at ?? 0) >= windowStart,
       );
       const total = mine.length;
-      const completed = mine.filter((r) => r.status === "completed").length;
-      const failed = mine.filter((r) => r.status === "failed").length;
-      const retried = mine.filter((r) => Number(r.retry_count ?? 0) > 0).length;
+      const completed = mine.filter((r: any) => r.status === "completed").length;
+      const failed = mine.filter((r: any) => r.status === "failed").length;
+      const retried = mine.filter((r: any) => Number(r.retry_count ?? 0) > 0).length;
       const successRate = total ? completed / total : 0;
       const reliability = total ? (total - failed) / total : 0;
       const cleanExecution = total ? (total - retried) / total : 0;
