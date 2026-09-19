@@ -11,7 +11,7 @@ import { getAaxModelLabJobs } from "@/lib/admin/aax-model-lab.functions";
 import { updateAdminAaxModel } from "@/lib/admin/aax-model-controls.functions";
 import { listAdminProviderCredentials, saveAdminProviderCredential, setAdminProviderCredentialActive } from "@/lib/admin/provider-credentials.functions";
 
-export const Route = createFileRoute("/_authenticated/admin/models")({ head: () => ({ meta: [{ title: "Aether Ascension — Admin" }, { name: "description", content: "AAX model registry, provider controls, runtime roles and measured intelligence." }, { name: "robots", content: "noindex" }] }), component: Page });
+export const Route = createFileRoute("/_authenticated/admin/models")({ head: () => ({ meta: [{ title: "Aether Ascension — Admin" }, { name: "description", content: "AAX model registry, provider controls, release controls and measured intelligence." }, { name: "robots", content: "noindex" }] }), component: Page });
 
 function Page() {
   const qc = useQueryClient();
