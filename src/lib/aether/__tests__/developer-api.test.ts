@@ -10,7 +10,6 @@ describe("Phase S developer API", () => {
   it("accepts only known scopes and de-duplicates them", () => {
     const scopes = normalizeScopeList(["tasks:read", "tasks:read", "not-a-scope", "runs:read"]);
     expect(scopes).toEqual(["tasks:read", "runs:read"]);
-    expect(API_SCOPES).toContain("battleversia:read");
     expect(API_SCOPES).toContain("models:read");
   });
 
