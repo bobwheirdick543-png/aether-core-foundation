@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { createRun } from "./task-service";
+import { createRun, appendTaskEvent } from "./task-service";
 
 async function isAdmin(userId: string): Promise<boolean> {
   const { data, error } = await supabaseAdmin.rpc("has_role", { _user_id: userId, _role: "admin" });
@@ -152,16 +152,7 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
           last_event_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }).eq("id", job.id);
-        await supabaseAdmin.from("task_events").insert({
-          task_id: task.id,
-          run_id: nextRun.id,
-          event_type: "knowledge_acquisition.more_time_granted",
-          from_status: "waiting_approval",
-          to_status: "queued",
-          message: `Granted ${minutes} more minute(s) and created continuation execution`,
-          data: { minutes, new_deadline: newDeadline, continuation_aspect_id: data.aspectId ?? null, previous_run_id: previousRunId },
-          actor_id: context.userId,
-        });
+        await appendTaskEvent(supabaseAdmin, { taskId: task.id, runId: nextRun.id, eventType: "knowledge_acquisition.more_time_granted", fromStatus: "waiting_approval", toStatus: "queued", message: `Granted ${minutes} more minute(s) and created continuation execution`, data: { minutes, new_deadline: newDeadline, continuation_aspect_id: data.aspectId ?? null, previous_run_id: previousRunId }, actorId: context.userId });
         patch.detail = { ...(patch.detail as Record<string, unknown>), continuation_aspect_id: data.aspectId ?? null, continuation_message: data.message };
       } else {
         await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({
@@ -172,16 +163,7 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
         if (job.run_id) {
           await supabaseAdmin.from("task_runs").update({ deadline_at: newDeadline, timeout_ms: nextBudget, updated_at: new Date().toISOString() }).eq("id", job.run_id).in("status", ["queued", "running", "paused"]);
         }
-        await supabaseAdmin.from("task_events").insert({
-          task_id: task.id,
-          run_id: job.run_id,
-          event_type: "knowledge_acquisition.more_time_granted",
-          from_status: task.status,
-          to_status: task.status,
-          message: `Granted ${minutes} more minute(s)`,
-          data: { minutes, new_deadline: newDeadline },
-          actor_id: context.userId,
-        });
+        await appendTaskEvent(supabaseAdmin, { taskId: task.id, runId: job.run_id, eventType: "knowledge_acquisition.more_time_granted", fromStatus: task.status, toStatus: task.status, message: `Granted ${minutes} more minute(s)`, data: { minutes, new_deadline: newDeadline }, actorId: context.userId });
       }
 
       const { error: taskError } = await supabaseAdmin.from("tasks").update(patch).eq("id", task.id);
@@ -201,7 +183,7 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
     } else if (actionType === "continue_aspect" || actionType === "refine_research") {
       const { error } = await supabaseAdmin.from("tasks").update({
         detail: {
-          ...(taskDetail(job) ?? {}),
+          ...(job.scope && typeof job.scope === "object" ? job.scope as Record<string, unknown> : {}),
           continuation_aspect_id: data.aspectId ?? null,
           continuation_request: data.message,
           continuation_requested_at: new Date().toISOString(),
@@ -210,14 +192,7 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
         updated_at: new Date().toISOString(),
       }).eq("id", job.task_id);
       if (error) throw new Response(error.message, { status: 500 });
-      await supabaseAdmin.from("task_events").insert({
-        task_id: job.task_id,
-        run_id: job.run_id,
-        event_type: "knowledge_acquisition.research_refined",
-        message: "Research instruction persisted from approval conversation",
-        data: { action_type: actionType, aspect_id: data.aspectId ?? null, message: data.message },
-        actor_id: context.userId,
-      });
+      await appendTaskEvent(supabaseAdmin, { taskId: job.task_id, runId: job.run_id, eventType: "knowledge_acquisition.research_refined", message: "Research instruction persisted from approval conversation", data: { action_type: actionType, aspect_id: data.aspectId ?? null, message: data.message }, actorId: context.userId });
     }
 
     return { ok: true, messageId: inserted.id, actionType };
