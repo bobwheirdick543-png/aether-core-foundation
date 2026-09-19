@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Tag, PhaseNote } from "@/components/common/Primitives";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";\nimport { useServerFn } from "@tanstack/react-start";\nimport { listPublicAaxModels } from "@/lib/aether/aax-catalog.functions";
+import { listPublicAaxModels } from "@/lib/aether/aax-catalog.functions";
 
 export const Route = createFileRoute("/_authenticated/models")({
   head: () => ({
@@ -15,68 +17,82 @@ export const Route = createFileRoute("/_authenticated/models")({
   component: Page,
 });
 
+function formatTokens(value: number | null | undefined) {
+  const n = Number(value ?? 0);
+  return n > 0 ? `${n.toLocaleString()} tokens` : "Not configured";
+}
+
 function Page() {
+  const getModels = useServerFn(listPublicAaxModels);
+  const { data: models = [], isLoading, isError } = useQuery({
+    queryKey: ["public-aax-models"],
+    queryFn: () => getModels(),
+  });
+
   return (
     <AppShell>
       <div className="animate-in-up space-y-6">
         <PageHeader
           eyebrow="Aether Ascension · AAX"
           title="Models"
-          description="Choose a conversation model by AAX generation. Each generation belongs to the same evolving Aether intelligence family and can access shared Aether knowledge."
+          description="The live AAX catalogue available to your Aether account. Availability, capacity and release state come from persistent server configuration."
         />
         <PhaseNote>
-          Release state is authoritative: draft and scheduled AAX generations remain unavailable until an admin releases them and configures a provider. When a model is available, open Chat to talk to it — the composer accepts text and images.
+          Only released, enabled AAX generations appear here. Draft, scheduled and disabled generations stay out of the user catalogue until an administrator makes them available.
         </PhaseNote>
+        {isError ? (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            The live AAX catalogue could not be loaded. No unavailable model is substituted.
+          </div>
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {isLoading ? <div className="col-span-full py-10 text-center text-sm text-muted-foreground">Loading live AAX catalogue…</div> : models.length === 0 ? <div className="col-span-full py-10 text-center text-sm text-muted-foreground">No AAX generations are currently released. An administrator must release and configure a model.</div> : models.map((m) => (
-            <div
-              key={m.model_key}
-              className="panel group flex flex-col p-5 transition-all duration-200 hover:border-primary/35"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold">{m.display_name}</h3>
-                  <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-                    AAX {m.generation}.{m.revision}
-                  </p>
-                </div>
-                <Tag tone={m.release_status === "available" ? "success" : "neutral"}>{m.status}</Tag>
-              </div>
-              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{m.description}</p>
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {(m.capabilities ?? []).map((c) => (
-                  <span
-                    key={c}
-                    className="rounded-md border border-border/60 bg-elevated/50 px-2 py-0.5 text-[10px] text-muted-foreground"
-                  >
-                    {c}
-                  </span>
-                ))}
-              </div>
-              <div className="mt-auto flex items-center justify-between pt-5">
-                <div className="space-y-0.5 text-[11px] text-muted-foreground">
-                  <p className="font-mono uppercase tracking-[0.12em]">{formatContext(m.context_window)}</p>
-                  <p className="capitalize">{m.capabilities?.join(" · ") || "AAX"}</p>
-                </div>
-                {m.status === "available" ? (
-                  <Button size="sm" variant="outline" asChild>
-                    <Link to="/chat">Open in Chat</Link>
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="outline" disabled>
-                    Not available
-                  </Button>
-                )}
-              </div>
+          {isLoading ? (
+            <div className="col-span-full py-10 text-center text-sm text-muted-foreground">Loading live AAX catalogue…</div>
+          ) : models.length === 0 ? (
+            <div className="col-span-full py-10 text-center text-sm text-muted-foreground">
+              No AAX generations are currently released. An administrator must release and configure a model before it can be used.
             </div>
-          ))}
+          ) : (
+            models.map((m) => (
+              <div key={m.model_key} className="panel group flex flex-col p-5 transition-all duration-200 hover:border-primary/35">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">{m.display_name}</h3>
+                    <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                      AAX {m.generation}.{m.revision}
+                    </p>
+                  </div>
+                  <Tag tone="success">available</Tag>
+                </div>
+                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{m.description}</p>
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {(m.capabilities ?? []).map((cap) => (
+                    <span key={cap} className="rounded-md border border-border/60 bg-elevated/50 px-2 py-0.5 text-[10px] text-muted-foreground">
+                      {cap}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-auto grid grid-cols-2 gap-3 pt-5 text-[11px] text-muted-foreground">
+                  <div>
+                    <p className="uppercase tracking-[0.12em]">Context</p>
+                    <p className="mt-1 font-medium text-foreground">{formatTokens(m.context_window)}</p>
+                  </div>
+                  <div>
+                    <p className="uppercase tracking-[0.12em]">Max output</p>
+                    <p className="mt-1 font-medium text-foreground">{formatTokens(m.output_limit)}</p>
+                  </div>
+                </div>
+                <Button className="mt-4 w-full" size="sm" variant="outline" asChild>
+                  <Link to="/chat">Open in Chat</Link>
+                </Button>
+              </div>
+            ))
+          )}
         </div>
         <p className="text-center text-xs text-muted-foreground">
           Prefer the full workspace? Go to{" "}
-          <Link to="/chat" className="text-primary underline-offset-2 hover:underline">
-            Chat
-          </Link>{" "}
-          — the message box is always ready for typing and image attachments.
+          <Link to="/chat" className="text-primary underline-offset-2 hover:underline">Chat</Link>{" "}
+          — the message box uses the same live AAX catalogue.
         </p>
       </div>
     </AppShell>
