@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Check, Database, GitBranch, History, RefreshCw, ShieldCheck, X } from "lucide-react";
@@ -7,6 +7,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { EmptyState, PageHeader, Panel, StatCard, Tag } from "@/components/common/Primitives";
 import { Button } from "@/components/ui/button";
 import { KnowledgeAcquisitionLauncher } from "@/components/common/KnowledgeAcquisitionLauncher";
+import { KnowledgeAcquisitionConversation } from "@/components/common/KnowledgeAcquisitionConversation";
 import {
   acquireKnowledgeCandidate,
   curateKnowledgeCandidate,
@@ -106,6 +107,20 @@ function Page() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [content, setContent] = useState("");
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !candidates.length || selected) return;
+    const params = new URLSearchParams(window.location.search);
+    const candidateId = params.get("candidateId");
+    const jobId = params.get("jobId");
+    if (!candidateId) return;
+    const candidate = candidates.find((item) => item.id === candidateId);
+    if (candidate) {
+      setSelected(candidate);
+      setSelectedJobId(jobId);
+    }
+  }, [candidates, selected]);
 
   async function refresh() {
     await Promise.all([
@@ -116,6 +131,7 @@ function Page() {
 
   async function openCandidate(candidate: Candidate) {
     setSelected(candidate);
+    setSelectedJobId(typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("jobId") : null);
     setError("");
     try {
       const detail = await getCandidate({ data: { candidateId: candidate.id } });
@@ -142,6 +158,7 @@ function Page() {
       setContent("");
       await refresh();
       setSelected(null);
+      setSelectedJobId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Curator action failed.");
     } finally {
@@ -360,7 +377,7 @@ function Page() {
                     Full provenance and structured extraction are retained.
                   </p>
                 </div>
-                <Button size="icon" variant="ghost" onClick={() => setSelected(null)}>
+                <Button size="icon" variant="ghost" onClick={() => { setSelected(null); setSelectedJobId(null); }}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
