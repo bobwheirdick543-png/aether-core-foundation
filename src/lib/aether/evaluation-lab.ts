@@ -17,7 +17,8 @@ async function executeTarget(target: EvaluationTarget, input: Record<string, unk
   if (target === "agents") { const requested = safeText(input.agentKey, 80); const agents = requested ? AGENTS.filter((agent) => agent.key === requested) : AGENTS; if (!agents.length) throw new Error(`Unknown agent: ${requested}`); return { adapter: "agent.registry", executed: true, agents: agents.map((agent) => ({ key: agent.key, name: agent.name, status: agent.status, tools: agent.tools, prohibited: agent.prohibited, permissionCount: agent.permissions.length })) }; }
 
   if (target === "research") {
-    const url = safeText(input.url, 2000);\n    if (!url) throw new Error("Research evaluation requires a real URL");
+    const url = safeText(input.url, 2000);
+    if (!url) throw new Error("Research evaluation requires a real URL");
     if (!isHttpUrl(url)) throw new Error("Research evaluation URL must be a public http/https URL");
     const page = await retrievePage(url, { timeoutMs: 15_000, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30 });
     if (page.error || page.status >= 400 || !page.text) throw new Error(page.error || `Research retrieval failed with status ${page.status}`);
@@ -40,7 +41,11 @@ async function executeTarget(target: EvaluationTarget, input: Record<string, unk
   }
 
   if (target === "reports") {
-    const title = safeText(input.title, 160);\n    const topic = safeText(input.topic, 500);\n    const findings = Array.isArray(input.verifiedFindings) ? input.verifiedFindings : [];\n    if (!title || !topic || !findings.length) throw new Error("Report evaluation requires a real title, topic, and verified findings");\n    const data: ReportData = { title, topic, sessionId: safeText(input.sessionId, 120) || null, runId: safeText(input.runId, 120) || null, generatedAt: new Date().toISOString(), verificationStatus: "verified", approvalStatus: "approved", version: Math.max(1, Math.floor(Number(input.version ?? 1))), sources: Array.isArray(input.sources) ? input.sources as ReportData["sources"] : [], verifiedFindings: findings as ReportData["verifiedFindings"], unresolvedClaims: Array.isArray(input.unresolvedClaims) ? input.unresolvedClaims as ReportData["unresolvedClaims"] : [] };
+    const title = safeText(input.title, 160);
+    const topic = safeText(input.topic, 500);
+    const findings = Array.isArray(input.verifiedFindings) ? input.verifiedFindings : [];
+    if (!title || !topic || !findings.length) throw new Error("Report evaluation requires a real title, topic, and verified findings");
+    const data: ReportData = { title, topic, sessionId: safeText(input.sessionId, 120) || null, runId: safeText(input.runId, 120) || null, generatedAt: new Date().toISOString(), verificationStatus: "verified", approvalStatus: "approved", version: Math.max(1, Math.floor(Number(input.version ?? 1))), sources: Array.isArray(input.sources) ? input.sources as ReportData["sources"] : [], verifiedFindings: findings as ReportData["verifiedFindings"], unresolvedClaims: Array.isArray(input.unresolvedClaims) ? input.unresolvedClaims as ReportData["unresolvedClaims"] : [] };
     const pdf = buildReportPdf(data); if (!pdf.length || new TextDecoder().decode(pdf.slice(0, 8)) !== "%PDF-1.4") throw new Error("Report engine did not produce a valid PDF header");
     return { adapter: "report.runtime", executed: true, pdfBytes: pdf.length, fingerprint: buildReportDataFingerprint(data), version: data.version, verificationStatus: data.verificationStatus, approvalStatus: data.approvalStatus };
   }
