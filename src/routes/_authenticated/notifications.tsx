@@ -30,8 +30,11 @@ function Page() {
   });
 
   async function onMarkRead(id: string) {
-    await markRead({ data: { id } });
-    queryClient.invalidateQueries({ queryKey: ["my-notifications"] });
+    const result = await markRead({ data: { id } });
+    if (result.ok) {
+      window.dispatchEvent(new Event("aether:notification-read"));
+      queryClient.invalidateQueries({ queryKey: ["my-notifications"] });
+    }
   }
 
   return (
