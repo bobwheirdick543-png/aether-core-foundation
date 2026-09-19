@@ -128,15 +128,16 @@ async function ingestGithubRepository(repositoryUrl: string, signal?: AbortSigna
   return { sources, failedSources: [] };
 }
 
-async function runQueriesBounded(queries: string[], signal?: AbortSignal, onQuery?: (index: number, query: string, result: AetherWebResearchResult | null) => Promise<void>): Promise<AetherWebResearchResult[]> {
+async function runQueriesBounded(queries: string[], signal?: AbortSignal, onQuery?: (index: number, query: string, result: AetherWebResearchResult | null, phase: "started" | "completed" | "failed") => Promise<void>): Promise<AetherWebResearchResult[]> {
   const results: AetherWebResearchResult[] = [];
   for (let index = 0; index < queries.length; index++) {
     if (signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
     const query = queries[index];
     try {
+      if (onQuery) await onQuery(index, query, null, "started");
       const result = await runAetherWebResearch({ query, maxSources: 8, signal });
       results[index] = result;
-      if (onQuery) await onQuery(index, query, result);
+      if (onQuery) await onQuery(index, query, result, "completed");
     } catch (error) {
       if (signal?.aborted) throw error;
       results[index] = {
@@ -147,7 +148,7 @@ async function runQueriesBounded(queries: string[], signal?: AbortSignal, onQuer
         diversity: 0,
         completedAt: new Date().toISOString(),
       };
-      if (onQuery) await onQuery(index, query, results[index]);
+      if (onQuery) await onQuery(index, query, results[index], "failed");
     }
   }
   return results;
@@ -157,17 +158,17 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
   const githubUrl = input.plan.topic.match(/https?:\\/\\/github\\.com\\/[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+/i)?.[0] ?? (isGithubRepositoryUrl(input.plan.topic) ? input.plan.topic : null);
   const queryList = input.plan.aspects?.length ? input.plan.aspects.map((aspect) => aspect.query) : input.plan.queries;
   const completedAspectIds: string[] = [];
-  const results = await runQueriesBounded(queryList, input.signal, async (index, query, queryResult) => {
+  const results = await runQueriesBounded(queryList, input.signal, async (index, query, queryResult, phase) => {
     const aspect = input.plan.aspects?.[index];
     if (input.taskId && input.runId) {
-      const eventType = queryResult && queryResult.sources.length ? "knowledge.aspect.completed" : "knowledge.aspect.failed";
+      const eventType = phase === "started" ? "knowledge.aspect.started" : phase === "completed" ? "knowledge.aspect.completed" : "knowledge.aspect.failed";
       await input.admin.rpc("append_task_event", {
         p_task_id: input.taskId,
         p_run_id: input.runId,
         p_event_type: eventType,
         p_from_status: "running",
         p_to_status: "running",
-        p_message: aspect ? `${aspect.title} ${eventType.endsWith("completed") ? "completed" : "failed"}` : `Research query ${index + 1} completed`,
+        p_message: aspect ? `${aspect.title} ${phase}` : `Research query ${index + 1} ${phase}`,
         p_data: {
           aspect_id: aspect?.id ?? null,
           aspect_title: aspect?.title ?? null,
@@ -177,13 +178,14 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
           total_aspects: queryList.length,
           source_count: queryResult?.sources.length ?? 0,
           source_domains: queryResult?.sourceDomains ?? [],
-          progress: Math.round(((index + 1) / Math.max(1, queryList.length)) * 100),
+          progress: phase === "started" ? Math.round((index / Math.max(1, queryList.length)) * 100) : Math.round(((index + 1) / Math.max(1, queryList.length)) * 100),
           stage: aspect?.id ?? "research",
           agent_key: "knowledge-acquisition",
+          search_provider: webSearchConfigured ? "exa" : "legacy-fallback",
         },
       });
     }
-    if (aspect && queryResult?.sources.length) completedAspectIds.push(aspect.id);
+    if (phase === "completed" && aspect && queryResult?.sources.length) completedAspectIds.push(aspect.id);
   });
   if (input.signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
   const github = githubUrl ? await ingestGithubRepository(githubUrl, input.signal) : { sources: [] as AetherWebSource[], failedSources: [] as AetherWebResearchResult["failedSources"] };
