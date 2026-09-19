@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Check, FileText, MessageSquare, Pause, Play, Rocket, ShieldCheck, XCircle } from "lucide-react";
@@ -56,6 +56,19 @@ function Page() {
   const [error, setError] = useState("");
 
   const selected = useMemo(() => jobs.find((j) => j.id === selectedId) ?? null, [jobs, selectedId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !jobs.length || selectedId) return;
+    const params = new URLSearchParams(window.location.search);
+    const jobId = params.get("jobId");
+    const candidateId = params.get("candidateId");
+    const job = jobId
+      ? jobs.find((item) => item.id === jobId || item.task_id === jobId)
+      : candidateId
+        ? jobs.find((item) => item.candidate_id === candidateId)
+        : null;
+    if (job) void open(job);
+  }, [jobs, selectedId]);
 
   async function open(job: any) {
     setSelectedId(job.id);
