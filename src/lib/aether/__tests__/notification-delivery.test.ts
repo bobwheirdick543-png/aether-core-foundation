@@ -1,6 +1,6 @@
 import { describe,expect,it } from "vitest";
 import { buildEmailText,deliveryIdempotencyKey,isValidEmail,normalizeEmail,retryDelayMs } from "../notification-delivery";
-import { validateNotificationOwnership } from "../notifications";
+import { buildNotificationLink, validateNotificationOwnership } from "../notifications";
 describe("Phase K notification delivery",()=>{
  it("normalizes and validates email addresses",()=>{expect(normalizeEmail("  USER@Example.COM ")).toBe("user@example.com");expect(isValidEmail("user@example.com")).toBe(true);expect(isValidEmail("bad")).toBe(false);});
  it("builds provider-neutral email text",()=>{expect(buildEmailText("x","Hello","/reports")).toContain("/reports");});
