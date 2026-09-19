@@ -17,7 +17,7 @@ export async function runAaxKnowledgeEvolution(admin: SupabaseClient, input: { t
   const runAgent = async (agentKey: string, sequence: number) => {
     await recordEvent(admin, input.trainingJobId, input.targetModelId, agentKey, "started", agentKey);
     const researchQuery = buildAgentResearchQuery(agentKey, pkg.rawExtractedContent, JSON.stringify(pkg.understandings));
-    const web = await runAetherWebResearch({ query: researchQuery, signal: input.signal });
+    const web = await runAetherWebResearch({ query: researchQuery, signal: input.signal, searchAgent: { agentKey: agentKey as import("./agents").AgentKey, actorId: input.userId ?? null } });
     let researchSessionId: string | null = null;
     if (input.userId) { researchSessionId = await persistAetherWebResearch(admin, { ownerId: input.userId, scope: "agent", query: researchQuery, result: web, taskId: null, runId: null }); }
     const webContext = web.sources.map((source, index) => `WEB SOURCE [${index + 1}]\nProvider: ${source.provider}\nTitle: ${source.title}\nDomain: ${source.domain}\nURL: ${source.url}\nRetrieved: ${source.retrievedAt}\nSnippet: ${source.snippet}\nEvidence:\n${source.text.slice(0, 6000)}`).join("\n\n");
