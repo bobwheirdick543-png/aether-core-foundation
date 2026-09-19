@@ -29,7 +29,7 @@ function Page() {
       return;
     }
     try {
-      await save({ key: key.trim(), value: parsed });
+      await save({ data: { key: key.trim(), value: parsed } });
       setKey("");
       setValue("{}");
       await qc.invalidateQueries({ queryKey: ["phase-u-settings"] });
