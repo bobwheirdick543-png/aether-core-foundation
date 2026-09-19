@@ -8,6 +8,17 @@ import { Button } from "@/components/ui/button";
 import { getMyNotifications, markNotificationRead } from "@/lib/workspace/workspace.functions";
 import { Link } from "@tanstack/react-router";
 
+function formatNotificationDateTime(timestamp: string) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZoneName: "short",
+  }).format(date);
+}
+
+
 export const Route = createFileRoute("/_authenticated/notifications")({
   head: () => ({
     meta: [
@@ -75,7 +86,7 @@ function Page() {
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{n.body}</p>
                     ) : null}
                     <p className="mt-2 text-[11px] text-muted-foreground">
-                      {n.event_type} · {new Date(n.created_at).toLocaleString()}
+                      {n.event_type} · {formatNotificationDateTime(n.created_at)}
                     </p>
                     <p className="mt-2 text-[11px] font-medium text-primary">
                       Open related Aether page →
