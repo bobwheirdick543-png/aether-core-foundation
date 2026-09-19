@@ -3,6 +3,7 @@ import { domainFromUrl, normalizeUrl, sourceQualityScore, type RetrievedPage } f
 import { runAetherWebResearch, persistAetherWebResearch, persistResearchDiscoveryEvent, type AetherWebResearchResult, type AetherWebSource } from "./aax-web-intelligence";
 import { unmetSourceRequirements } from "./research-policy";
 import { type ResearchAspect } from "./knowledge-research-plan";
+import { webSearchConfigured } from "./web-search.server";
 
 export type ResearchPlan = {
   topic: string;
@@ -181,7 +182,7 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
           progress: phase === "started" ? Math.round((index / Math.max(1, queryList.length)) * 100) : Math.round(((index + 1) / Math.max(1, queryList.length)) * 100),
           stage: aspect?.id ?? "research",
           agent_key: "knowledge-acquisition",
-          search_provider: webSearchConfigured ? "exa" : "legacy-fallback",
+          search_provider: webSearchConfigured() ? "exa" : "legacy-fallback",
         },
       });
     }
