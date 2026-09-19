@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAuthRequest } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const Route = createFileRoute("/api/aax/memory/export")({
