@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 export type WebSearchType = "auto" | "fast" | "instant" | "deep-lite" | "deep" | "deep-reasoning";
 
 export type WebSearchRequest = {
@@ -80,7 +78,7 @@ export async function searchWeb(input: WebSearchRequest): Promise<WebSearchResul
   signal?.addEventListener("abort", onAbort, { once: true });
 
   const started = Date.now();
-  const requestId = randomUUID();
+  const requestId = `aether-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
   try {
     const response = await fetch(EXA_ENDPOINT, {
