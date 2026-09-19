@@ -20,3 +20,35 @@ do update set
 
 comment on table public.agent_permissions is
   'Durable agent permissions. web.search is the centralized live-web capability backed by the server-side Exa integration.';
+
+-- Keep the durable registry/tool contract synchronized with the permission boundary.
+update public.agents
+set tools = case
+  when 'web.search' = any(tools) then tools
+  else array_append(tools, 'web.search')
+end,
+updated_at = now()
+where agent_key in ('orchestrator','research','verification','knowledge-acquisition','curator','security');
+
+update public.agents
+set tools = array_remove(tools, 'web.search'),
+    updated_at = now()
+where agent_key = 'orchestrator';
+
+-- Active operational versions must describe the same tool surface as the registry.
+update public.agent_versions av
+set definition = jsonb_set(
+                  jsonb_set(av.definition, '{tools}', to_jsonb(a.tools), true),
+                  '{responsibilities}', to_jsonb(a.tools), true
+                ),
+    config_hash = md5(
+      jsonb_set(
+        jsonb_set(av.definition, '{tools}', to_jsonb(a.tools), true),
+        '{responsibilities}', to_jsonb(a.tools), true
+      )::text
+    )
+from public.agents a
+where av.agent_id = a.id
+  and av.lifecycle_state in ('active','tested','validated','maintenance')
+  and a.agent_key in ('research','verification','knowledge-acquisition','curator','security');
+
