@@ -5,6 +5,7 @@ import { createResearchPlan, runPlannedResearch, compareResearchSources } from "
 import { extractKnowledge, findConflicts, freshnessFromEvidence, mergeFreshness } from "./knowledge-curator-engine";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createAcquisitionReportAndNotify } from "./knowledge-acquisition-report";
+import { buildKnowledgeResearchAspects } from "./knowledge-research-plan";
 
 export const KNOWLEDGE_RESEARCH_DEFAULT_MS = 15 * 60 * 1000;
 export const KNOWLEDGE_RESEARCH_MIN_MS = 5 * 60 * 1000;
@@ -36,8 +37,11 @@ export async function executeKnowledgeAcquisitionStep(admin: SupabaseClient, opt
   try {
     const startedAt = job.started_at ?? new Date().toISOString(); await admin.from("aether_knowledge_acquisition_jobs").update({ status: "running", started_at: startedAt, last_event_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id);
     const scope = job.scope as BoundedKnowledgeScope; await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge.scope.created", message: "Bounded acquisition scope created", data: { scope, time_budget_ms: job.time_budget_ms, depth_tier: job.depth_tier }, workerId: opts.workerId });
-    const plan = createResearchPlan(job.subject, "multi_source"); plan.queries = boundedResearchQueries(job.subject); plan.sourceRequirements = { minSources: 5, minDomains: 3, preferredProviders: ["official", "government", "academic", "wikipedia", "duckduckgo"] };
-    await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge.research.started", message: "Bounded multi-source research started", data: { query_count: plan.queries.length, scope_tier: job.depth_tier }, workerId: opts.workerId });
+    const plan = createResearchPlan(job.subject, "multi_source");
+    plan.aspects = buildKnowledgeResearchAspects(job.subject);
+    plan.queries = plan.aspects.map((aspect) => aspect.query);
+    plan.sourceRequirements = { minSources: 5, minDomains: 3, preferredProviders: ["exa", "official", "government", "academic"] };
+    await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge.research.started", message: "Real web research started across explicit knowledge aspects", data: { aspect_count: plan.aspects.length, aspects: plan.aspects.map((aspect) => ({ id: aspect.id, title: aspect.title, objective: aspect.objective, query: aspect.query })), query_count: plan.queries.length, scope_tier: job.depth_tier, stage: "research", agent_key: "knowledge-acquisition" }, workerId: opts.workerId });
     const planned = await runPlannedResearch({ admin, ownerId: opts.ownerId, projectId: opts.projectId, plan, taskId: opts.taskId, runId: opts.runId, signal: controller.signal }); if (controller.signal.aborted) throw new DOMException("Knowledge acquisition cancelled or timed out", "AbortError");
     const sources = planned.result.sources ?? []; const sourceIds = sources.map((s: any) => s.id).filter(Boolean); const comparison = compareResearchSources(job.subject, sources.map((s: any) => ({ id: String(s.id ?? s.contentHash ?? s.url), url: s.url, title: s.title, content: s.text, publishedAt: s.publishedAt, updatedAt: s.updatedAt })));
     const combined = sources.map((source: any, index: number) => `SOURCE ${index + 1}\nTitle: ${source.title}\nDomain: ${source.domain}\nURL: ${source.url}\nRetrieved: ${source.retrievedAt}\nContent:\n${String(source.text ?? "").slice(0, 18000)}`).join("\n\n").slice(0, 200000);
