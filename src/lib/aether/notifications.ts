@@ -93,9 +93,11 @@ export function buildNotificationLink(
     case "report.ready":
       return ids.reportId ? `${base}/reports` : `${base}/dashboard`;
     case "research.completed":
-      return ids.resourceId
-        ? `${base}/research/${encodeURIComponent(ids.resourceId)}`
-        : `${base}/research`;
+      return isAdmin
+        ? "/admin/research"
+        : ids.resourceId
+          ? `/research/${encodeURIComponent(ids.resourceId)}`
+          : "/research";
     case "knowledge.review_required":
     case "approval.required":
       return isAdmin ? "/admin/knowledge" : "/knowledge";
