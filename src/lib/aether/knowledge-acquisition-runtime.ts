@@ -6,6 +6,7 @@ import { extractKnowledge, findConflicts, freshnessFromEvidence, mergeFreshness 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { createAcquisitionReportAndNotify } from "./knowledge-acquisition-report";
 import { buildKnowledgeResearchAspects } from "./knowledge-research-plan";
+import { webSearchConfigured } from "./web-search.server";
 
 export const KNOWLEDGE_RESEARCH_DEFAULT_MS = 15 * 60 * 1000;
 export const KNOWLEDGE_RESEARCH_MIN_MS = 5 * 60 * 1000;
@@ -31,6 +32,7 @@ export async function createKnowledgeAcquisitionTask(admin: SupabaseClient, inpu
 function sourceMetadata(source: any): Record<string, unknown> { return { sourceId: source.id, url: source.url, canonicalUrl: source.canonical_url, title: source.title, domain: source.domain, retrievedAt: source.retrieved_at, publishedAt: source.published_at, updatedAt: source.updated_at_source, qualityScore: source.quality_score, staleAt: source.stale_at }; }
 export async function executeKnowledgeAcquisitionStep(admin: SupabaseClient, opts: { taskId: string; runId: string; ownerId: string; projectId?: string | null; deadlineAt?: string | null; workerId?: string | null }): Promise<void> {
   assertAgentBoundary("knowledge-acquisition", "web.search", { actorId: opts.ownerId, taskId: opts.taskId, runId: opts.runId });
+  if (!webSearchConfigured()) throw new Error("Knowledge acquisition requires the server-side EXA_API_KEY web-search provider to be configured");
   const { data: job, error: jobError } = await admin.from("aether_knowledge_acquisition_jobs").select("*").eq("task_id", opts.taskId).eq("run_id", opts.runId).maybeSingle(); if (jobError || !job) throw new Error(jobError?.message ?? "Knowledge acquisition job not found");
   const deadline = opts.deadlineAt ?? new Date(Date.now() + Number(job.time_budget_ms)).toISOString(); const controller = new AbortController();
   const timer = setInterval(() => { void (async () => { const [{ data: task }, { data: run }] = await Promise.all([admin.from("tasks").select("cancel_requested_at,deadline_at,status").eq("id", opts.taskId).maybeSingle(), admin.from("task_runs").select("cancel_requested_at,deadline_at,status").eq("id", opts.runId).maybeSingle()]); if (task?.cancel_requested_at || run?.cancel_requested_at || task?.status === "cancelled" || run?.status === "cancelled" || Date.now() >= new Date(task?.deadline_at ?? run?.deadline_at ?? deadline).getTime()) controller.abort(); })().catch(() => undefined); }, 1500);
