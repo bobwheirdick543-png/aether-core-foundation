@@ -58,7 +58,12 @@ function Page() {
             {data!.map((n) => (
               <Panel key={n.id} className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  <Link
+                    to={n.link || "/dashboard"}
+                    onClick={() => void onMarkRead(n.id)}
+                    className="min-w-0 flex-1 rounded-md -m-2 p-2 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    aria-label={`Open notification: ${n.title}`}
+                  >
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-sm font-medium">{n.title}</h3>
                       <Tag tone={n.status === "read" ? "neutral" : "primary"}>{n.status}</Tag>
@@ -69,19 +74,15 @@ function Page() {
                     <p className="mt-2 text-[11px] text-muted-foreground">
                       {n.event_type} · {new Date(n.created_at).toLocaleString()}
                     </p>
-                  </div>
-                  <div className="flex shrink-0 flex-col gap-1">
-                    {n.link ? (
-                      <Button asChild size="sm" variant="outline">
-                        <Link to={n.link}>{n.link.replace(/^\//, "") || "Open"}</Link>
-                      </Button>
-                    ) : null}
-                    {n.status !== "read" ? (
-                      <Button type="button" size="sm" variant="ghost" onClick={() => onMarkRead(n.id)}>
-                        Mark read
-                      </Button>
-                    ) : null}
-                  </div>
+                    <p className="mt-2 text-[11px] font-medium text-primary">
+                      Open related Aether page →
+                    </p>
+                  </Link>
+                  {n.status !== "read" ? (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => void onMarkRead(n.id)}>
+                      Mark read
+                    </Button>
+                  ) : null}
                 </div>
               </Panel>
             ))}
