@@ -22,6 +22,7 @@ type ActivityTask = {
     progress: number;
     started_at: string | null;
     completed_at: string | null;
+    execution_ended_at: string | null;
     deadline_at: string | null;
   };
   events: EventRow[];
@@ -149,7 +150,7 @@ export function LiveTaskActivity({ admin = false, className }: { admin?: boolean
 
 function TaskTree({ task, events }: { task: ActivityTask["task"]; events: EventRow[] }) {
   const activeIndex = task.status === "running" && events.length ? events.length - 1 : -1;
-  const elapsedEnd = task.completed_at ? Date.parse(task.completed_at) : Date.now();
+  const elapsedEnd = task.execution_ended_at ? Date.parse(task.execution_ended_at) : task.completed_at ? Date.parse(task.completed_at) : Date.now();
   const elapsed = task.started_at ? Math.max(0, elapsedEnd - Date.parse(task.started_at)) : 0;
   const agent = currentAgentFrom(events);
   const stage = currentStageFrom(events, task.status);
