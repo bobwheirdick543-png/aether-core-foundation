@@ -12,7 +12,7 @@ begin
     into v_admin
   from public.user_roles ur
   where ur.role = 'admin'
-  order by ur.created_at
+  order by ur.granted_at
   limit 1;
 
   if v_admin is null then
