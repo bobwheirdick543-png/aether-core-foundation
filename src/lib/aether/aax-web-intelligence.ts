@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { domainFromUrl, isHttpUrl, normalizeUrl, retrievePage, sourceQualityScore, type RetrievedPage } from "./research-engine";
 import { ResearchAccessLimiter } from "./research-policy";
-import { searchWeb, webSearchConfigured } from "./web-search.server";
+import { searchWeb } from "./web-search.server";
 import { searchWebForAgent } from "./agent-web-search.server";
 
 export type WebSearchProvider = "exa" | "wikipedia" | "reddit" | "duckduckgo" | "dictionary" | (string & {});
