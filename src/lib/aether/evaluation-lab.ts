@@ -17,7 +17,7 @@ async function executeTarget(target: EvaluationTarget, input: Record<string, unk
   if (target === "agents") { const requested = safeText(input.agentKey, 80); const agents = requested ? AGENTS.filter((agent) => agent.key === requested) : AGENTS; if (!agents.length) throw new Error(`Unknown agent: ${requested}`); return { adapter: "agent.registry", executed: true, agents: agents.map((agent) => ({ key: agent.key, name: agent.name, status: agent.status, tools: agent.tools, prohibited: agent.prohibited, permissionCount: agent.permissions.length })) }; }
 
   if (target === "research") {
-    const url = safeText(input.url, 2000) || "https://example.com";
+    const url = safeText(input.url, 2000);\n    if (!url) throw new Error("Research evaluation requires a real URL");
     if (!isHttpUrl(url)) throw new Error("Research evaluation URL must be a public http/https URL");
     const page = await retrievePage(url, { timeoutMs: 15_000, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30 });
     if (page.error || page.status >= 400 || !page.text) throw new Error(page.error || `Research retrieval failed with status ${page.status}`);
