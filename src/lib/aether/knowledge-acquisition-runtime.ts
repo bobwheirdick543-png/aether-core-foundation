@@ -30,7 +30,7 @@ export async function createKnowledgeAcquisitionTask(admin: SupabaseClient, inpu
   return { taskId: task.id, runId: run.id, jobId: job.id, deduplicated: false };
 }
 function sourceMetadata(source: any): Record<string, unknown> { return { sourceId: source.id, url: source.url, canonicalUrl: source.canonical_url, title: source.title, domain: source.domain, retrievedAt: source.retrieved_at, publishedAt: source.published_at, updatedAt: source.updated_at_source, qualityScore: source.quality_score, staleAt: source.stale_at }; }
-export async function executeKnowledgeAcquisitionStep(admin: SupabaseClient, opts: { taskId: string; runId: string; ownerId: string; projectId?: string | null; deadlineAt?: string | null; workerId?: string | null }): Promise<void> {
+export async function executeKnowledgeAcquisitionStep(admin: SupabaseClient, opts: { taskId: string; runId: string; ownerId: string; projectId?: string | null; deadlineAt?: string | null; workerId?: string | null; continuationAspectId?: string | null; continuationRequest?: string | null }): Promise<void> {
   const workerId = opts.workerId ?? undefined;
   assertAgentBoundary("knowledge-acquisition", "web.search", { actorId: opts.ownerId, taskId: opts.taskId, runId: opts.runId });
   if (!webSearchConfigured()) throw new Error("Knowledge acquisition requires the server-side EXA_API_KEY web-search provider to be configured");
@@ -41,10 +41,16 @@ export async function executeKnowledgeAcquisitionStep(admin: SupabaseClient, opt
     const startedAt = job.started_at ?? new Date().toISOString(); await admin.from("aether_knowledge_acquisition_jobs").update({ status: "running", started_at: startedAt, last_event_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id);
     const scope = job.scope as BoundedKnowledgeScope; await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge.scope.created", message: "Bounded acquisition scope created", data: { scope, time_budget_ms: job.time_budget_ms, depth_tier: job.depth_tier }, workerId });
     const plan = createResearchPlan(job.subject, "multi_source");
-    plan.aspects = buildKnowledgeResearchAspects(job.subject);
+    const allAspects = buildKnowledgeResearchAspects(job.subject);
+    const requestedAspectId = opts.continuationAspectId ?? null;
+    plan.aspects = requestedAspectId ? allAspects.filter((aspect) => aspect.id === requestedAspectId) : allAspects;
+    if (!plan.aspects.length) plan.aspects = allAspects;
     plan.queries = plan.aspects.map((aspect) => aspect.query);
+    if (opts.continuationRequest?.trim()) {
+      plan.queries = plan.queries.map((query) => `${query}\nAdditional user research instruction: ${opts.continuationRequest!.trim().slice(0, 3000)}`);
+    }
     plan.sourceRequirements = { minSources: 5, minDomains: 3, preferredProviders: ["exa", "official", "government", "academic"] };
-    await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge.research.started", message: "Real web research started across explicit knowledge aspects", data: { aspect_count: plan.aspects.length, aspects: plan.aspects.map((aspect) => ({ id: aspect.id, title: aspect.title, objective: aspect.objective, query: aspect.query })), query_count: plan.queries.length, scope_tier: job.depth_tier, stage: "research", agent_key: "knowledge-acquisition" }, workerId });
+    await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge.research.started", message: "Real web research started across explicit knowledge aspects", data: { aspect_count: plan.aspects.length, aspects: plan.aspects.map((aspect) => ({ id: aspect.id, title: aspect.title, objective: aspect.objective, query: aspect.query })), query_count: plan.queries.length, scope_tier: job.depth_tier, stage: "research", agent_key: "knowledge-acquisition", continuation_aspect_id: requestedAspectId, continuation_request: opts.continuationRequest ?? null }, workerId });
     const planned = await runPlannedResearch({ admin, ownerId: opts.ownerId, projectId: opts.projectId, plan, taskId: opts.taskId, runId: opts.runId, deadlineAt: deadline, signal: controller.signal }); if (controller.signal.aborted) throw new DOMException("Knowledge acquisition cancelled or timed out", "AbortError");
     const sources = planned.result.sources ?? []; const sourceIds = sources.map((s: any) => s.id).filter(Boolean); const comparison = compareResearchSources(job.subject, sources.map((s: any) => ({ id: String(s.id ?? s.contentHash ?? s.url), url: s.url, title: s.title, content: s.text, publishedAt: s.publishedAt, updatedAt: s.updatedAt })));
     const combined = sources.map((source: any, index: number) => `SOURCE ${index + 1}\nTitle: ${source.title}\nDomain: ${source.domain}\nURL: ${source.url}\nRetrieved: ${source.retrievedAt}\nContent:\n${String(source.text ?? "").slice(0, 18000)}`).join("\n\n").slice(0, 200000);
