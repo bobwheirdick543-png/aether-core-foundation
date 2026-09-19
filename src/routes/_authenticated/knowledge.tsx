@@ -174,6 +174,7 @@ function Page() {
       await publish({ data: { candidateId: selected.id } });
       await refresh();
       setSelected(null);
+      setSelectedJobId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Publication failed.");
     } finally {
@@ -453,6 +454,7 @@ function Page() {
                 ) : null}
               </div>
             </Panel>
+            {selectedJobId ? <KnowledgeAcquisitionConversation jobId={selectedJobId} /> : null}
           ) : (
             <Panel>
               <h2 className="text-sm font-semibold">Candidate detail</h2>
