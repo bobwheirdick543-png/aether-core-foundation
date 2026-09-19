@@ -12,7 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 
 function NotFoundComponent() {
   return (
@@ -161,6 +161,15 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
+    // Do not initialize Supabase (and crash the whole app) when env is missing.
+    // Public/marketing routes can still render; auth-dependent routes fail later with a clear message.
+    if (!isSupabaseConfigured()) {
+      console.warn(
+        "[Aether] Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY (and server equivalents) in Vercel.",
+      );
+      return;
+    }
+
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();

@@ -11,7 +11,13 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
       throw error;
     }
     console.error(error);
-    return new Response(renderErrorPage(), {
+    const detail =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : undefined;
+    return new Response(renderErrorPage(detail), {
       status: 500,
       headers: { "content-type": "text/html; charset=utf-8" },
     });

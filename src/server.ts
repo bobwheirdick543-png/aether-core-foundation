@@ -1,6 +1,6 @@
 import "./lib/error-capture";
 
-import { consumeLastCapturedError } from "./lib/error-capture";
+import { consumeLastCapturedError, describeError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
 type ServerEntry = {
@@ -18,6 +18,17 @@ async function getServerEntry(): Promise<ServerEntry> {
   return serverEntryPromise;
 }
 
+function detailFromUnknown(error: unknown): string | undefined {
+  if (error == null) return undefined;
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return describeError(error);
+  } catch {
+    return String(error);
+  }
+}
+
 // h3 swallows in-handler throws into a normal 500 Response with body
 // {"unhandled":true,"message":"HTTPError"} — try/catch alone never fires for those.
 async function normalizeCatastrophicSsrResponse(response: Response): Promise<Response> {
@@ -28,8 +39,9 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   const body = await response.clone().text();
   if (!isH3SwallowedErrorBody(body)) return response;
 
-  console.error(consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`));
-  return new Response(renderErrorPage(), {
+  const captured = consumeLastCapturedError() ?? new Error(`h3 swallowed SSR error: ${body}`);
+  console.error(captured);
+  return new Response(renderErrorPage(detailFromUnknown(captured)), {
     status: 500,
     headers: { "content-type": "text/html; charset=utf-8" },
   });
@@ -52,7 +64,7 @@ export default {
       return await normalizeCatastrophicSsrResponse(response);
     } catch (error) {
       console.error(error);
-      return new Response(renderErrorPage(), {
+      return new Response(renderErrorPage(detailFromUnknown(error)), {
         status: 500,
         headers: { "content-type": "text/html; charset=utf-8" },
       });
