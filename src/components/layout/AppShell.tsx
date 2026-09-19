@@ -87,9 +87,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         )
         .subscribe();
     }
+    const onNotificationRead = () => setUnreadCount((c) => Math.max(0, c - 1));
+    window.addEventListener("aether:notification-read", onNotificationRead);
     void connectNotifications();
     return () => {
       cancelled = true;
+      window.removeEventListener("aether:notification-read", onNotificationRead);
       if (channel) void supabase.removeChannel(channel);
     };
   }, [queryClient]);
