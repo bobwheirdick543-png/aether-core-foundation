@@ -7,7 +7,7 @@ import { buildReportPdf, buildReportDataFingerprint, type ReportData } from "./r
 import { validateModuleManifest, validateModuleVersion, assertModuleDependenciesAcyclic, registeredModuleSlugs } from "./module-runtime";
 import { appendUnderstanding, buildDownstreamContext, AAX_KNOWLEDGE_FLOW, type AaxKnowledgePackage, type UnderstandingArtifact } from "./aax-knowledge-evolution";
 
-export const EVALUATION_TARGETS = ["agents","orchestrator","research","verification","knowledge","reports","notifications","modules","battle-versia"] as const;
+export const EVALUATION_TARGETS = ["agents","orchestrator","research","verification","knowledge","reports","notifications","modules"] as const;
 export type EvaluationTarget = (typeof EVALUATION_TARGETS)[number];
 function safeText(value: unknown, max = 4000) { return String(value ?? "").trim().slice(0, max); }
 function expectedScore(actual: unknown, expected: Record<string, unknown>) { const required = Array.isArray(expected.requiredFields) ? expected.requiredFields.map(String) : []; if (required.length) { const object = (actual ?? {}) as Record<string, unknown>; const missing = required.filter((field) => !(field in object)); return { score: missing.length ? Math.max(0, 1 - missing.length / required.length) : 1, missing }; } if (typeof expected.contains === "string") { const haystack = JSON.stringify(actual).toLowerCase(); const needle = expected.contains.toLowerCase(); return { score: haystack.includes(needle) ? 1 : 0, missing: haystack.includes(needle) ? [] : [expected.contains] }; } return { score: 1, missing: [] as string[] }; }
@@ -58,13 +58,6 @@ async function executeTarget(target: EvaluationTarget, input: Record<string, unk
     const manifestErrors = validateModuleManifest(manifest); const version = safeText(input.version, 40) || "1.0.0"; const versionErrors = validateModuleVersion(version); const slug = safeText(manifest.slug, 80) || "evaluation-module"; assertModuleDependenciesAcyclic(slug, (input.dependencies && typeof input.dependencies === "object" ? input.dependencies : { [slug]: [] }) as Record<string, string[]>);
     if (manifestErrors.length || versionErrors.length) throw new Error(`Module contract invalid: ${[...manifestErrors, ...versionErrors].join("; ")}`);
     return { adapter: "module.runtime", executed: true, manifestValid: true, versionValid: true, version, registeredHandlers: registeredModuleSlugs() };
-  }
-
-  if (target === "battle-versia") {
-    const dbAny = db as SupabaseClient<any>;
-    const [{ data: characters, error: ce }, { data: auctions, error: ae }, { data: tournaments, error: te }, { data: servers, error: se }] = await Promise.all([dbAny.from("bv_characters").select("id,slug,name,universe,power_score,price,market_available").eq("active", true).limit(12), dbAny.from("bv_auctions").select("id,status,mode,fund").in("status", ["lobby", "active", "paused"]).limit(10), dbAny.from("bv_tournaments").select("id,status,name,max_players").in("status", ["registration", "active", "paused"]).limit(10), dbAny.from("bv_servers").select("id,name,status").limit(10)]);
-    const error = ce || ae || te || se; if (error) throw new Error(`Battleversia evaluation failed: ${error.message}`);
-    return { adapter: "battleversia.runtime", executed: true, characters: characters?.length ?? 0, liveAuctions: auctions?.length ?? 0, tournaments: tournaments?.length ?? 0, servers: servers?.length ?? 0, persistent: true };
   }
   throw new Error(`No evaluation adapter registered for ${target}`);
 }
