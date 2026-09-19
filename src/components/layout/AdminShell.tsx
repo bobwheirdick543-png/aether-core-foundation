@@ -45,6 +45,8 @@ const NAV = [
   { label: "Logs", to: "/admin/logs" as const, icon: ScrollText },
   { label: "System", to: "/admin/system" as const, icon: Server },
   { label: "Settings", to: "/admin/settings" as const, icon: Settings },
+  { label: "Evaluation Lab", to: "/evaluation-lab" as const, icon: FlaskConical },
+  { label: "Recycling Bin", to: "/safety-bin" as const, icon: Recycle },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {
