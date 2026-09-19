@@ -1,6 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { chooseModelRole, buildContextBudget, evaluateStepOutcome } from "./orchestration-planning.ts";
+import { strict as assert } from "node:assert";
+import { test } from "vitest";
+import { chooseModelRole, buildContextBudget, evaluateStepOutcome } from "./orchestration-planning";
 
 test("Phase B acceptance: all six product model roles are routable", () => {
   for (const role of ["aether-fast", "aether-think", "aether-code", "aether-vision", "aether-long", "aether-translate"]) {
