@@ -8,7 +8,8 @@ describe("Aether native web intelligence contract", () => {
   const evolution = readFileSync(resolve(process.cwd(), "src/lib/aether/aax-knowledge-evolution-engine.ts"), "utf8");
 
   it("has independent no-key discovery adapters", () => {
-    for (const marker of ["searchWikipedia", "searchReddit", "searchDuckDuckGo", "lookupDictionary"]) expect(source).toContain(marker);
+    expect(source).toContain("searchExa");
+    expect(source).toContain("searchWebForAgent");
     expect(source).toContain("Promise.allSettled(");
     expect(source).toContain("providerKeys.map");
     expect(source).toContain("runAetherWebResearch");
@@ -24,7 +25,7 @@ describe("Aether native web intelligence contract", () => {
 
   it("uses native web intelligence for the Phase D research toggle by default", () => {
     expect(gateway).toContain("runAetherWebResearch");
-    expect(gateway).toContain('process.env.AETHER_NATIVE_WEB_RESEARCH !== "false"');
+    expect(gateway).not.toContain("tools: [{ type: \"web_search\" }]");
     expect(gateway).toContain("executeNative");
   });
 
