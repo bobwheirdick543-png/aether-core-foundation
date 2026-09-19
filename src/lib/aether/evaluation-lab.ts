@@ -26,8 +26,10 @@ async function executeTarget(target: EvaluationTarget, input: Record<string, unk
   }
 
   if (target === "verification") {
-    const claim = safeText(input.claim) || "Aether is an AI platform";
-    const sources = (Array.isArray(input.sources) ? input.sources : [{ id: "evaluation-source", title: "Evaluation evidence", domain: "example.org", content: claim, retrievedAt: new Date().toISOString() }]) as VerificationSource[];
+    const claim = safeText(input.claim);
+    if (!claim) throw new Error("Verification evaluation requires a real claim");
+    const sources = (Array.isArray(input.sources) ? input.sources : []) as VerificationSource[];
+    if (!sources.length) throw new Error("Verification evaluation requires real evidence sources");
     const result = verifyClaim(claim, sources);
     return { adapter: "verification.runtime", executed: true, verificationState: result.verificationState, confidence: result.confidence, evidenceStrength: result.evidenceStrength, authorityScore: result.authorityScore, freshnessScore: result.freshnessScore, contradictionCount: result.contradictionCount, dateMismatchCount: result.dateMismatchCount, requiresReview: result.requiresReview, evidenceCount: result.evidence.length };
   }
