@@ -399,7 +399,13 @@ export async function getZ2UsageForecast(ownerId: string, keyId?: string | null)
 }
 
 export async function getZ2Models() {
-  const { data, error } = await db.from("aax_models").select("id,model_key,display_name,generation,revision,description,capabilities,context_window,output_limit,release_status,available_at,disabled_at").eq("release_status", "available").is("disabled_at", null).or("available_at.is.null,available_at.lte." + new Date().toISOString()).order("generation", { ascending: false }).order("revision", { ascending: false });
+  const { data, error } = await db.from("aax_models")
+    .select("id,model_key,display_name,generation,revision,description,capabilities,context_window,output_limit,release_status,available_at,disabled_at")
+    .eq("release_status", "available")
+    .is("disabled_at", null)
+    .or(`available_at.is.null,available_at.lte.${new Date().toISOString()}`)
+    .order("generation", { ascending: false })
+    .order("revision", { ascending: false });
   if (error) throw new Response(error.message, { status: 500 });
   return data ?? [];
 }
