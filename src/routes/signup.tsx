@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Country, State } from "country-state-city";
 import { toast } from "sonner";
 import { Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,9 +25,21 @@ function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [countryCode, setCountryCode] = useState("");
+  const [stateCode, setStateCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+
+  const countries = useMemo(() => Country.getAllCountries(), []);
+  const states = useMemo(() => (countryCode ? State.getStatesOfCountry(countryCode) : []), [countryCode]);
+  const selectedCountry = countries.find((country) => country.isoCode === countryCode);
+  const selectedState = states.find((state) => state.isoCode === stateCode);
+
+  function onCountryChange(code: string) {
+    setCountryCode(code);
+    setStateCode("");
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,7 +47,7 @@ function SignupPage() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: window.location.origin, data: { display_name: name } },
+      options: { emailRedirectTo: window.location.origin, data: { display_name: name, country_code: selectedCountry?.isoCode ?? countryCode, country_name: selectedCountry?.name ?? "", state_code: selectedState?.isoCode ?? stateCode, state_name: selectedState?.name ?? "", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "" } },
     });
     setBusy(false);
     if (error) {
@@ -135,6 +148,27 @@ function SignupPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     className="h-11"
                   />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="country">Country</Label>
+                    <select id="country" required value={countryCode} onChange={(e) => onCountryChange(e.target.value)} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm">
+                      <option value="">Choose your country</option>
+                      {countries.map((country) => (
+                        <option key={country.isoCode} value={country.isoCode}>{country.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="state">State / Province / Region</Label>
+                    <select id="state" required value={stateCode} onChange={(e) => setStateCode(e.target.value)} disabled={!countryCode || states.length === 0} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50">
+                      <option value="">{countryCode ? (states.length ? "Choose your state / region" : "No subdivisions listed") : "Choose a country first"}</option>
+                      {states.map((state) => (
+                        <option key={state.isoCode} value={state.isoCode}>{state.name}</option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-muted-foreground">Used as account location context and timezone assistance. The device timezone remains the fallback.</p>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
