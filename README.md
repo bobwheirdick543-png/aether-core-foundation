@@ -30,7 +30,7 @@ Model selector and /models show released AAX generations with:
 3. KEY SURFACES
 ==================================================
 
-User: Dashboard, Chat, Models (AAX), Projects, Knowledge, Memory, Research, Operations, Reports, Tasks, Battleversia (module), Notifications, API Keys (Z2), Settings, Safety Bin.
+User: Dashboard, Chat, Models (AAX), Projects, Knowledge, Memory, Research, Operations, Reports, Tasks, Notifications, API Keys (Z2), Settings, Safety Bin.
 
 Admin: Overview, Users, Team (independent agent workstations), AI Models (AAX control plane), Model Routing, AI Agents (easy run + progressive workflow), Knowledge, Research, Operations, Tasks, Projects, API Keys, Usage, Logs, System, Settings.
 
