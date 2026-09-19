@@ -143,7 +143,7 @@ async function runQueriesBounded(queries: string[], signal?: AbortSignal, deadli
     const timer = setTimeout(() => aspectController.abort(), budgetMs);
     try {
       if (onQuery) await onQuery(index, query, null, "started", budgetMs);
-      const result = await runAetherWebResearch({ query, maxSources: 8, signal: aspectController.signal, searchAgent: { agentKey: "knowledge-acquisition" } });
+      const result = await runAetherWebResearch({ query, maxSources: 8, signal: aspectController.signal, searchAgent: { ...input.searchAgent, taskId: input.searchAgent.taskId ?? input.taskId ?? null, runId: input.searchAgent.runId ?? input.runId ?? null } });
       results[index] = result;
       if (onQuery) await onQuery(index, query, result, "completed", budgetMs);
     } catch (error) {
@@ -166,7 +166,7 @@ async function runQueriesBounded(queries: string[], signal?: AbortSignal, deadli
   return results;
 }
 
-export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId: string; projectId?: string | null; plan: ResearchPlan; taskId?: string | null; runId?: string | null; deadlineAt?: string | null; signal?: AbortSignal }): Promise<{ sessionId: string; result: AetherWebResearchResult; plan: ResearchPlan; unmetRequirements: string[] }> {
+export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId: string; projectId?: string | null; plan: ResearchPlan; taskId?: string | null; runId?: string | null; deadlineAt?: string | null; signal?: AbortSignal; searchAgent: { agentKey: import("./agents").AgentKey; actorId?: string | null; taskId?: string | null; runId?: string | null } }): Promise<{ sessionId: string; result: AetherWebResearchResult; plan: ResearchPlan; unmetRequirements: string[] }> {
   const githubUrl = input.plan.topic.match(/https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/i)?.[0] ?? (isGithubRepositoryUrl(input.plan.topic) ? input.plan.topic : null);
   const queryList = input.plan.aspects?.length ? input.plan.aspects.map((aspect) => aspect.query) : input.plan.queries;
   const completedAspectIds: string[] = [];
