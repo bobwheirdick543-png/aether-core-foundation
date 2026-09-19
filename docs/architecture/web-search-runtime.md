@@ -43,3 +43,22 @@ The same boundary is used for:
 Authorization is enforced through the durable agent permission registry and every authorized search produces an agent-action audit record. Search request context may carry the authenticated actor, task, and run identifiers so the research remains attributable and persistent.
 
 The Exa credential is never placed in agent prompts, client bundles, task data, or database records. Configure only the server deployment secret `EXA_API_KEY`.
+
+## Exa Search API contract
+
+The shared boundary follows Exa's current Search API reference:
+- POST https://api.exa.ai/search
+- Authorization: Bearer $EXA_API_KEY
+- type: auto, fast, instant, deep-lite, deep, or deep-reasoning
+- numResults: 1–100
+- contents.highlights and bounded contents.text for agent workflows
+- contents.maxAgeHours: 0 for explicitly fresh/live retrieval
+- current domain/date/category filter names
+- outputSchema, systemPrompt, additionalQueries, subpage crawling, and extracted links are supported by the server boundary
+- deprecated parameters such as useAutoprompt, includeUrls, excludeUrls, top-level text/summary/highlights, numSentences, highlightsPerUrl, and livecrawl are not used
+
+The implementation intentionally keeps JSON search as the agent contract. Exa's streaming/SSE response mode is not exposed to agents until a dedicated streaming parser is added; this prevents an agent from treating an SSE response as a normal JSON result.
+
+Every authorized agent search records durable telemetry containing agent/task/run ownership, provider, search type, result count, latency, cost when supplied by Exa, and a non-reversible query fingerprint. Raw provider credentials and raw search queries are not stored in telemetry.
+
+The current Exa reference was reviewed on September 19, 2026. Exa documents auto as the normal default, highlights as the preferred mode for multi-step agent workflows, and maxAgeHours: 0 for forced livecrawl.
