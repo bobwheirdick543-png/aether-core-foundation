@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/chat")({ head: () => ({ meta: [{ title: "Chat — Aether Ascension" }, { name: "description", content: "Fully operational Aether Ascension chat workspace." }] }), component: Page });
-type Model = { model_key: string; display_name: string; description: string | null; release_status: string; generation: number; revision: number; capabilities: string[] | null };
+type Model = { model_key: string; display_name: string; description: string | null; release_status: string; generation: number; revision: number; capabilities: string[] | null; context_window: number | null; output_limit: number | null };
 
 function Page() {
   const queryClient = useQueryClient(); const getModels = useServerFn(listPublicAaxModels); const fetchConversations = useServerFn(listAaxConversations); const fetchProjects = useServerFn(listAaxProjects); const fetchConversation = useServerFn(getAaxConversation); const createConversation = useServerFn(createAaxConversation); const renameConversation = useServerFn(renameAaxConversation); const archiveConversation = useServerFn(archiveAaxConversation); const deleteConversation = useServerFn(deleteAaxConversation); const updateSettings = useServerFn(updateAaxConversationSettings); const stopGeneration = useServerFn(stopAaxGeneration); const saveMemoryCandidateFn = useServerFn(saveAaxMemoryCandidate); const registerAttachment = useServerFn(registerAaxAttachment); const getAttachmentUrl = useServerFn(getAaxAttachmentDownloadUrl);
