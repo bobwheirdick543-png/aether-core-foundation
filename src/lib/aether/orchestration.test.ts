@@ -1,6 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { classifyIntent, validateOrchestrationPlan } from "./orchestrator.ts";
+import { strict as assert } from "node:assert";
+import { test } from "vitest";
+import { classifyIntent, validateOrchestrationPlan } from "./orchestrator";
 
 test("Phase B classifies a multi-action research request", () => {
   const plan = classifyIntent("Research this subject, verify the important claims, and make a report.");
