@@ -80,7 +80,7 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
       const now = Date.now();
       const { data: task } = await supabaseAdmin
         .from("tasks")
-        .select("id,status,deadline_at,detail")
+        .select("id,status,progress,deadline_at,detail")
         .eq("id", job.task_id)
         .maybeSingle();
       if (!task) throw new Response("Acquisition task not found", { status: 404 });
