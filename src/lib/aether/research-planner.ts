@@ -2,11 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { domainFromUrl, normalizeUrl, sourceQualityScore, type RetrievedPage } from "./research-engine";
 import { runAetherWebResearch, persistAetherWebResearch, persistResearchDiscoveryEvent, type AetherWebResearchResult, type AetherWebSource } from "./aax-web-intelligence";
 import { unmetSourceRequirements } from "./research-policy";
+import { type ResearchAspect } from "./knowledge-research-plan";
 
 export type ResearchPlan = {
   topic: string;
   strategy: "multi_source" | "source_comparison" | "freshness_check";
   queries: string[];
+  aspects?: ResearchAspect[];
   sourceRequirements: { minSources: number; minDomains: number; preferredProviders: string[] };
   comparisonRules: { compareDates: boolean; compareAgreement: boolean; flagConflicts: boolean };
 };
@@ -126,28 +128,87 @@ async function ingestGithubRepository(repositoryUrl: string, signal?: AbortSigna
   return { sources, failedSources: [] };
 }
 
-async function runQueriesBounded(queries: string[], signal?: AbortSignal): Promise<AetherWebResearchResult[]> {
+async function runQueriesBounded(queries: string[], signal?: AbortSignal, onQuery?: (index: number, query: string, result: AetherWebResearchResult | null) => Promise<void>): Promise<AetherWebResearchResult[]> {
   const results: AetherWebResearchResult[] = [];
-  let cursor = 0;
-  const worker = async () => { for (;;) { if (signal?.aborted) throw new DOMException("Research cancelled", "AbortError"); const index = cursor++; if (index >= queries.length) return; results[index] = await runAetherWebResearch({ query: queries[index], maxSources: 8, signal }); } };
-  await Promise.all([worker(), worker()]);
+  for (let index = 0; index < queries.length; index++) {
+    if (signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
+    const query = queries[index];
+    try {
+      const result = await runAetherWebResearch({ query, maxSources: 8, signal });
+      results[index] = result;
+      if (onQuery) await onQuery(index, query, result);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      results[index] = {
+        query,
+        sources: [],
+        failedSources: [{ url: query, provider: "search", error: error instanceof Error ? error.message : String(error), failureClass: "search_failed" }],
+        sourceDomains: [],
+        diversity: 0,
+        completedAt: new Date().toISOString(),
+      };
+      if (onQuery) await onQuery(index, query, results[index]);
+    }
+  }
   return results;
 }
 
 export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId: string; projectId?: string | null; plan: ResearchPlan; taskId?: string | null; runId?: string | null; signal?: AbortSignal }): Promise<{ sessionId: string; result: AetherWebResearchResult; plan: ResearchPlan; unmetRequirements: string[] }> {
-  const githubUrl = input.plan.topic.match(/https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/i)?.[0] ?? (isGithubRepositoryUrl(input.plan.topic) ? input.plan.topic : null);
-  const [results, github] = await Promise.all([runQueriesBounded(input.plan.queries, input.signal), githubUrl ? ingestGithubRepository(githubUrl, input.signal) : Promise.resolve({ sources: [] as AetherWebSource[], failedSources: [] as AetherWebResearchResult["failedSources"] })]);
+  const githubUrl = input.plan.topic.match(/https?:\\/\\/github\\.com\\/[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+/i)?.[0] ?? (isGithubRepositoryUrl(input.plan.topic) ? input.plan.topic : null);
+  const queryList = input.plan.aspects?.length ? input.plan.aspects.map((aspect) => aspect.query) : input.plan.queries;
+  const completedAspectIds: string[] = [];
+  const results = await runQueriesBounded(queryList, input.signal, async (index, query, queryResult) => {
+    const aspect = input.plan.aspects?.[index];
+    if (input.taskId && input.runId) {
+      const eventType = queryResult && queryResult.sources.length ? "knowledge.aspect.completed" : "knowledge.aspect.failed";
+      await input.admin.rpc("append_task_event", {
+        p_task_id: input.taskId,
+        p_run_id: input.runId,
+        p_event_type: eventType,
+        p_from_status: "running",
+        p_to_status: "running",
+        p_message: aspect ? `${aspect.title} ${eventType.endsWith("completed") ? "completed" : "failed"}` : `Research query ${index + 1} completed`,
+        p_data: {
+          aspect_id: aspect?.id ?? null,
+          aspect_title: aspect?.title ?? null,
+          objective: aspect?.objective ?? null,
+          query,
+          query_index: index + 1,
+          total_aspects: queryList.length,
+          source_count: queryResult?.sources.length ?? 0,
+          source_domains: queryResult?.sourceDomains ?? [],
+          progress: Math.round(((index + 1) / Math.max(1, queryList.length)) * 100),
+          stage: aspect?.id ?? "research",
+          agent_key: "knowledge-acquisition",
+        },
+      });
+    }
+    if (aspect && queryResult?.sources.length) completedAspectIds.push(aspect.id);
+  });
+  if (input.signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
+  const github = githubUrl ? await ingestGithubRepository(githubUrl, input.signal) : { sources: [] as AetherWebSource[], failedSources: [] as AetherWebResearchResult["failedSources"] };
   const sources = [...new Map([...results.flatMap((result) => result.sources), ...github.sources].map((source) => [normalizeUrl(source.canonicalUrl || source.url), source])).values()].slice(0, 64);
   const domains = [...new Set(sources.map((source) => source.domain))];
   const unmetRequirements = unmetSourceRequirements(sources.length, domains.length, input.plan.sourceRequirements);
   const merged: AetherWebResearchResult = { query: input.plan.topic, sources, failedSources: [...results.flatMap((result) => result.failedSources), ...github.failedSources], sourceDomains: domains, diversity: sources.length ? Math.min(1, domains.length / Math.min(5, sources.length)) : 0, completedAt: new Date().toISOString() };
   const sessionId = await persistAetherWebResearch(input.admin, { ownerId: input.ownerId, projectId: input.projectId, scope: "agent", query: input.plan.topic, result: merged, taskId: input.taskId, runId: input.runId });
   await persistResearchPlan(input.admin, input.ownerId, sessionId, input.plan, unmetRequirements, input.projectId);
-  for (let i = 0; i < input.plan.queries.length; i++) {
+  for (let i = 0; i < queryList.length; i++) {
     const queryResult = results[i];
-    await persistResearchDiscoveryEvent(input.admin, { ownerId: input.ownerId, projectId: input.projectId, sessionId, taskId: input.taskId, runId: input.runId, sequence: i + 1, provider: "multi-source", query: input.plan.queries[i], status: queryResult ? "completed" : "failed", resultCount: queryResult?.sources.length ?? 0, data: { failed_sources: queryResult?.failedSources.length ?? 0, source_domains: queryResult?.sourceDomains ?? [] } });
+    await persistResearchDiscoveryEvent(input.admin, { ownerId: input.ownerId, projectId: input.projectId, sessionId, taskId: input.taskId, runId: input.runId, sequence: i + 1, provider: "web-search", query: queryList[i], status: queryResult?.sources.length ? "completed" : "failed", resultCount: queryResult?.sources.length ?? 0, data: { failed_sources: queryResult?.failedSources.length ?? 0, source_domains: queryResult?.sourceDomains ?? [], aspect_id: input.plan.aspects?.[i]?.id ?? null } });
   }
-  if (githubUrl) await persistResearchDiscoveryEvent(input.admin, { ownerId: input.ownerId, projectId: input.projectId, sessionId, taskId: input.taskId, runId: input.runId, sequence: input.plan.queries.length + 1, provider: "github", query: githubUrl, status: github.sources.length ? "completed" : "failed", resultCount: github.sources.length, data: { repository_ingestion: true, bounded_file_count: github.sources.length, failed_sources: github.failedSources.length } });
+  if (githubUrl) await persistResearchDiscoveryEvent(input.admin, { ownerId: input.ownerId, projectId: input.projectId, sessionId, taskId: input.taskId, runId: input.runId, sequence: queryList.length + 1, provider: "github", query: githubUrl, status: github.sources.length ? "completed" : "failed", resultCount: github.sources.length, data: { repository_ingestion: true, bounded_file_count: github.sources.length, failed_sources: github.failedSources.length } });
+  if (input.taskId && input.runId) {
+    await input.admin.rpc("append_task_event", {
+      p_task_id: input.taskId,
+      p_run_id: input.runId,
+      p_event_type: "knowledge.aspects.summary",
+      p_from_status: "running",
+      p_to_status: "running",
+      p_message: "Knowledge research aspects processed",
+      p_data: { total_aspects: queryList.length, completed_aspects: completedAspectIds.length, completed_aspect_ids: completedAspectIds, progress: Math.round((completedAspectIds.length / Math.max(1, queryList.length)) * 100), stage: "research_summary", agent_key: "knowledge-acquisition" },
+    });
+  }
   return { sessionId, result: merged, plan: input.plan, unmetRequirements };
 }
 
