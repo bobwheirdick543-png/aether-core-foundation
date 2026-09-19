@@ -1,6 +1,6 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { assessPlanForClarification, buildContextBudget, chooseFallback, chooseModelRole, evaluateStepOutcome } from "./orchestration-planning.ts";
+import { strict as assert } from "node:assert";
+import { test } from "vitest";
+import { assessPlanForClarification, buildContextBudget, chooseFallback, chooseModelRole, evaluateStepOutcome } from "./orchestration-planning";
 
 test("routing selects code role for code capability", () => assert.equal(chooseModelRole(["code"]).role, "aether-code"));
 test("explicit model role wins over capability inference", () => assert.equal(chooseModelRole(["code"], "aether-fast").role, "aether-fast"));
