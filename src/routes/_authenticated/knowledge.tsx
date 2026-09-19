@@ -370,6 +370,7 @@ function Page() {
         </div>
         <div className="space-y-4">
           {selected ? (
+            <>
             <Panel>
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -455,6 +456,7 @@ function Page() {
               </div>
             </Panel>
             {selectedJobId ? <KnowledgeAcquisitionConversation jobId={selectedJobId} /> : null}
+            </>
           ) : (
             <Panel>
               <h2 className="text-sm font-semibold">Candidate detail</h2>
