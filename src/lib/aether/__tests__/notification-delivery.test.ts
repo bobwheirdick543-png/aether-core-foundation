@@ -6,4 +6,5 @@ describe("Phase K notification delivery",()=>{
  it("builds provider-neutral email text",()=>{expect(buildEmailText("x","Hello","/reports")).toContain("/reports");});
  it("uses stable delivery idempotency and bounded exponential retry",()=>{expect(deliveryIdempotencyKey("n1","email")).toBe("notification:n1:email");expect(retryDelayMs(1)).toBe(1000);expect(retryDelayMs(10)).toBe(30000);});
  it("blocks cross-user resources and non-admin admin audience",()=>{const p={recipient_id:"b",audience:"user" as const,event_type:"report.ready" as const,title:"x"};expect(validateNotificationOwnership(p,"a",false).ok).toBe(false);expect(validateNotificationOwnership({...p,audience:"admin"},"a",false).ok).toBe(false);expect(validateNotificationOwnership({...p,audience:"admin"},"a",true).ok).toBe(true);});
+ it("deep-links knowledge review notifications to the owning review surface",()=>{expect(buildNotificationLink("knowledge.review_required",{resourceId:"candidate-1"},false)).toBe("/knowledge");expect(buildNotificationLink("knowledge.review_required",{resourceId:"candidate-1"},true)).toBe("/admin/knowledge");});
 });
