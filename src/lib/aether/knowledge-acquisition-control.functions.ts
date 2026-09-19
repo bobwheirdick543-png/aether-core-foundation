@@ -181,9 +181,11 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
       });
       if (extError) throw new Response(extError.message, { status: 500 });
     } else if (actionType === "continue_aspect" || actionType === "refine_research") {
+      const { data: taskForRefine } = await supabaseAdmin.from("tasks").select("detail").eq("id", job.task_id).maybeSingle();
+      const existingDetail = taskForRefine?.detail && typeof taskForRefine.detail === "object" ? taskForRefine.detail as Record<string, unknown> : {};
       const { error } = await supabaseAdmin.from("tasks").update({
         detail: {
-          ...(job.scope && typeof job.scope === "object" ? job.scope as Record<string, unknown> : {}),
+          ...existingDetail,
           continuation_aspect_id: data.aspectId ?? null,
           continuation_request: data.message,
           continuation_requested_at: new Date().toISOString(),
@@ -194,6 +196,23 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
       if (error) throw new Response(error.message, { status: 500 });
       await appendTaskEvent(supabaseAdmin, { taskId: job.task_id, runId: job.run_id, eventType: "knowledge_acquisition.research_refined", message: "Research instruction persisted from approval conversation", data: { action_type: actionType, aspect_id: data.aspectId ?? null, message: data.message }, actorId: context.userId });
     }
+
+    await supabaseAdmin.from("aether_knowledge_acquisition_messages").insert({
+      job_id: job.id,
+      task_id: job.task_id,
+      owner_id: job.owner_id,
+      sender_type: "system",
+      sender_id: null,
+      content: actionType === "extend_time"
+        ? "Research budget update accepted and persisted."
+        : actionType === "continue_aspect"
+          ? "Continuation instruction saved for the requested aspect."
+          : actionType === "refine_research"
+            ? "Research refinement saved for the next execution step."
+            : "Message saved for the research agent.",
+      action_type: "message",
+      metadata: { source: "aether-runtime" },
+    });
 
     return { ok: true, messageId: inserted.id, actionType };
   });
