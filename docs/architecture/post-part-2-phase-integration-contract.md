@@ -188,13 +188,13 @@ Every phase must provide, where applicable:
 
 **Integration rule:** modules cannot access arbitrary credentials, production databases or unrelated user data.
 
-### Phase R — Battle Versia
+### Phase R — Module Example
 
-**Must integrate:** Battle Versia as a real module using Q, M and A rather than embedding game logic in WhatsApp handlers.
+**Must integrate:** a minimal trusted example module through the Phase Q module registry/runtime, without creating a parallel execution architecture.
 
-**Required controls:** deterministic server/game lifecycle, joining/slots, auctions/timers, character hierarchy/stats/pricing/versioning, Yons economy/transactions/market/bank/rewards, creator/bot/super-admin configuration restrictions, audit logs, display-name/moniker UX, deterministic replay/simulation and persistence.
+**Required controls:** manifest validation, trusted handler registration, dependency/lifecycle enforcement and durable Task/Run execution.
 
-**Integration rule:** game outcomes are auditable and deterministic; internal JID/LID/phone identifiers are never exposed as player-facing identity.
+**Integration rule:** the example module is only a runtime contract fixture; production modules must remain permissioned, sandboxed and server-authorized.
 
 ### Phase S — Developer API
 
@@ -222,7 +222,7 @@ Every phase must provide, where applicable:
 
 ### Phase V — Evaluation Lab
 
-**Must integrate:** all agents, orchestrator, models, research, verification, knowledge, reports, notifications, modules and Battle Versia.
+**Must integrate:** all agents, orchestrator, models, research, verification, knowledge, reports, notifications and modules.
 
 **Required controls:** reproducible test cases, expected/actual outputs, scores, evaluator/version/environment, success/latency/failure/retry/approval/contradiction/resource metrics, regression triggers and controlled model/provider comparisons.
 
@@ -256,7 +256,7 @@ Every phase must provide, where applicable:
 
 **Must integrate:** WhatsApp as an adapter over Aether APIs/modules.
 
-**Required controls:** secure identity mapping, scoped capabilities, Battle Versia module commands, pairing/session lifecycle, reconnect/delivery failure handling, rate limits/retries and privileged-action audit logs.
+**Required controls:** secure identity mapping, scoped capabilities, pairing/session lifecycle, reconnect/delivery failure handling, rate limits/retries and privileged-action audit logs.
 
 **Integration rule:** WhatsApp formatting/transport stays separate from core business logic; it cannot become a second backend implementation.
 
