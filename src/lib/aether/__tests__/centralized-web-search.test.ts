@@ -19,7 +19,7 @@ describe("Number 19 — centralized agent web search", () => {
     expect(env).not.toContain("\\nEXA_API_KEY");
     expect(boundary).toContain("aether_web_search_requests");
     expect(boundary).toContain('permission: "web.search"');
-    expect(boundary).toContain("return searchWeb(input)");
+    expect(boundary).toContain("const result = await searchWeb(input)");
   });
 
   it("forces agent research onto the centralized Exa provider", () => {
