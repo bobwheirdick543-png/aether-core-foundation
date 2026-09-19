@@ -15,4 +15,4 @@ jobs:
         with:
           node-version: 22
       - name: Run Phase A runtime unit tests
-        run: node --experimental-strip-types --test src/lib/aether/task-runtime.test.ts
+        run: bun run vitest run src/lib/aether/task-runtime.test.ts
