@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageHeader, Tag, PhaseNote } from "@/components/common/Primitives";
 import { Button } from "@/components/ui/button";
-import { AAX_MODEL_CATALOG, formatContext } from "@/lib/aether/models";
+import { useQuery } from "@tanstack/react-query";\nimport { useServerFn } from "@tanstack/react-start";\nimport { listPublicAaxModels } from "@/lib/aether/aax-catalog.functions";
 
 export const Route = createFileRoute("/_authenticated/models")({
   head: () => ({
@@ -28,23 +28,23 @@ function Page() {
           Release state is authoritative: draft and scheduled AAX generations remain unavailable until an admin releases them and configures a provider. When a model is available, open Chat to talk to it — the composer accepts text and images.
         </PhaseNote>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {AAX_MODEL_CATALOG.map((m) => (
+          {isLoading ? <div className="col-span-full py-10 text-center text-sm text-muted-foreground">Loading live AAX catalogue…</div> : models.length === 0 ? <div className="col-span-full py-10 text-center text-sm text-muted-foreground">No AAX generations are currently released. An administrator must release and configure a model.</div> : models.map((m) => (
             <div
-              key={m.key}
+              key={m.model_key}
               className="panel group flex flex-col p-5 transition-all duration-200 hover:border-primary/35"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold">{m.name}</h3>
+                  <h3 className="text-sm font-semibold">{m.display_name}</h3>
                   <p className="mt-1 font-mono text-[10px] text-muted-foreground">
                     AAX {m.generation}.{m.revision}
                   </p>
                 </div>
-                <Tag tone={m.status === "available" ? "success" : "neutral"}>{m.status}</Tag>
+                <Tag tone={m.release_status === "available" ? "success" : "neutral"}>{m.status}</Tag>
               </div>
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{m.description}</p>
               <div className="mt-4 flex flex-wrap gap-1.5">
-                {m.capabilities.map((c) => (
+                {(m.capabilities ?? []).map((c) => (
                   <span
                     key={c}
                     className="rounded-md border border-border/60 bg-elevated/50 px-2 py-0.5 text-[10px] text-muted-foreground"
@@ -55,8 +55,8 @@ function Page() {
               </div>
               <div className="mt-auto flex items-center justify-between pt-5">
                 <div className="space-y-0.5 text-[11px] text-muted-foreground">
-                  <p className="font-mono uppercase tracking-[0.12em]">{formatContext(m.contextWindow)}</p>
-                  <p className="capitalize">{m.speed}</p>
+                  <p className="font-mono uppercase tracking-[0.12em]">{formatContext(m.context_window)}</p>
+                  <p className="capitalize">{m.capabilities?.join(" · ") || "AAX"}</p>
                 </div>
                 {m.status === "available" ? (
                   <Button size="sm" variant="outline" asChild>
