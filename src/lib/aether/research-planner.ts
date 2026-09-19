@@ -195,7 +195,7 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
           total_aspects: queryList.length,
           aspect_budget_ms: budgetMs ?? null,
           remaining_budget_ms: input.deadlineAt ? Math.max(0, Date.parse(input.deadlineAt) - Date.now()) : null,
-          agent_key: "knowledge-acquisition",
+          agent_key: input.searchAgent.agentKey,
           search_provider: webSearchConfigured() ? "exa" : "legacy-fallback",
         },
       });
@@ -223,7 +223,7 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
       p_from_status: "running",
       p_to_status: "running",
       p_message: "Knowledge research aspects processed",
-      p_data: { total_aspects: queryList.length, completed_aspects: completedAspectIds.length, completed_aspect_ids: completedAspectIds, progress: Math.round((completedAspectIds.length / Math.max(1, queryList.length)) * 100), stage: "research_summary", agent_key: "knowledge-acquisition" },
+      p_data: { total_aspects: queryList.length, completed_aspects: completedAspectIds.length, completed_aspect_ids: completedAspectIds, progress: Math.round((completedAspectIds.length / Math.max(1, queryList.length)) * 100), stage: "research_summary", agent_key: input.searchAgent.agentKey },
     });
   }
   return { sessionId, result: merged, plan: input.plan, unmetRequirements };
