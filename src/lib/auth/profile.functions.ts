@@ -17,7 +17,7 @@ export const getMyProfile = createServerFn({ method: "GET" })
     const { data: profile } = await context.supabase
       .from("profiles")
       .select(
-        "id, display_name, avatar_url, preferred_language, default_model, response_style, memory_enabled, onboarding_completed, created_at, updated_at",
+        "id, display_name, avatar_url, preferred_language, default_model, response_style, memory_enabled, onboarding_completed, country_code, country_name, state_code, state_name, timezone, created_at, updated_at",
       )
       .eq("id", context.userId)
       .maybeSingle();
@@ -50,6 +50,11 @@ export const getMyProfile = createServerFn({ method: "GET" })
         response_style: "balanced",
         memory_enabled: true,
         onboarding_completed: false,
+        country_code: null,
+        country_name: null,
+        state_code: null,
+        state_name: null,
+        timezone: null,
         created_at: null,
         updated_at: null,
       },
@@ -72,6 +77,11 @@ export const updateMyProfile = createServerFn({ method: "POST" })
       /** Storage object path under avatars/{userId}/… after client upload */
       avatarStoragePath?: string;
       onboardingCompleted?: boolean;
+      countryCode?: string;
+      countryName?: string;
+      stateCode?: string;
+      stateName?: string;
+      timezone?: string;
     }) => data,
   )
   .handler(async ({ data, context }) => {
@@ -95,6 +105,11 @@ export const updateMyProfile = createServerFn({ method: "POST" })
     if (typeof data.onboardingCompleted === "boolean") {
       patch.onboarding_completed = data.onboardingCompleted;
     }
+    if (typeof data.countryCode === "string") patch.country_code = data.countryCode.trim().slice(0, 8) || null;
+    if (typeof data.countryName === "string") patch.country_name = data.countryName.trim().slice(0, 120) || null;
+    if (typeof data.stateCode === "string") patch.state_code = data.stateCode.trim().slice(0, 16) || null;
+    if (typeof data.stateName === "string") patch.state_name = data.stateName.trim().slice(0, 160) || null;
+    if (typeof data.timezone === "string") patch.timezone = data.timezone.trim().slice(0, 80) || null;
 
     if (data.avatarChoice === "clear") {
       patch.avatar_url = null;
