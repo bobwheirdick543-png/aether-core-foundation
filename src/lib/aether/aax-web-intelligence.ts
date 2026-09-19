@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { domainFromUrl, isHttpUrl, normalizeUrl, retrievePage, sourceQualityScore, type RetrievedPage } from "./research-engine";
 import { ResearchAccessLimiter } from "./research-policy";
 import { searchWeb, webSearchConfigured } from "./web-search.server";
+import { searchWebForAgent } from "./agent-web-search.server";
 
 export type WebSearchProvider = "exa" | "wikipedia" | "reddit" | "duckduckgo" | "dictionary" | (string & {});
 export type AetherWebSource = {
@@ -90,8 +91,8 @@ async function lookupDictionary(query: string, signal?: AbortSignal): Promise<Se
   return [{ provider: "dictionary", url: `https://api.dictionaryapi.dev/api/v2/entries/en/${encode(term)}`, title: `${term} — dictionary`, snippet: definitions.join(" | ") }];
 }
 
-async function searchExa(query: string, signal?: AbortSignal): Promise<SearchHit[]> {
-  const result = await searchWeb({ query, type: "auto", numResults: 8, maxCharacters: 12000, signal });
+async function searchExa(query: string, signal?: AbortSignal, agentContext?: { agentKey: import("./agents").AgentKey; actorId?: string | null; taskId?: string | null; runId?: string | null }): Promise<SearchHit[]> {
+  const result = agentContext ? await searchWebForAgent({ query, type: "auto", numResults: 8, maxCharacters: 12000, signal, ...agentContext }) : await searchWeb({ query, type: "auto", numResults: 8, maxCharacters: 12000, signal });
   return result.results.map((item) => ({
     provider: "exa" as const,
     title: item.title,
@@ -125,11 +126,11 @@ async function retrieveHit(hit: SearchHit, signal: AbortSignal | undefined, limi
   } finally { limiter.finish(); }
 }
 
-export async function runAetherWebResearch(input: { query: string; providers?: WebSearchProvider[]; maxSources?: number; signal?: AbortSignal }): Promise<AetherWebResearchResult> {
+export async function runAetherWebResearch(input: { query: string; providers?: WebSearchProvider[]; maxSources?: number; signal?: AbortSignal; searchAgent?: { agentKey: import("./agents").AgentKey; actorId?: string | null; taskId?: string | null; runId?: string | null } }): Promise<AetherWebResearchResult> {
   const query = input.query.trim().slice(0, MAX_QUERY); if (!query) throw new Error("Research query is required");
   const providerKeys = [...new Set(input.providers ?? (webSearchConfigured() ? ["exa"] : ["duckduckgo", "wikipedia", "reddit", "dictionary"]))] as string[];
   const limiter = new ResearchAccessLimiter({ maxConcurrent: 4, minDomainIntervalMs: 350 });
-  const searches = await Promise.allSettled(providerKeys.map((provider) => { const search = PROVIDERS[provider]; return search ? search(query, input.signal) : Promise.resolve([] as SearchHit[]); }));
+  const searches = await Promise.allSettled(providerKeys.map((provider) => { if (provider === "exa" && input.searchAgent) return searchExa(query, input.signal, input.searchAgent); const search = PROVIDERS[provider]; return search ? search(query, input.signal) : Promise.resolve([] as SearchHit[]); }));
   if (input.signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
   const hits = dedupeHits(searches.flatMap((result) => result.status === "fulfilled" ? result.value : []));
   const selected = hits.slice(0, Math.min(Math.max(1, input.maxSources ?? MAX_SOURCES), MAX_SOURCES));
