@@ -57,7 +57,6 @@ export async function executeAaxWebResearch(admin: SupabaseClient, input: { mode
       error: error instanceof Error ? error.message : String(error),
       webResearch: true,
       providerSearch: true,
-      searchBackend: "exa",
     });
     throw error;
   }
