@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const Route = createFileRoute("/api/aax/memory/export")({
   server: {
-    middleware: [requireSupabaseAuth],
+    middleware: [requireSupabaseAuthRequest],
     handlers: {
       GET: async ({ context }) => {
         const userId = (context as { userId: string }).userId;
