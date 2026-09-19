@@ -7,8 +7,9 @@ import { PageHeader, Panel, Tag, EmptyState } from "@/components/common/Primitiv
 import { Button } from "@/components/ui/button";
 import { getMyNotifications, markNotificationRead } from "@/lib/workspace/workspace.functions";
 import { Link } from "@tanstack/react-router";
+import { getMyProfile } from "@/lib/auth/profile.functions";
 
-function formatNotificationDateTime(timestamp: string) {
+function formatNotificationDateTime(timestamp: string, timezone?: string | null) {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "Unknown date";
   return new Intl.DateTimeFormat(undefined, {
@@ -18,6 +19,7 @@ function formatNotificationDateTime(timestamp: string) {
     hour: "numeric",
     minute: "2-digit",
     timeZoneName: "short",
+    ...(timezone ? { timeZone: timezone } : {}),
   }).format(date);
 }
 
@@ -38,6 +40,8 @@ function Page() {
   const queryClient = useQueryClient();
   const load = useServerFn(getMyNotifications);
   const markRead = useServerFn(markNotificationRead);
+  const loadProfile = useServerFn(getMyProfile);
+  const { data: profileData } = useQuery({ queryKey: ["my-profile"], queryFn: () => loadProfile({}) });
   const { data, isLoading } = useQuery({
     queryKey: ["my-notifications"],
     queryFn: () => load({}),
@@ -89,7 +93,7 @@ function Page() {
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{n.body}</p>
                     ) : null}
                     <p className="mt-2 text-[11px] text-muted-foreground">
-                      {n.event_type} · {formatNotificationDateTime(n.created_at)}
+                      {n.event_type} · {formatNotificationDateTime(n.created_at, profileData?.profile?.timezone)}
                     </p>
                     <p className="mt-2 text-[11px] font-medium text-primary">
                       Open related Aether page →
