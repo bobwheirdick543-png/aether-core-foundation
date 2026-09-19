@@ -9,7 +9,8 @@ import { PageHeader, Panel, Tag, EmptyState } from "@/components/common/Primitiv
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cancelMyTask, createMyTask, getMyTasks } from "@/lib/workspace/workspace.functions";
+import { createMyTask, getMyTasks } from "@/lib/workspace/workspace.functions";
+import { cancelTask as requestTaskCancellation } from "@/lib/aether/task-control.functions";
 
 export const Route = createFileRoute("/_authenticated/tasks")({
   head: () => ({
@@ -36,7 +37,7 @@ function Page() {
   const queryClient = useQueryClient();
   const fetchTasks = useServerFn(getMyTasks);
   const createTask = useServerFn(createMyTask);
-  const cancelTask = useServerFn(cancelMyTask);
+  const stopTask = useServerFn(requestTaskCancellation);
   const { data, isLoading } = useQuery({ queryKey: ["my-tasks"], queryFn: () => fetchTasks({}) });
 
   const [title, setTitle] = useState("");
@@ -60,12 +61,16 @@ function Page() {
     }
   }
 
-  async function onCancel(id: string) {
-    const result = await cancelTask({ data: { id } });
-    if (result.ok) {
-      toast.success("Task cancelled.");
-      queryClient.invalidateQueries({ queryKey: ["my-tasks"] });
-    } else toast.error(result.message);
+  async function onCancel(id: string, running = false) {
+    try {
+      const result = await stopTask({ data: { taskId: id, reason: running ? "Stopped by the task owner" : "Cancelled by the task owner" } });
+      if (result.ok) {
+        toast.success(running ? "Stop requested. The worker will terminate at the next safe cancellation boundary." : "Task cancelled.");
+        queryClient.invalidateQueries({ queryKey: ["my-tasks"] });
+      } else toast.error(result.message);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not stop the task.");
+    }
   }
 
   return (
@@ -139,8 +144,8 @@ function Page() {
                   <div className="flex items-center gap-2">
                     <Tag tone={TONE[t.status] ?? "neutral"}>{t.status}</Tag>
                     {t.status === "queued" || t.status === "running" || t.status === "waiting_approval" ? (
-                      <Button type="button" variant="ghost" size="sm" onClick={() => onCancel(t.id)}>
-                        Cancel
+                      <Button type="button" variant={t.status === "running" ? "destructive" : "ghost"} size="sm" onClick={() => void onCancel(t.id, t.status === "running")} disabled={Boolean(t.cancel_requested_at)}>
+                        {t.cancel_requested_at ? "Stopping…" : t.status === "running" ? "Stop task" : "Cancel"}
                       </Button>
                     ) : null}
                   </div>
