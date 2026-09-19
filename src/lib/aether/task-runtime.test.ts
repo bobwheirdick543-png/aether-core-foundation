@@ -11,7 +11,7 @@ import {
   exponentialBackoffMs,
   isRetryableFailure,
   isDeadlineExceeded,
-} from "./task-runtime";
+} from "./task-runtime.ts";
 
 test("Phase A timeout presets resolve exactly", () => {
   assert.equal(resolveTimeoutMs("20m"), TIMEOUT_PRESETS_MS["20m"]);
