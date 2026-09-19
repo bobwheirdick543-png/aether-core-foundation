@@ -6,7 +6,6 @@ export type WebSearchRequest = {
   query: string;
   type?: WebSearchType;
   numResults?: number;
-  stream?: boolean;
   includeDomains?: string[];
   excludeDomains?: string[];
   maxAgeHours?: number;
@@ -116,7 +115,7 @@ export async function searchWeb(input: WebSearchRequest): Promise<WebSearchResul
   const maxCharacters = clampInt(input.maxCharacters, 12000, 1000, 50000);
   const subpages = clampInt(input.subpages, 0, 0, 10);
   const linkCount = clampInt(input.linkCount, 0, 0, 20);
-  const imageLinkCount = clampInt(input.imageLinkCount, 0, 20);
+  const imageLinkCount = clampInt(input.imageLinkCount, 0, 0, 20);
 
   const highlights = input.highlightsQuery || input.highlightsMaxCharacters
     ? { ...(input.highlightsQuery ? { query: input.highlightsQuery.slice(0, 2000) } : {}), ...(input.highlightsMaxCharacters ? { maxCharacters: clampInt(input.highlightsMaxCharacters, 1200, 100, 10000) } : {}) }
@@ -132,7 +131,7 @@ export async function searchWeb(input: WebSearchRequest): Promise<WebSearchResul
       ...(input.excludeSections?.length ? { excludeSections: safeStringArray(input.excludeSections, 7) } : {}),
     },
     ...(input.summary !== undefined
-      ? { summary: input.summary === true ? true : { ...(input.summaryQuery ? { query: input.summaryQuery.slice(0, 2000) } : {}), ...(input.summary.schema ? { schema: input.summary.schema } : {}), ...input.summary } }
+      ? { summary: input.summary === true ? true : { ...(input.summaryQuery ? { query: input.summaryQuery.slice(0, 2000) } : {}), ...input.summary } }
       : {}),
     ...(input.maxAgeHours !== undefined || input.fresh ? { maxAgeHours: input.fresh ? 0 : input.maxAgeHours } : {}),
     ...(subpages ? { subpages, ...(input.subpageTarget ? { subpageTarget: input.subpageTarget } : {}) } : {}),
@@ -152,8 +151,7 @@ export async function searchWeb(input: WebSearchRequest): Promise<WebSearchResul
     ...(input.additionalQueries?.length ? { additionalQueries: input.additionalQueries.slice(0, 20) } : {}),
     ...(input.systemPrompt ? { systemPrompt: input.systemPrompt.slice(0, 8000) } : {}),
     ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
-    ...(input.stream ? { stream: true } : {}),
-  };
+      };
 
   const includeDomains = safeStringArray(input.includeDomains, 1200);
   const excludeDomains = safeStringArray(input.excludeDomains, 1200);
