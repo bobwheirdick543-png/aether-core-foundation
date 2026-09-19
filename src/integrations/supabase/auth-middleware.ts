@@ -109,3 +109,36 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
     });
   },
 );
+
+
+/** Request middleware variant for createFileRoute({ server: { middleware } }). */
+export const requireSupabaseAuthRequest = createMiddleware({ type: 'request' }).server(
+  async ({ next }) => {
+    const SUPABASE_URL = process.env['SUPABASE_URL'];
+    const SUPABASE_PUBLISHABLE_KEY = process.env['SUPABASE_PUBLISHABLE_KEY'];
+    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) throw new Error('Missing Supabase environment variables');
+    const request = getRequest();
+    const requestHeader = request?.headers.get('authorization');
+    const cookieSession = readAdminSessionCookies();
+    let token = requestHeader?.startsWith('Bearer ') ? requestHeader.slice('Bearer '.length).trim() : cookieSession.accessToken;
+    let refreshToken = cookieSession.refreshToken;
+    if (!token) throw new Error('Unauthorized: No authenticated session');
+    const makeClient = (accessToken?: string) => createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      global: { fetch: createSupabaseFetch(SUPABASE_PUBLISHABLE_KEY), ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}) },
+      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+    });
+    let supabase = makeClient(token);
+    let { data, error } = await supabase.auth.getClaims(token);
+    if ((error || !data?.claims?.sub) && refreshToken) {
+      const refreshed = await makeClient().auth.refreshSession({ refresh_token: refreshToken });
+      if (refreshed.error || !refreshed.data.session) throw new Error('Unauthorized: Session expired');
+      token = refreshed.data.session.access_token;
+      refreshToken = refreshed.data.session.refresh_token;
+      writeAdminSessionCookies(token, refreshToken);
+      supabase = makeClient(token);
+      ({ data, error } = await supabase.auth.getClaims(token));
+    }
+    if (error || !data?.claims?.sub) throw new Error('Unauthorized: Invalid token');
+    return next({ context: { supabase, userId: data.claims.sub, claims: data.claims } });
+  },
+);
