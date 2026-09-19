@@ -119,6 +119,7 @@ export function LiveTaskActivity({ admin = false, className }: { admin?: boolean
   const [open, setOpen] = useState(true);
   const [position, setPosition] = useState(() => ({ x: Math.max(8, window.innerWidth - Math.min(430, window.innerWidth - 32) - 16), y: Math.max(8, window.innerHeight - 180) }));
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const dragMovedRef = useRef(false);
   const hasTasks = data.length > 0;
   const count = useMemo(() => data.filter((item) => item.task.status === "running").length, [data]);
   useEffect(() => {
@@ -128,13 +129,14 @@ export function LiveTaskActivity({ admin = false, className }: { admin?: boolean
   }, []);
   if (!hasTasks) return null;
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest("button")) return;
+    dragMovedRef.current = false;
     dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: position.x, originY: position.y };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    if (Math.abs(event.clientX - drag.startX) > 3 || Math.abs(event.clientY - drag.startY) > 3) dragMovedRef.current = true;
     const width = Math.min(430, window.innerWidth - 32);
     const maxX = Math.max(8, window.innerWidth - width - 8);
     const maxY = Math.max(8, window.innerHeight - (open ? Math.min(620, window.innerHeight * 0.7) : 48) - 8);
@@ -151,7 +153,7 @@ export function LiveTaskActivity({ admin = false, className }: { admin?: boolean
         <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag} className="touch-none select-none">
           <button
             type="button"
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => { if (dragMovedRef.current) { dragMovedRef.current = false; return; } setOpen((v) => !v); }}
             className="flex w-full items-center gap-3 border-b border-border/70 px-4 py-3 text-left"
             aria-expanded={open}
             title={open ? "Minimize live activity" : "Open live activity"}
