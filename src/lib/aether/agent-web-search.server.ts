@@ -24,7 +24,7 @@ export async function searchWebForAgent(input: AgentWebSearchInput): Promise<Web
     },
   });
   if (!authorization.allowed) {
-    throw new Error(authorization.reason);
+    throw new Error("reason" in authorization ? authorization.reason : "Web search authorization denied");
   }
   return searchWeb(input);
 }
