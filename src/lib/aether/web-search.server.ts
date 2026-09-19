@@ -11,6 +11,14 @@ export type WebSearchRequest = {
   deep?: boolean;
   maxCharacters?: number;
   signal?: AbortSignal;
+  category?: string;
+  userLocation?: string;
+  startPublishedDate?: string;
+  endPublishedDate?: string;
+  moderation?: boolean;
+  additionalQueries?: string[];
+  systemPrompt?: string;
+  outputSchema?: Record<string, unknown>;
 };
 
 export type WebSearchResult = {
@@ -61,6 +69,14 @@ export async function searchWeb(input: WebSearchRequest): Promise<WebSearchResul
     query,
     type,
     numResults,
+    ...(input.category ? { category: input.category } : {}),
+    ...(input.userLocation ? { userLocation: input.userLocation.slice(0, 2).toUpperCase() } : {}),
+    ...(input.startPublishedDate ? { startPublishedDate: input.startPublishedDate } : {}),
+    ...(input.endPublishedDate ? { endPublishedDate: input.endPublishedDate } : {}),
+    ...(input.moderation !== undefined ? { moderation: input.moderation } : {}),
+    ...(input.additionalQueries?.length ? { additionalQueries: input.additionalQueries.slice(0, 20) } : {}),
+    ...(input.systemPrompt ? { systemPrompt: input.systemPrompt.slice(0, 8000) } : {}),
+    ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
     contents: {
       highlights: true,
       text: { maxCharacters },
