@@ -11,6 +11,10 @@ async function isAdmin(sb: SupabaseClient, userId: string): Promise<boolean> {
   return Boolean(data);
 }
 
+async function requireAdmin(sb: SupabaseClient, userId: string) {
+  if (!(await isAdmin(sb, userId))) throw new Response("Forbidden", { status: 403 });
+}
+
 export const listSafetyBinItems = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { email?: string; sourceTable?: string; objectType?: string; limit?: number }) => ({
@@ -20,6 +24,7 @@ export const listSafetyBinItems = createServerFn({ method: "GET" })
     limit: Math.min(Math.max(Number(data?.limit ?? 100), 1), 250),
   }))
   .handler(async ({ context, data }) => {
+    await requireAdmin(context.supabase, context.userId);
     let query = context.supabase
       .from("safety_bin_items")
       .select("id,source_schema,source_table,source_object_id,source_owner_id,source_project_id,object_type,object_name,original_location,original_created_at,original_updated_at,deleted_by_id,deleted_by_email,deleted_at,deletion_reason,deletion_method,content,content_hash,version,recovery_status,permanent_deletion_status,related_task_id,related_run_id,correlation_id")
@@ -36,6 +41,7 @@ export const listSafetyBinItems = createServerFn({ method: "GET" })
 export const getSafetyBinSummary = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    await requireAdmin(context.supabase, context.userId);
     const { count } = await context.supabase.from("safety_bin_items").select("id", { count: "exact", head: true });
     const { count: frozen } = await context.supabase.from("safety_bin_items").select("id", { count: "exact", head: true }).eq("recovery_status", "frozen");
     const { count: restored } = await context.supabase.from("safety_bin_items").select("id", { count: "exact", head: true }).eq("recovery_status", "restored");
@@ -46,6 +52,7 @@ export const restoreSafetyBinItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { id: string }) => ({ id: String(data?.id ?? "") }))
   .handler(async ({ context, data }) => {
+    await requireAdmin(context.supabase, context.userId);
     if (!data.id) return { ok: false as const, message: "Safety Bin item id is required." };
     const { data: item } = await context.supabase.from("safety_bin_items").select("source_owner_id,deleted_by_id,source_project_id").eq("id", data.id).maybeSingle();
     if (!item) return { ok: false as const, message: "Safety Bin item not found." };
@@ -67,6 +74,7 @@ export const freezeSafetyBinItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { id: string; frozen: boolean }) => ({ id: String(data?.id ?? ""), frozen: Boolean(data?.frozen) }))
   .handler(async ({ context, data }) => {
+    await requireAdmin(context.supabase, context.userId);
     const admin = await isAdmin(context.supabase, context.userId);
     await authorizeSecurityBoundary({ actor: { userId: context.userId, roles: admin ? ["admin"] : ["user"], source: "session" }, action: "admin.safety_bin.freeze", resourceType: "platform", resourceId: data.id, requiredCapability: ADMIN_CAPABILITY });
     const { data: ok, error } = await context.supabase.rpc("freeze_safety_bin_item", { p_item_id: data.id, p_frozen: data.frozen });
@@ -77,6 +85,7 @@ export const purgeSafetyBinItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { id: string; reason?: string; confirm?: boolean }) => ({ id: String(data?.id ?? ""), reason: normalizeSafetyBinQuery(data?.reason, 500), confirm: Boolean(data?.confirm) }))
   .handler(async ({ context, data }) => {
+    await requireAdmin(context.supabase, context.userId);
     if (!data.confirm) return { ok: false as const, message: "Permanent purge requires explicit confirmation." };
     const admin = await isAdmin(context.supabase, context.userId);
     await authorizeSecurityBoundary({ actor: { userId: context.userId, roles: admin ? ["admin"] : ["user"], source: "session" }, action: "admin.safety_bin.purge", resourceType: "platform", resourceId: data.id, requiredCapability: ADMIN_CAPABILITY });
@@ -87,6 +96,7 @@ export const purgeSafetyBinItem = createServerFn({ method: "POST" })
 export const listSafetyBinChat = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    await requireAdmin(context.supabase, context.userId);
     const { data } = await context.supabase.from("safety_bin_chat_messages").select("id,role,content,result_item_ids,created_at").eq("owner_id", context.userId).order("created_at", { ascending: true }).limit(100);
     return data ?? [];
   });
@@ -132,6 +142,7 @@ export const generateSafetyBinPdf = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { itemIds: string[]; title?: string }) => ({ itemIds: Array.isArray(data?.itemIds) ? data.itemIds.slice(0, 100) : [], title: normalizeSafetyBinQuery(data?.title, 200) || "Safety Bin Evidence Report" }))
   .handler(async ({ context, data }) => {
+    await requireAdmin(context.supabase, context.userId);
     if (!data.itemIds.length) return { ok: false as const, message: "Select at least one Safety Bin record." };
     const { data: items, error } = await context.supabase.from("safety_bin_items").select("*").in("id", data.itemIds);
     if (error || !items?.length) return { ok: false as const, message: "No authorized Safety Bin records were found." };
