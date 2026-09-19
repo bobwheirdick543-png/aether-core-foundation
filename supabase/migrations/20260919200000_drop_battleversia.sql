@@ -14,7 +14,7 @@ BEGIN
       AND (p.proname LIKE 'bv_%' OR p.proname LIKE 'battleversia_%')
   LOOP
     EXECUTE format(
-      'DROP FUNCTION IF EXISTS %I.%I(%s)',
+      'DROP FUNCTION IF EXISTS %I.%I(%s) CASCADE',
       r.schema_name,
       r.function_name,
       r.identity_args
