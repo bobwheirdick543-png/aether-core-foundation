@@ -6,6 +6,7 @@ import { authorizeSecurityAction } from './security-runtime';
 import { authorizeAgentAction } from './agent-runtime';
 import { createTask, createRun } from './task-service';
 import { validateModuleManifest,validateModuleVersion,stableModuleHash,versionSatisfies,assertModuleDependenciesAcyclic,executeRegisteredModule,type ModuleManifest,type ModuleExecutionContext } from './module-runtime';
+import "./example-module";
 const db=supabaseAdmin as any;
 async function isAdmin(userId:string){const {data}=await db.rpc('has_role',{_user_id:userId,_role:'admin'});return Boolean(data);}
 async function requireAdmin(userId:string){if(!(await isAdmin(userId)))throw new Response('Administrator authorization required',{status:403});}
