@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState } from "react";\nimport { useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";\nimport { useNavigate } from "@tanstack/react-router";
 import { Recycle, Search, ShieldCheck, RotateCcw, Snowflake, Trash2, FileDown, Send, Database, History, FolderSearch, UserRound, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -42,7 +42,7 @@ function SafetyBinPage() {
   const [sourceTable, setSourceTable] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState("");
-  const [tab, setTab] = useState<"overview" | "deleted" | "agent" | "lifecycle">("overview");\n  if (!rolesLoading && !roles?.isAdmin) {\n    void navigate({ to: "/dashboard", replace: true });\n    return null;\n  }
+  const [tab, setTab] = useState<"overview" | "deleted" | "agent" | "lifecycle">("overview");\n  useEffect(() => { if (!rolesLoading && !roles?.isAdmin) void navigate({ to: "/dashboard", replace: true }); }, [rolesLoading, roles?.isAdmin, navigate]);\n  if (rolesLoading || !roles?.isAdmin) return null;
 
   const itemsQuery = useQuery({ queryKey: ["safety-bin-items", email, sourceTable], queryFn: () => list({ data: { email, sourceTable, limit: 100 } }) });
   const summaryQuery = useQuery({ queryKey: ["safety-bin-summary"], queryFn: () => summaryFn({}) });
