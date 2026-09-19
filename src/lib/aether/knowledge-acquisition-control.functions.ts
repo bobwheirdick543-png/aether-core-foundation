@@ -198,20 +198,3 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
     return { ok: true, messageId: inserted.id, actionType };
   });
 
-function taskDetail(job: any): Record<string, unknown> {
-  return job?.scope && typeof job.scope === "object" ? job.scope as Record<string, unknown> : {};
-}
-
-export const extendKnowledgeAcquisitionTime = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { jobId: string; minutes?: number; reason?: string }) => ({
-    jobId: String(d?.jobId ?? "").trim(),
-    minutes: Math.min(60, Math.max(1, Math.floor(Number(d?.minutes ?? 5)))),
-    reason: String(d?.reason ?? "Additional research time granted").trim().slice(0, 1000),
-  }))
-  .handler(async ({ context, data }) => {
-    return sendKnowledgeAcquisitionMessage({
-      data: { jobId: data.jobId, minutes: data.minutes, message: data.reason, action: "extend_time" },
-      context,
-    } as any);
-  });
