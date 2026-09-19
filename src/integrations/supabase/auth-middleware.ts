@@ -28,17 +28,23 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
+function missingEnvError(): Error {
+  const missing = [
+    ...(!process.env['SUPABASE_URL'] ? ['SUPABASE_URL'] : []),
+    ...(!process.env['SUPABASE_PUBLISHABLE_KEY'] ? ['SUPABASE_PUBLISHABLE_KEY'] : []),
+  ];
+  return new Error(
+    `Missing Supabase environment variable(s): ${missing.join(', ') || 'SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY'}. Set them in Vercel and redeploy.`,
+  );
+}
+
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
   async ({ next }) => {
     const SUPABASE_URL = process.env['SUPABASE_URL'];
     const SUPABASE_PUBLISHABLE_KEY = process.env['SUPABASE_PUBLISHABLE_KEY'];
 
     if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-      const missing = [
-        ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
-        ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY'] : []),
-      ];
-      throw new Error(`Missing Supabase environment variable(s): ${missing.join(', ')}`);
+      throw missingEnvError();
     }
 
     const request = getRequest();
@@ -116,7 +122,7 @@ export const requireSupabaseAuthRequest = createMiddleware({ type: 'request' }).
   async ({ next }) => {
     const SUPABASE_URL = process.env['SUPABASE_URL'];
     const SUPABASE_PUBLISHABLE_KEY = process.env['SUPABASE_PUBLISHABLE_KEY'];
-    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) throw new Error('Missing Supabase environment variables');
+    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) throw missingEnvError();
     const request = getRequest();
     const requestHeader = request?.headers.get('authorization');
     const cookieSession = readAdminSessionCookies();
