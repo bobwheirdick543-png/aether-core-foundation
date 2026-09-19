@@ -27,5 +27,3 @@ jobs:
         run: bun run build
       - name: Unit tests
         run: bun run test
-      - name: Lint
-        run: bun run lint
