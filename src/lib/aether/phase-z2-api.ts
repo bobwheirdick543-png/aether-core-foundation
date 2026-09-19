@@ -163,7 +163,7 @@ export async function createZ2ApiKey(input: KeyCreateInput) {
     max_tokens_per_request: maxTokensPerRequest,
     max_input_tokens: maxInputTokens,
     max_output_tokens: maxOutputTokens,
-    metadata: { permissions, allowWebResearch: Boolean(input.allowWebResearch), allowStreaming: input.allowStreaming !== false },
+    metadata: { principalType: adminOverride ? "admin" : "user", permissions, allowWebResearch: Boolean(input.allowWebResearch), allowStreaming: input.allowStreaming !== false },
   }).select("id,owner_id,name,application_name,environment,key_prefix,model_id,model_key,model_generation,model_revision,rate_limit_per_minute,expires_at,status,monthly_token_limit,unlimited_tokens,max_tokens_per_request,max_input_tokens,max_output_tokens,secret_recovery_available,created_at,updated_at").single();
   if (error || !data) throw new Response(`Could not create Aether API key: ${error?.message ?? "unknown error"}`, { status: 500 });
   await recordKeyEvent(data.id, input.ownerId, input.actorId, "created", { modelKey: model.model_key, environment: input.environment, applicationName, monthlyTokenLimit, unlimitedTokens, permissions, allowWebResearch: Boolean(input.allowWebResearch), allowStreaming: input.allowStreaming !== false }, adminOverride ? "admin" : "user");
