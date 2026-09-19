@@ -129,7 +129,7 @@ async function ingestGithubRepository(repositoryUrl: string, signal?: AbortSigna
   return { sources, failedSources: [] };
 }
 
-async function runQueriesBounded(queries: string[], signal?: AbortSignal, deadlineAt?: string | null, onQuery?: (index: number, query: string, result: AetherWebResearchResult | null, phase: "started" | "completed" | "failed" | "timed_out", budgetMs?: number) => Promise<void>): Promise<AetherWebResearchResult[]> {
+async function runQueriesBounded(queries: string[], signal?: AbortSignal, deadlineAt?: string | null, searchAgent?: { agentKey: import("./agents").AgentKey; actorId?: string | null; taskId?: string | null; runId?: string | null }, onQuery?: (index: number, query: string, result: AetherWebResearchResult | null, phase: "started" | "completed" | "failed" | "timed_out", budgetMs?: number) => Promise<void>): Promise<AetherWebResearchResult[]> {
   const results: AetherWebResearchResult[] = [];
   for (let index = 0; index < queries.length; index++) {
     if (signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
@@ -143,7 +143,7 @@ async function runQueriesBounded(queries: string[], signal?: AbortSignal, deadli
     const timer = setTimeout(() => aspectController.abort(), budgetMs);
     try {
       if (onQuery) await onQuery(index, query, null, "started", budgetMs);
-      const result = await runAetherWebResearch({ query, maxSources: 8, signal: aspectController.signal, searchAgent: { ...input.searchAgent, taskId: input.searchAgent.taskId ?? input.taskId ?? null, runId: input.searchAgent.runId ?? input.runId ?? null } });
+      const result = await runAetherWebResearch({ query, maxSources: 8, signal: aspectController.signal, searchAgent: { ...(searchAgent ?? { agentKey: "research" as const }), taskId: searchAgent?.taskId ?? null, runId: searchAgent?.runId ?? null } });
       results[index] = result;
       if (onQuery) await onQuery(index, query, result, "completed", budgetMs);
     } catch (error) {
@@ -170,7 +170,7 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
   const githubUrl = input.plan.topic.match(/https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/i)?.[0] ?? (isGithubRepositoryUrl(input.plan.topic) ? input.plan.topic : null);
   const queryList = input.plan.aspects?.length ? input.plan.aspects.map((aspect) => aspect.query) : input.plan.queries;
   const completedAspectIds: string[] = [];
-  const results = await runQueriesBounded(queryList, input.signal, input.deadlineAt, async (index, query, queryResult, phase, budgetMs) => {
+  const results = await runQueriesBounded(queryList, input.signal, input.deadlineAt, input.searchAgent, async (index, query, queryResult, phase, budgetMs) => {
     const aspect = input.plan.aspects?.[index];
     if (input.taskId && input.runId) {
       const eventType = phase === "started" ? "knowledge.aspect.started" : phase === "completed" ? "knowledge.aspect.completed" : phase === "timed_out" ? "knowledge.aspect.timed_out" : "knowledge.aspect.failed";
