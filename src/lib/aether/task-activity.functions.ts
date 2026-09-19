@@ -12,7 +12,7 @@ async function requireAdmin(context: { supabase: unknown; userId: string }) {
 
 export const getLiveTaskActivity = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).inputValidator((d?: { admin?: boolean; limit?: number }) => ({ admin: Boolean(d?.admin), limit: Math.min(20, Math.max(1, Math.floor(d?.limit ?? 8))) })).handler(async ({ context, data }) => {
   if (data.admin) await requireAdmin(context);
-  let taskQuery = supabaseAdmin.from("tasks").select("id,user_id,title,kind,status,progress,priority,started_at,completed_at,deadline_at,worker_id,updated_at,detail").in("status", ["queued","running","paused","waiting_approval"]).order("priority", { ascending: false }).order("updated_at", { ascending: false }).limit(data.limit);
+  let taskQuery = supabaseAdmin.from("tasks").select("id,user_id,title,kind,status,progress,priority,started_at,completed_at,execution_ended_at,deadline_at,worker_id,updated_at,detail").in("status", ["queued","running","paused","waiting_approval"]).order("priority", { ascending: false }).order("updated_at", { ascending: false }).limit(data.limit);
   if (!data.admin) taskQuery = taskQuery.eq("user_id", context.userId);
   const { data: tasks, error: taskError } = await taskQuery;
   if (taskError) throw new Response(`Could not load live tasks: ${taskError.message}`, { status: 500 });
