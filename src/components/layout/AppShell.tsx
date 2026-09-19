@@ -139,28 +139,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             ) : null}
           </Link>
         ))}
-        <Link
-          to="/safety-bin"
-          onClick={() => setOpen(false)}
-          className="mt-2 flex items-center gap-3 rounded-md border border-primary/20 bg-primary/[0.04] px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-primary/[0.08]"
-          activeProps={{ className: "bg-primary/[0.10] text-foreground font-medium" }}
-        >
-          <Recycle className="h-4 w-4 shrink-0 text-primary" />
-          <span className="min-w-0 flex-1">Safety Bin</span>
-        </Link>
-        {roles?.isAdmin ? (
-          <Link
-            to="/evaluation-lab"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            activeProps={{
-              className: "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
-            }}
-          >
-            <FlaskConical className="h-4 w-4 shrink-0" />
-            <span className="min-w-0 flex-1">Evaluation Lab</span>
-          </Link>
-        ) : null}
       </nav>
       <div className="space-y-1 border-t border-sidebar-border p-3">
         {roles?.isAdmin ? (
@@ -207,13 +185,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <Menu className="h-4 w-4" />
             </button>
-            <Link
-              to="/safety-bin"
-              aria-label="Open Aether Safety Bin"
-              className="rounded-md border border-primary/30 bg-primary/[0.05] p-2 text-primary"
-            >
-              <Recycle className="h-4 w-4" />
-            </Link>
           </div>
           <Logo />
           <Link
