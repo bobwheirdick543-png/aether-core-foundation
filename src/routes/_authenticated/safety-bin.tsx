@@ -22,6 +22,7 @@ import {
 } from "@/lib/aether/safety-bin.functions";
 
 export const Route = createFileRoute("/_authenticated/safety-bin")({
+  ssr: false,
   head: () => ({ meta: [{ title: "Safety Bin — Aether" }, { name: "description", content: "Aether Safety Bin and Recycling Agent ecosystem." }] }),
   component: SafetyBinPage,
 });
@@ -45,14 +46,9 @@ function SafetyBinPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<"overview" | "deleted" | "agent" | "lifecycle">("overview");
-  useEffect(() => { if (!rolesLoading && !roles?.isAdmin) void navigate({ to: "/dashboard", replace: true }); }, [rolesLoading, roles?.isAdmin, navigate]);
-  if (rolesLoading || !roles?.isAdmin) return null;
-
-  const itemsQuery = useQuery({ queryKey: ["safety-bin-items", email, sourceTable], queryFn: () => list({ data: { email, sourceTable, limit: 100 } }) });
-  const summaryQuery = useQuery({ queryKey: ["safety-bin-summary"], queryFn: () => summaryFn({}) });
-  const chatQuery = useQuery({ queryKey: ["safety-bin-chat"], queryFn: () => chatFn({}) });
-  const items = itemsQuery.data?.items ?? [];
-  const selectedItems = useMemo(() => items.filter((item) => selected.includes(item.id)), [items, selected]);
+  useEffect(() => {
+    if (!rolesLoading && !roles?.isAdmin) void navigate({ to: "/dashboard", replace: true });
+  }, [rolesLoading, roles?.isAdmin, navigate]);
 
   async function refresh() {
     await Promise.all([
