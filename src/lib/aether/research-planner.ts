@@ -143,7 +143,7 @@ async function runQueriesBounded(queries: string[], signal?: AbortSignal, deadli
     const timer = setTimeout(() => aspectController.abort(), budgetMs);
     try {
       if (onQuery) await onQuery(index, query, null, "started", budgetMs);
-      const result = await runAetherWebResearch({ query, maxSources: 8, signal: aspectController.signal });
+      const result = await runAetherWebResearch({ query, maxSources: 8, signal: aspectController.signal, searchAgent: { agentKey: "knowledge-acquisition" } });
       results[index] = result;
       if (onQuery) await onQuery(index, query, result, "completed", budgetMs);
     } catch (error) {
