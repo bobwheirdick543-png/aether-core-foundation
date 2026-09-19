@@ -4,11 +4,33 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type ProviderCredentialPurpose = "aax_inference" | "knowledge_research";
 
 function encryptionKey(): Buffer {
-  const raw = process.env.AETHER_PROVIDER_CREDENTIAL_ENCRYPTION_KEY?.trim() || process.env.AETHER_API_KEY_ENCRYPTION_KEY?.trim();
-  if (!raw) throw new Error("Missing server configuration: AETHER_API_KEY_ENCRYPTION_KEY");
-  const base = /^[0-9a-fA-F]{64}$/.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64url");
-  if (base.length !== 32) throw new Error("Provider credential encryption key must encode exactly 32 bytes");
-  return Buffer.from(hkdfSync("sha256", base, Buffer.alloc(0), Buffer.from("aether-provider-credentials-v1"), 32));
+  // Accept any non-empty server secret. Always derive a stable 32-byte AES key via HKDF
+  // so operators are not forced to supply exactly 32 raw bytes (hex/base64).
+  const raw =
+    process.env.AETHER_PROVIDER_CREDENTIAL_ENCRYPTION_KEY?.trim() ||
+    process.env.AETHER_API_KEY_ENCRYPTION_KEY?.trim();
+  if (!raw) {
+    throw new Error(
+      "Missing server configuration: AETHER_API_KEY_ENCRYPTION_KEY (or AETHER_PROVIDER_CREDENTIAL_ENCRYPTION_KEY). Set any strong secret in Vercel and redeploy.",
+    );
+  }
+
+  let ikm: Buffer;
+  if (/^[0-9a-fA-F]+$/.test(raw) && raw.length % 2 === 0) {
+    // Prefer hex when the value looks like hex (including the old 64-char format).
+    ikm = Buffer.from(raw, "hex");
+  } else {
+    // Any other string (passphrase, base64, UUID, etc.) is used as UTF-8 IKM.
+    ikm = Buffer.from(raw, "utf8");
+  }
+
+  if (ikm.length < 1) {
+    throw new Error("AETHER_API_KEY_ENCRYPTION_KEY is empty after decoding");
+  }
+
+  return Buffer.from(
+    hkdfSync("sha256", ikm, Buffer.alloc(0), Buffer.from("aether-provider-credentials-v1"), 32),
+  );
 }
 
 function encryptSecret(secret: string): string {
@@ -35,11 +57,11 @@ export async function getActiveProviderCredential(admin: SupabaseClient, provide
 
 export async function saveProviderCredential(admin: SupabaseClient, input: { provider: string; purpose: ProviderCredentialPurpose; label: string; apiKey: string; baseUrl?: string | null; metadata?: Record<string, unknown>; actorId: string }) {
   const provider = input.provider.trim().toLowerCase();
-  const label = input.label.trim().slice(0, 120);
+  const label = input.label.trim();
   const apiKey = input.apiKey.trim();
-  if (!provider || !label || !apiKey) throw new Response("Provider, label and API key are required", { status: 400 });
-  if (!/^[a-z0-9._-]{1,80}$/.test(provider)) throw new Response("Invalid provider identifier", { status: 400 });
-  if (input.baseUrl && !/^https:\/\//i.test(input.baseUrl.trim())) throw new Response("Provider base URL must use HTTPS", { status: 400 });
+  if (!provider) throw new Response("Provider is required", { status: 400 });
+  if (!label) throw new Response("Credential label is required", { status: 400 });
+  if (!apiKey) throw new Response("API key is required", { status: 400 });
   const now = new Date().toISOString();
   await admin.from("aether_provider_credentials").update({ active: false, updated_by: input.actorId, updated_at: now }).eq("provider", provider).eq("purpose", input.purpose).eq("active", true);
   const { data, error } = await admin.from("aether_provider_credentials").insert({ provider, purpose: input.purpose, label, base_url: input.baseUrl?.trim() || null, encrypted_api_key: encryptSecret(apiKey), active: true, metadata: input.metadata ?? {}, created_by: input.actorId, updated_by: input.actorId }).select("id,provider,purpose,label,base_url,active,created_at,updated_at").single();
