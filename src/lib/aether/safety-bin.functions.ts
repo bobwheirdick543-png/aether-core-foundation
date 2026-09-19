@@ -109,7 +109,8 @@ function extractEmail(text: string): string | null {
 export const sendRecyclingAgentMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: { message: string }) => ({ message: normalizeSafetyBinQuery(data?.message, 2000) }))
-  .handler(async ({ context, data }) => {\n    await requireAdmin(context.supabase, context.userId);
+  .handler(async ({ context, data }) => {
+    await requireAdmin(context.supabase, context.userId);
     if (!data.message) return { ok: false as const, message: "Message is required." };
     const { error: userError } = await context.supabase.from("safety_bin_chat_messages").insert({ owner_id: context.userId, actor_id: context.userId, role: "user", content: data.message });
     if (userError) return { ok: false as const, message: "Could not save Recycling Agent message." };
