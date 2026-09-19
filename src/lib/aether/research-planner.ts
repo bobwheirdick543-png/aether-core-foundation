@@ -156,7 +156,7 @@ async function runQueriesBounded(queries: string[], signal?: AbortSignal, onQuer
 }
 
 export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId: string; projectId?: string | null; plan: ResearchPlan; taskId?: string | null; runId?: string | null; signal?: AbortSignal }): Promise<{ sessionId: string; result: AetherWebResearchResult; plan: ResearchPlan; unmetRequirements: string[] }> {
-  const githubUrl = input.plan.topic.match(/https?:\\/\\/github\\.com\\/[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+/i)?.[0] ?? (isGithubRepositoryUrl(input.plan.topic) ? input.plan.topic : null);
+  const githubUrl = input.plan.topic.match(/https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/i)?.[0] ?? (isGithubRepositoryUrl(input.plan.topic) ? input.plan.topic : null);
   const queryList = input.plan.aspects?.length ? input.plan.aspects.map((aspect) => aspect.query) : input.plan.queries;
   const completedAspectIds: string[] = [];
   const results = await runQueriesBounded(queryList, input.signal, async (index, query, queryResult, phase) => {
