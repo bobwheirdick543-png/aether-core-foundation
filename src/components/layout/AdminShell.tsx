@@ -22,6 +22,8 @@ import {
   ArrowLeft,
   Route as RouteIcon,
   FileText,
+  FlaskConical,
+  Recycle,
 } from "lucide-react";
 import { AetherMark } from "@/components/brand/Logo";
 import { supabase } from "@/integrations/supabase/client";
