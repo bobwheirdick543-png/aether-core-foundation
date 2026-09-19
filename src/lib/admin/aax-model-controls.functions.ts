@@ -16,8 +16,19 @@ export const updateAdminAaxModel = createServerFn({ method: "POST" }).middleware
   if (data.contextWindow !== undefined) patch.context_window = Math.min(10_000_000, Math.max(256, Math.floor(data.contextWindow)));
   if (data.outputLimit !== undefined) patch.output_limit = data.outputLimit == null ? null : Math.min(1_000_000, Math.max(1, Math.floor(data.outputLimit)));
   if (data.releaseStatus !== undefined) patch.release_status = data.releaseStatus;
+  const now = new Date().toISOString();
   if (data.scheduledReleaseAt !== undefined) patch.scheduled_release_at = data.scheduledReleaseAt;
-  if (data.disabled !== undefined) patch.disabled_at = data.disabled ? new Date().toISOString() : null;
+  if (data.releaseStatus !== undefined) {
+    if (data.releaseStatus === "available") {
+      // Saving an available generation is an immediate global release. The availability timestamp is persisted so every selector and API authorization path sees the same release state.
+      patch.available_at = now;
+      patch.scheduled_release_at = null;
+    } else if (data.releaseStatus !== "scheduled") {
+      patch.available_at = null;
+    }
+  }
+  if (data.disabled !== undefined) patch.disabled_at = data.disabled ? now : null;
+  if (data.releaseStatus === "available" && data.disabled === true) patch.available_at = now;
   if (data.config !== undefined) patch.config = data.config;
   const { data: model, error } = await supabaseAdmin.from("aax_models").update(patch).eq("id", data.id).select("id,model_key,provider,provider_model,context_window,output_limit,release_status,scheduled_release_at,available_at,disabled_at,config,updated_at").single();
   if (error || !model) throw new Response(`Could not update AAX model: ${error?.message ?? "not found"}`, { status: 500 });
