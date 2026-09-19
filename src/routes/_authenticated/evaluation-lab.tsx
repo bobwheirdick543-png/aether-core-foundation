@@ -11,7 +11,7 @@ import { useRoles } from "@/hooks/useRoles";
 import { getEvaluationOverview, getEvaluationRuns, getEvaluationTestCases, runEvaluationTestCase, saveEvaluationTestCase } from "@/lib/admin/phase-v-evaluation.functions";
 const TARGETS = ["agents","orchestrator","research","verification","knowledge","reports","notifications","modules"] as const;
 type Target = typeof TARGETS[number]; const pretty=(s:string)=>s.replaceAll("-"," ").replace(/\b\w/g,m=>m.toUpperCase()); const pct=(n:number)=>`${Math.round(n*100)}%`;
-export const Route=createFileRoute("/_authenticated/evaluation-lab")({head:()=>({meta:[{title:"Evaluation Lab — Aether"},{name:"description",content:"Operational evaluation, regression and quality control for Aether."}]}),component:EvaluationLab});
+export const Route=createFileRoute("/_authenticated/evaluation-lab")({ssr:false,head:()=>({meta:[{title:"Evaluation Lab — Aether"},{name:"description",content:"Operational evaluation, regression and quality control for Aether."}]}),component:EvaluationLab});
 function EvaluationLab() {
   const navigate = useNavigate();
   const { data: roles, isLoading: rolesLoading } = useRoles();
