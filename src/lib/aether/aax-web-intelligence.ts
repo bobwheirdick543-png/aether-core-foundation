@@ -128,7 +128,7 @@ async function retrieveHit(hit: SearchHit, signal: AbortSignal | undefined, limi
 
 export async function runAetherWebResearch(input: { query: string; providers?: WebSearchProvider[]; maxSources?: number; signal?: AbortSignal; searchAgent?: { agentKey: import("./agents").AgentKey; actorId?: string | null; taskId?: string | null; runId?: string | null } }): Promise<AetherWebResearchResult> {
   const query = input.query.trim().slice(0, MAX_QUERY); if (!query) throw new Error("Research query is required");
-  const providerKeys = [...new Set(input.providers ?? (webSearchConfigured() ? ["exa"] : ["duckduckgo", "wikipedia", "reddit", "dictionary"]))] as string[];
+  const providerKeys = [...new Set(input.providers ?? ["exa"])] as string[];
   const limiter = new ResearchAccessLimiter({ maxConcurrent: 4, minDomainIntervalMs: 350 });
   const searches = await Promise.allSettled(providerKeys.map((provider) => { if (provider === "exa" && input.searchAgent) return searchExa(query, input.signal, input.searchAgent); const search = PROVIDERS[provider]; return search ? search(query, input.signal) : Promise.resolve([] as SearchHit[]); }));
   if (input.signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
