@@ -31,6 +31,7 @@ export async function createKnowledgeAcquisitionTask(admin: SupabaseClient, inpu
 }
 function sourceMetadata(source: any): Record<string, unknown> { return { sourceId: source.id, url: source.url, canonicalUrl: source.canonical_url, title: source.title, domain: source.domain, retrievedAt: source.retrieved_at, publishedAt: source.published_at, updatedAt: source.updated_at_source, qualityScore: source.quality_score, staleAt: source.stale_at }; }
 export async function executeKnowledgeAcquisitionStep(admin: SupabaseClient, opts: { taskId: string; runId: string; ownerId: string; projectId?: string | null; deadlineAt?: string | null; workerId?: string | null }): Promise<void> {
+  const workerId = opts.workerId ?? undefined;
   assertAgentBoundary("knowledge-acquisition", "web.search", { actorId: opts.ownerId, taskId: opts.taskId, runId: opts.runId });
   if (!webSearchConfigured()) throw new Error("Knowledge acquisition requires the server-side EXA_API_KEY web-search provider to be configured");
   const { data: job, error: jobError } = await admin.from("aether_knowledge_acquisition_jobs").select("*").eq("task_id", opts.taskId).eq("run_id", opts.runId).maybeSingle(); if (jobError || !job) throw new Error(jobError?.message ?? "Knowledge acquisition job not found");
@@ -38,7 +39,7 @@ export async function executeKnowledgeAcquisitionStep(admin: SupabaseClient, opt
   const timer = setInterval(() => { void (async () => { const [{ data: task }, { data: run }] = await Promise.all([admin.from("tasks").select("cancel_requested_at,deadline_at,status").eq("id", opts.taskId).maybeSingle(), admin.from("task_runs").select("cancel_requested_at,deadline_at,status").eq("id", opts.runId).maybeSingle()]); if (task?.cancel_requested_at || run?.cancel_requested_at || task?.status === "cancelled" || run?.status === "cancelled" || Date.now() >= new Date(task?.deadline_at ?? run?.deadline_at ?? deadline).getTime()) controller.abort(); })().catch(() => undefined); }, 1500);
   try {
     const startedAt = job.started_at ?? new Date().toISOString(); await admin.from("aether_knowledge_acquisition_jobs").update({ status: "running", started_at: startedAt, last_event_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", job.id);
-    const scope = job.scope as BoundedKnowledgeScope; await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge.scope.created", message: "Bounded acquisition scope created", data: { scope, time_budget_ms: job.time_budget_ms, depth_tier: job.depth_tier }, workerId: opts.workerId });
+    const scope = job.scope as BoundedKnowledgeScope; await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge.scope.created", message: "Bounded acquisition scope created", data: { scope, time_budget_ms: job.time_budget_ms, depth_tier: job.depth_tier }, workerId });
     const plan = createResearchPlan(job.subject, "multi_source");
     plan.aspects = buildKnowledgeResearchAspects(job.subject);
     plan.queries = plan.aspects.map((aspect) => aspect.query);
