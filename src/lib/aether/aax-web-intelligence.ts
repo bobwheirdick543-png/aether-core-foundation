@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { domainFromUrl, isHttpUrl, normalizeUrl, retrievePage, sourceQualityScore, type RetrievedPage } from "./research-engine";
 import { ResearchAccessLimiter } from "./research-policy";
+import { searchWeb, webSearchConfigured } from "./web-search.server";
 
-export type WebSearchProvider = "wikipedia" | "reddit" | "duckduckgo" | "dictionary" | (string & {});
+export type WebSearchProvider = "exa" | "wikipedia" | "reddit" | "duckduckgo" | "dictionary" | (string & {});
 export type AetherWebSource = {
   url: string;
   canonicalUrl: string;
@@ -89,7 +90,23 @@ async function lookupDictionary(query: string, signal?: AbortSignal): Promise<Se
   return [{ provider: "dictionary", url: `https://api.dictionaryapi.dev/api/v2/entries/en/${encode(term)}`, title: `${term} — dictionary`, snippet: definitions.join(" | ") }];
 }
 
-const PROVIDERS: Record<string, (query: string, signal?: AbortSignal) => Promise<SearchHit[]>> = { wikipedia: searchWikipedia, reddit: searchReddit, duckduckgo: searchDuckDuckGo, dictionary: lookupDictionary };
+async function searchExa(query: string, signal?: AbortSignal): Promise<SearchHit[]> {
+  const result = await searchWeb({ query, type: "auto", numResults: 8, maxCharacters: 12000, signal });
+  return result.results.map((item) => ({
+    provider: "exa" as const,
+    title: item.title,
+    snippet: item.highlights?.join(" ")?.slice(0, 1200) || item.summary || item.text?.slice(0, 1200) || "",
+    url: item.url,
+  }));
+}
+
+const PROVIDERS: Record<string, (query: string, signal?: AbortSignal) => Promise<SearchHit[]>> = {
+  exa: searchExa,
+  wikipedia: searchWikipedia,
+  reddit: searchReddit,
+  duckduckgo: searchDuckDuckGo,
+  dictionary: lookupDictionary,
+};
 
 function dedupeHits(hits: SearchHit[]): SearchHit[] {
   const seen = new Set<string>();
@@ -110,7 +127,7 @@ async function retrieveHit(hit: SearchHit, signal: AbortSignal | undefined, limi
 
 export async function runAetherWebResearch(input: { query: string; providers?: WebSearchProvider[]; maxSources?: number; signal?: AbortSignal }): Promise<AetherWebResearchResult> {
   const query = input.query.trim().slice(0, MAX_QUERY); if (!query) throw new Error("Research query is required");
-  const providerKeys = [...new Set(input.providers ?? ["duckduckgo", "wikipedia", "reddit", "dictionary"])] as string[];
+  const providerKeys = [...new Set(input.providers ?? (webSearchConfigured() ? ["exa"] : ["duckduckgo", "wikipedia", "reddit", "dictionary"]))] as string[];
   const limiter = new ResearchAccessLimiter({ maxConcurrent: 4, minDomainIntervalMs: 350 });
   const searches = await Promise.allSettled(providerKeys.map((provider) => { const search = PROVIDERS[provider]; return search ? search(query, input.signal) : Promise.resolve([] as SearchHit[]); }));
   if (input.signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
