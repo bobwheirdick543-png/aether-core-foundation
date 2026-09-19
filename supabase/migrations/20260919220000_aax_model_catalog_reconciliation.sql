@@ -24,3 +24,6 @@ on conflict (entity_type, entity_id, metric_key) do nothing;
 create index if not exists idx_aax_models_global_available
   on public.aax_models (release_status, available_at, generation desc, revision desc)
   where disabled_at is null;
+
+-- Existing rows created by the original catalogue migration may have nullable output limits; reconcile them to the canonical UI default.
+update public.aax_models set output_limit = 4096, updated_at = now() where output_limit is null;
