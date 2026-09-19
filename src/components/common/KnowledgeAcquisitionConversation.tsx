@@ -74,7 +74,7 @@ export function KnowledgeAcquisitionConversation({ jobId }: Props) {
           <Button type="button" variant="outline" className="flex-1" disabled={busy} onClick={() => void sendMessage("Give it five more minutes.", "extend_time", 5)}>
             +5 min
           </Button>
-          <Button type="button" variant="outline" className="flex-1" disabled={busy || !aspectId.trim()} onClick={() => void sendMessage(`Continue the research on aspect: ${aspectId.trim()}`, "continue_aspect")}>
+          <Button type="button" variant="outline" className="flex-1" disabled={busy || !aspectId.trim()} onClick={() => void sendMessage(`Continue the research on aspect: ${aspectId.trim()}`, "extend_time", 5)}>
             Continue
           </Button>
         </div>
