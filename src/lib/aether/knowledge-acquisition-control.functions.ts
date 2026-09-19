@@ -51,13 +51,20 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
     const normalized = data.message.toLowerCase();
     const inferredExtend = /(?:give|add|extend).{0,30}(?:more\s+)?time|more\s+minutes?|five\s+more\s+minutes?/.test(normalized);
     const inferredContinue = /continue|keep researching|research (?:the|this) aspect|dig deeper|go deeper/.test(normalized);
-    const actionType = data.action === "extend_time" || inferredExtend
+    let actionType = data.action === "extend_time" || inferredExtend
       ? "extend_time"
       : data.action === "continue_aspect" || inferredContinue
         ? "continue_aspect"
         : data.action === "refine_research"
           ? "refine_research"
           : "message";
+
+    // A continuation request is an execution control, not merely a chat record.
+    // When a completed mission is waiting for approval, allocate a new bounded
+    // execution window so the requested aspect is actually researched again.
+    if (actionType === "continue_aspect" && job.status === "waiting_approval") {
+      actionType = "extend_time";
+    }
 
     const { data: inserted, error: messageError } = await supabaseAdmin
       .from("aether_knowledge_acquisition_messages")
