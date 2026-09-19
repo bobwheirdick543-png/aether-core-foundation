@@ -67,7 +67,7 @@ export const getMyTasks = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data: tasks } = await context.supabase
       .from("tasks")
-      .select("id, title, kind, status, progress, created_at, started_at, completed_at")
+      .select("id, title, kind, status, progress, created_at, started_at, completed_at, cancel_requested_at, cancellation_reason, timeout_ms, deadline_at")
       .eq("user_id", context.userId)
       .order("created_at", { ascending: false })
       .limit(100);
