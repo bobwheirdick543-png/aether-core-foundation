@@ -1591,6 +1591,70 @@ export type Database = {
           },
         ]
       }
+      aether_knowledge_acquisition_extensions: {
+        Row: {
+          actor_id: string
+          created_at: string
+          id: string
+          job_id: string
+          minutes: number
+          new_deadline: string
+          owner_id: string
+          previous_deadline: string | null
+          reason: string | null
+          run_id: string | null
+          task_id: string
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          id?: string
+          job_id: string
+          minutes: number
+          new_deadline: string
+          owner_id: string
+          previous_deadline?: string | null
+          reason?: string | null
+          run_id?: string | null
+          task_id: string
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          id?: string
+          job_id?: string
+          minutes?: number
+          new_deadline?: string
+          owner_id?: string
+          previous_deadline?: string | null
+          reason?: string | null
+          run_id?: string | null
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aether_knowledge_acquisition_extensions_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "aether_knowledge_acquisition_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aether_knowledge_acquisition_extensions_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "task_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aether_knowledge_acquisition_extensions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       aether_knowledge_acquisition_jobs: {
         Row: {
           approval_status: string
@@ -1717,6 +1781,60 @@ export type Database = {
             foreignKeyName: "aether_knowledge_acquisition_jobs_task_id_fkey"
             columns: ["task_id"]
             isOneToOne: true
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      aether_knowledge_acquisition_messages: {
+        Row: {
+          action_type: string
+          content: string
+          created_at: string
+          id: string
+          job_id: string
+          metadata: Json
+          owner_id: string
+          sender_id: string | null
+          sender_type: string
+          task_id: string
+        }
+        Insert: {
+          action_type?: string
+          content: string
+          created_at?: string
+          id?: string
+          job_id: string
+          metadata?: Json
+          owner_id: string
+          sender_id?: string | null
+          sender_type: string
+          task_id: string
+        }
+        Update: {
+          action_type?: string
+          content?: string
+          created_at?: string
+          id?: string
+          job_id?: string
+          metadata?: Json
+          owner_id?: string
+          sender_id?: string | null
+          sender_type?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aether_knowledge_acquisition_messages_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "aether_knowledge_acquisition_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aether_knowledge_acquisition_messages_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
             referencedRelation: "tasks"
             referencedColumns: ["id"]
           },
@@ -7489,6 +7607,7 @@ export type Database = {
           duration_ms: number | null
           ended_at: string | null
           error: string | null
+          execution_ended_at: string | null
           failure_code: string | null
           heartbeat_at: string | null
           id: string
@@ -7521,6 +7640,7 @@ export type Database = {
           duration_ms?: number | null
           ended_at?: string | null
           error?: string | null
+          execution_ended_at?: string | null
           failure_code?: string | null
           heartbeat_at?: string | null
           id?: string
@@ -7553,6 +7673,7 @@ export type Database = {
           duration_ms?: number | null
           ended_at?: string | null
           error?: string | null
+          execution_ended_at?: string | null
           failure_code?: string | null
           heartbeat_at?: string | null
           id?: string
@@ -7613,6 +7734,7 @@ export type Database = {
           dead_lettered_at: string | null
           deadline_at: string | null
           detail: Json
+          execution_ended_at: string | null
           heartbeat_at: string | null
           id: string
           idempotency_key: string | null
@@ -7643,6 +7765,7 @@ export type Database = {
           dead_lettered_at?: string | null
           deadline_at?: string | null
           detail?: Json
+          execution_ended_at?: string | null
           heartbeat_at?: string | null
           id?: string
           idempotency_key?: string | null
@@ -7673,6 +7796,7 @@ export type Database = {
           dead_lettered_at?: string | null
           deadline_at?: string | null
           detail?: Json
+          execution_ended_at?: string | null
           heartbeat_at?: string | null
           id?: string
           idempotency_key?: string | null
