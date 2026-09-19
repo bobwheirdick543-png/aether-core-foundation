@@ -161,7 +161,7 @@ function SignupPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="state">State / Province / Region</Label>
-                    <select id="state" required value={stateCode} onChange={(e) => setStateCode(e.target.value)} disabled={!countryCode || states.length === 0} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50">
+                    <select id="state" required={states.length > 0} value={stateCode} onChange={(e) => setStateCode(e.target.value)} disabled={!countryCode || states.length === 0} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50">
                       <option value="">{countryCode ? (states.length ? "Choose your state / region" : "No subdivisions listed") : "Choose a country first"}</option>
                       {states.map((state) => (
                         <option key={state.isoCode} value={state.isoCode}>{state.name}</option>
