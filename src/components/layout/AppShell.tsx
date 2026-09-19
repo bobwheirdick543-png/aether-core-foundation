@@ -19,8 +19,6 @@ import {
   ShieldCheck,
   Bell,
   Activity,
-  FlaskConical,
-  Recycle,
   CalendarClock,
   Code2,
 } from "lucide-react";
