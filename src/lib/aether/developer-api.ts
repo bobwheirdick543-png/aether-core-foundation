@@ -5,7 +5,7 @@ import { resolveTimeoutMs, type TimeoutPreset } from "./task-runtime";
 import { AGENT_KEYS, getStaticAgent } from "./agent-registry";
 
 export const API_VERSION = "v1";
-export const API_SCOPES = ["projects:read","projects:write","conversations:read","conversations:write","tasks:read","tasks:write","runs:read","agents:read","models:read","orchestration:read","orchestration:write","memory:read","memory:write","research:read","research:write","knowledge:read","knowledge:write","reports:read","notifications:read","schedules:read","schedules:write","modules:read","modules:write","battleversia:read","battleversia:write","webhooks:read","webhooks:write","logs:read"] as const;
+export const API_SCOPES = ["projects:read","projects:write","conversations:read","conversations:write","tasks:read","tasks:write","runs:read","agents:read","models:read","orchestration:read","orchestration:write","memory:read","memory:write","research:read","research:write","knowledge:read","knowledge:write","reports:read","notifications:read","schedules:read","schedules:write","modules:read","modules:write","webhooks:read","webhooks:write","logs:read"] as const;
 export type ApiScope = typeof API_SCOPES[number];
 export type ApiIdentity = { apiKeyId: string; ownerId: string; projectId: string | null; scopes: string[]; rateLimitPerMinute: number };
 const db = supabaseAdmin as any;
