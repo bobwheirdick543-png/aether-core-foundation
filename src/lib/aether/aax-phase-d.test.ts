@@ -16,7 +16,7 @@ describe("Phase D chat workspace contract", () => {
   });
 
   it("gates web research through the provider web-search tool and stores sources", () => {
-    expect(web).toContain('tools: [{ type: "web_search" }]');
+    expect(web).toContain("runAetherWebResearch");
     expect(functions).toContain("executeAaxWebResearch");
     expect(functions).toContain("aax_chat_sources");
     expect(chat).toContain("toggleWeb");
