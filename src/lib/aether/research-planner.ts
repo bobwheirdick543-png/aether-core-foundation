@@ -187,7 +187,6 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
           objective: aspect?.objective ?? null,
           query,
           query_index: index + 1,
-          total_aspects: queryList.length,
           source_count: queryResult?.sources.length ?? 0,
           source_domains: queryResult?.sourceDomains ?? [],
           progress: phase === "started" ? Math.round((index / Math.max(1, queryList.length)) * 100) : Math.round(((index + 1) / Math.max(1, queryList.length)) * 100),
