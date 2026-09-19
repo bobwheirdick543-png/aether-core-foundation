@@ -24,12 +24,12 @@ function EvaluationLab() {
   const [form, setForm] = useState({
     name: "",
     target: "orchestrator" as Target,
-    input: '{
+    input: `{
   "request": "Research and verify this claim"
-}',
-    expected: '{
+}`,
+    expected: `{
   "requiredFields": ["intent", "workflow"]
-}',
+}`,
   });
   useEffect(() => {
     if (!rolesLoading && !roles?.isAdmin) void navigate({ to: "/dashboard", replace: true });
