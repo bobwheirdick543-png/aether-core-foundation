@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, ChevronDown, CircleDot, Clock3, Pause, Sparkles, XCircle } from "lucide-react";
+import { Check, ChevronDown, CircleDot, Clock3, Grip, Pause, Sparkles, XCircle } from "lucide-react";
 import { getLiveTaskActivity } from "@/lib/aether/task-activity.functions";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +34,10 @@ function labelFor(event: EventRow): string {
   const map: Record<string, string> = {
     "knowledge.scope.created": "Scope created",
     "knowledge.research.started": "Source research",
+    "knowledge.aspect.started": "Research aspect started",
+    "knowledge.aspect.completed": "Research aspect completed",
+    "knowledge.aspect.timed_out": "Aspect time slice exhausted",
+    "knowledge.aspect.failed": "Research aspect failed",
     "knowledge.source.searching": "Searching sources",
     "knowledge.source.reading": "Reading source",
     "knowledge.terminology.extracted": "Terminology analysis",
@@ -113,36 +117,68 @@ export function LiveTaskActivity({ admin = false, className }: { admin?: boolean
     retry: 0,
   });
   const [open, setOpen] = useState(true);
+  const [position, setPosition] = useState(() => ({ x: Math.max(8, window.innerWidth - Math.min(430, window.innerWidth - 32) - 16), y: Math.max(8, window.innerHeight - 180) }));
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const hasTasks = data.length > 0;
   const count = useMemo(() => data.filter((item) => item.task.status === "running").length, [data]);
+  useEffect(() => {
+    const onResize = () => setPosition((p) => ({ x: Math.min(Math.max(8, p.x), Math.max(8, window.innerWidth - 64)), y: Math.min(Math.max(8, p.y), Math.max(8, window.innerHeight - 52)) }));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   if (!hasTasks) return null;
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: position.x, originY: position.y };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const width = Math.min(430, window.innerWidth - 32);
+    const maxX = Math.max(8, window.innerWidth - width - 8);
+    const maxY = Math.max(8, window.innerHeight - (open ? Math.min(620, window.innerHeight * 0.7) : 48) - 8);
+    setPosition({ x: Math.min(maxX, Math.max(8, drag.originX + event.clientX - drag.startX)), y: Math.min(maxY, Math.max(8, drag.originY + event.clientY - drag.startY)) });
+  };
+  const stopDrag = () => { dragRef.current = null; };
   return (
-    <section className={cn("fixed bottom-4 right-4 z-50 w-[min(430px,calc(100vw-2rem))]", className)} aria-live="polite">
-      <div className="overflow-hidden rounded-2xl border border-primary/20 bg-background/95 shadow-2xl backdrop-blur-xl">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-3 border-b border-border/70 px-4 py-3 text-left"
-        >
-          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-primary">
-            <Sparkles className="h-4 w-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-xs font-semibold">Aether live activity</span>
-            <span className="block text-[10px] text-muted-foreground">
-              {count} active · {data.length} visible task{data.length === 1 ? "" : "s"}
-              {isFetching ? " · syncing" : ""} · Part 9B
+    <section
+      className={cn("fixed z-30 w-[min(430px,calc(100vw-2rem))] max-w-full pointer-events-none", className)}
+      style={{ left: position.x, top: position.y }}
+      aria-live="polite"
+    >
+      <div className="pointer-events-auto overflow-hidden rounded-2xl border border-primary/20 bg-background/95 shadow-2xl backdrop-blur-xl">
+        <div onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag} className="touch-none select-none">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="flex w-full items-center gap-3 border-b border-border/70 px-4 py-3 text-left"
+            aria-expanded={open}
+            title={open ? "Minimize live activity" : "Open live activity"}
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-primary">
+              <Sparkles className="h-4 w-4" />
             </span>
-          </span>
-          <ChevronDown className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")} />
-        </button>
-        {open ? (
-          <div className="max-h-[min(70vh,620px)] space-y-2 overflow-y-auto p-2">
-            {data.map(({ task, events }) => (
-              <TaskTree key={task.id} task={task} events={events} />
-            ))}
-          </div>
-        ) : null}
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-semibold">Aether live activity</span>
+              <span className="block text-[10px] text-muted-foreground">
+                {count} active · {data.length} visible task{data.length === 1 ? "" : "s"}
+                {isFetching ? " · syncing" : ""} · live
+              </span>
+            </span>
+            <Grip className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="Drag activity panel" />
+            <ChevronDown className={cn("h-4 w-4 transition-transform", !open && "-rotate-90")} />
+          </button>
+          {open ? (
+            <div className="max-h-[min(70vh,620px)] space-y-2 overflow-y-auto p-2">
+              {data.map(({ task, events }) => (
+                <TaskTree key={task.id} task={task} events={events} />
+              ))}
+            </div>
+          ) : (
+            <div className="px-4 py-1.5 text-[9px] text-muted-foreground">Drag to move · minimizing only hides this panel; execution continues</div>
+          )}
+        </div>
       </div>
     </section>
   );
