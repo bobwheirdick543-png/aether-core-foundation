@@ -1,5 +1,5 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { strict as assert } from "node:assert";
+import { test } from "vitest";
 import {
   TIMEOUT_PRESETS_MS,
   MAX_TIMEOUT_MS,
