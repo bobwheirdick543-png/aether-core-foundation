@@ -107,58 +107,43 @@ export async function createZ2ApiKey(input: KeyCreateInput) {
     const parsed = new Date(expiresAt);
     if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) throw new Response("Expiration must be a valid future timestamp", { status: 400 });
   }
+  const secret = makeZ2Secret(model.generation, model.revision);
+  const keyHash = hashZ2Secret(secret);
+  const encryptedSecret = encryptZ2Secret(secret);
   const monthlyTokenLimit = adminOverride ? Math.max(0, Math.floor(input.monthlyTokenLimit ?? Z2_FREE_MONTHLY_TOKENS)) : Z2_FREE_MONTHLY_TOKENS;
   const unlimitedTokens = adminOverride ? Boolean(input.unlimitedTokens) : false;
   const maxTokensPerRequest = Math.min(100000, Math.max(1, Math.floor(input.maxTokensPerRequest ?? Z2_DEFAULT_MAX_TOKENS_PER_REQUEST)));
   const maxInputTokens = Math.min(1000000, Math.max(1, Math.floor(input.maxInputTokens ?? Z2_DEFAULT_MAX_INPUT_TOKENS)));
   const maxOutputTokens = Math.min(100000, Math.max(1, Math.floor(input.maxOutputTokens ?? Z2_DEFAULT_MAX_OUTPUT_TOKENS)));
   const permissions = Array.from(new Set((input.permissions ?? ["intelligence:invoke"]).map(String).filter(Boolean))).slice(0, 50);
+  const { data, error } = await db.from("aether_api_keys").insert({
+    owner_id: input.ownerId,
+    project_id: input.projectId ?? null,
+    name,
+    key_prefix: secret.slice(0, Math.min(16, secret.length)),
+    key_hash: keyHash,
+    scopes: ["intelligence:invoke"],
+    rate_limit_per_minute: Math.min(10000, Math.max(1, Math.floor(input.rateLimitPerMinute ?? 60))),
+    expires_at: expiresAt,
+    api_kind: "aax",
+    model_id: model.id,
+    model_key: model.model_key,
+    model_generation: model.generation,
+    model_revision: model.revision,
+    environment: input.environment,
+    application_name: applicationName,
+    encrypted_secret: encryptedSecret,
+    secret_recovery_available: true,
+    status: "active",
+    monthly_token_limit: monthlyTokenLimit,
+    unlimited_tokens: unlimitedTokens,
+    max_tokens_per_request: maxTokensPerRequest,
+    max_input_tokens: maxInputTokens,
+    max_output_tokens: maxOutputTokens,
+    metadata: { principalType: adminOverride ? "admin" : "user", permissions, allowWebResearch: Boolean(input.allowWebResearch), allowStreaming: input.allowStreaming !== false },
+  }).select("id,owner_id,name,application_name,environment,key_prefix,model_id,model_key,model_generation,model_revision,rate_limit_per_minute,expires_at,status,monthly_token_limit,unlimited_tokens,max_tokens_per_request,max_input_tokens,max_output_tokens,secret_recovery_available,created_at,updated_at").single();
+  if (error || !data) throw new Response(`Could not create Aether API key: ${error?.message ?? "unknown error"}`, { status: 500 });
 
-  // The database already enforces UNIQUE(key_hash). Retry only the vanishingly
-  // unlikely SHA-256 collision case with a freshly generated random secret.
-  let secret = "";
-  let data: Awaited<ReturnType<typeof db.from>>["data"] = null;
-  let error: Awaited<ReturnType<typeof db.from>>["error"] = null;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    secret = makeZ2Secret(model.generation, model.revision);
-    const keyHash = hashZ2Secret(secret);
-    const encryptedSecret = encryptZ2Secret(secret);
-    const result = await db.from("aether_api_keys").insert({
-      owner_id: input.ownerId,
-      project_id: input.projectId ?? null,
-      name,
-      key_prefix: secret.slice(0, Math.min(16, secret.length)),
-      key_hash: keyHash,
-      scopes: ["intelligence:invoke"],
-      rate_limit_per_minute: Math.min(10000, Math.max(1, Math.floor(input.rateLimitPerMinute ?? 60))),
-      expires_at: expiresAt,
-      api_kind: "aax",
-      model_id: model.id,
-      model_key: model.model_key,
-      model_generation: model.generation,
-      model_revision: model.revision,
-      environment: input.environment,
-      application_name: applicationName,
-      encrypted_secret: encryptedSecret,
-      secret_recovery_available: true,
-      status: "active",
-      monthly_token_limit: monthlyTokenLimit,
-      unlimited_tokens: unlimitedTokens,
-      max_tokens_per_request: maxTokensPerRequest,
-      max_input_tokens: maxInputTokens,
-      max_output_tokens: maxOutputTokens,
-      metadata: { principalType: adminOverride ? "admin" : "user", permissions, allowWebResearch: Boolean(input.allowWebResearch), allowStreaming: input.allowStreaming !== false },
-    }).select("id,owner_id,name,application_name,environment,key_prefix,model_id,model_key,model_generation,model_revision,rate_limit_per_minute,expires_at,status,monthly_token_limit,unlimited_tokens,max_tokens_per_request,max_input_tokens,max_output_tokens,secret_recovery_available,created_at,updated_at").single();
-
-    data = result.data;
-    error = result.error;
-    if (!error && data) break;
-    if (error?.code !== "23505" || attempt === 4) {
-      throw new Response(`Could not create Aether API key: ${error?.message ?? "unknown error"}`, { status: 500 });
-    }
-  }
-
-  if (!data) throw new Response("Could not create Aether API key: unknown error", { status: 500 });
   await recordKeyEvent(data.id, input.ownerId, input.actorId, "created", { modelKey: model.model_key, environment: input.environment, applicationName, monthlyTokenLimit, unlimitedTokens, permissions, allowWebResearch: Boolean(input.allowWebResearch), allowStreaming: input.allowStreaming !== false }, adminOverride ? "admin" : "user");
   return { ...data, key: secret, model: { id: model.id, key: model.model_key, displayName: model.display_name, generation: model.generation, revision: model.revision } };
 }
