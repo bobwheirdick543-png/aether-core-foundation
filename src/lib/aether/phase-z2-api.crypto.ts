@@ -1,5 +1,7 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 
+export const Z2_SECRET_LENGTH = 64;
+
 function encryptionKey(): Buffer {
   const raw = process.env.AETHER_API_KEY_ENCRYPTION_KEY?.trim();
   if (!raw) {
@@ -64,4 +66,11 @@ export function decryptZ2Secret(value: string): string {
     if (!legacy) throw derivedError;
     return decryptWith(legacy);
   }
+}
+
+export function makeZ2Secret(modelGeneration: number, modelRevision: number): string {
+  const version = `${modelGeneration}.${modelRevision}`;
+  const secret = randomBytes(48).toString("base64url");
+  if (secret.length !== Z2_SECRET_LENGTH) throw new Error("Z2 secret generator produced an invalid length");
+  return `AAX-${version}-${secret}`;
 }
