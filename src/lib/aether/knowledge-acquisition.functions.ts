@@ -34,6 +34,7 @@ export const listKnowledgeAcquisitionJobs = createServerFn({ method: "GET" }).mi
     : { data: [], error: null };
   if (taskError) throw new Response(`Could not load acquisition runtime state: ${taskError.message}`, { status: 500 });
   const taskMap = new Map((tasks ?? []).map((task: any) => [task.id, task]));
+  const serverNow = Date.now();
   return jobs.map((job: any) => {
     const task = taskMap.get(job.task_id);
     return {
@@ -44,6 +45,7 @@ export const listKnowledgeAcquisitionJobs = createServerFn({ method: "GET" }).mi
       task_started_at: task?.started_at ?? null,
       task_updated_at: task?.updated_at ?? null,
       task_detail: task?.detail ?? {},
+      server_now: serverNow,
     };
   });
 });
