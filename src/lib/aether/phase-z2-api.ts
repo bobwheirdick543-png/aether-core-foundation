@@ -1,8 +1,9 @@
-import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { executeAaxChat, executeAaxChatStream } from "./aax-gateway";
 import { executeAaxWebResearch } from "./aax-web-research";
+import { decryptZ2Secret, encryptZ2Secret } from "./phase-z2-api.crypto";
 
 export const Z2_API_VERSION = "z2" as const;
 export const Z2_SECRET_LENGTH = 64;
@@ -57,70 +58,6 @@ type KeyCreateInput = {
 
 const db = supabaseAdmin as SupabaseClient;
 
-function encryptionKey(): Buffer {
-  const raw = process.env.AETHER_API_KEY_ENCRYPTION_KEY?.trim();
-  if (!raw) {
-    throw new Error("Missing server configuration: AETHER_API_KEY_ENCRYPTION_KEY");
-  }
-
-  // AAX key encryption always derives a stable 32-byte AES key from the configured
-  // server secret. Operators may use a strong passphrase, UUID, hex secret, etc.
-  const ikm = /^[0-9a-fA-F]+$/.test(raw) && raw.length % 2 === 0
-    ? Buffer.from(raw, "hex")
-    : Buffer.from(raw, "utf8");
-
-  if (ikm.length < 1) {
-    throw new Error("AETHER_API_KEY_ENCRYPTION_KEY is empty");
-  }
-
-  return Buffer.from(
-    hkdfSync("sha256", ikm, Buffer.alloc(0), Buffer.from("aether-aax-api-keys-v2"), 32),
-  );
-}
-
-function legacyEncryptionKey(): Buffer | null {
-  const raw = process.env.AETHER_API_KEY_ENCRYPTION_KEY?.trim();
-  if (!raw) return null;
-  if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, "hex");
-  const decoded = Buffer.from(raw, "base64url");
-  return decoded.length === 32 ? decoded : null;
-}
-
-function encryptSecret(secret: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
-  return `2.${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${ciphertext.toString("base64url")}`;
-}
-
-function decryptSecret(value: string): string {
-  const [version, ivText, tagText, ciphertextText] = value.split(".");
-  if (!ivText || !tagText || !ciphertextText || (version !== "1" && version !== "2")) {
-    throw new Error("Invalid encrypted API key secret");
-  }
-
-  const ciphertext = Buffer.from(ciphertextText, "base64url");
-  const iv = Buffer.from(ivText, "base64url");
-  const tag = Buffer.from(tagText, "base64url");
-
-  const decryptWith = (key: Buffer) => {
-    const decipher = createDecipheriv("aes-256-gcm", key, iv);
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
-  };
-
-  // New keys use the derived key. Existing v1 keys remain recoverable with the
-  // legacy raw 32-byte secret so changing the derivation does not break users.
-  try {
-    return decryptWith(encryptionKey());
-  } catch (derivedError) {
-    if (version !== "1") throw derivedError;
-    const legacy = legacyEncryptionKey();
-    if (!legacy) throw derivedError;
-    return decryptWith(legacy);
-  }
-}
-
 export const hashZ2Secret = (secret: string) => createHash("sha256").update(secret).digest("hex");
 export function makeZ2Secret(modelGeneration: number, modelRevision: number): string {
   const version = `${modelGeneration}.${modelRevision}`;
@@ -172,7 +109,7 @@ export async function createZ2ApiKey(input: KeyCreateInput) {
   }
   const secret = makeZ2Secret(model.generation, model.revision);
   const keyHash = hashZ2Secret(secret);
-  const encryptedSecret = encryptSecret(secret);
+  const encryptedSecret = encryptZ2Secret(secret);
   const monthlyTokenLimit = adminOverride ? Math.max(0, Math.floor(input.monthlyTokenLimit ?? Z2_FREE_MONTHLY_TOKENS)) : Z2_FREE_MONTHLY_TOKENS;
   const unlimitedTokens = adminOverride ? Boolean(input.unlimitedTokens) : false;
   const maxTokensPerRequest = Math.min(100000, Math.max(1, Math.floor(input.maxTokensPerRequest ?? Z2_DEFAULT_MAX_TOKENS_PER_REQUEST)));
@@ -225,7 +162,7 @@ export async function getZ2ApiKeySecret(ownerId: string, keyId: string, actorId 
   if (error || !key) throw new Response("API key not found", { status: 404 });
   if (!key.secret_recovery_available || !key.encrypted_secret) throw new Response("This legacy API key cannot be recovered. Rotate it to create a recoverable Z2 key.", { status: 409 });
   if (key.status === "revoked") throw new Response("Revoked API keys cannot be recovered", { status: 409 });
-  const secret = decryptSecret(key.encrypted_secret);
+  const secret = decryptZ2Secret(key.encrypted_secret);
   await recordKeyEvent(key.id, ownerId, actorId, "viewed", { purpose: "secret_recovery" });
   return { id: key.id, name: key.name, key: secret };
 }
