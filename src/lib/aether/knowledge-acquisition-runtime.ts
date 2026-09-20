@@ -71,7 +71,26 @@ export async function executeKnowledgeAcquisitionStep(admin: SupabaseClient, opt
       await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge.report.ready", message: "Acquisition PDF report generated and approval notification queued", data: { report_id: result.reportId, file_path: result.filePath }, workerId });
     }
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") { const { data: task } = await admin.from("tasks").select("cancel_requested_at,deadline_at").eq("id", opts.taskId).maybeSingle(); const cancelled = Boolean(task?.cancel_requested_at); const code = cancelled ? "cancelled" : "timeout_budget_exhausted"; const now = new Date().toISOString(); await admin.from("aether_knowledge_acquisition_jobs").update({ status: cancelled ? "cancelled" : "failed", cancel_reason: cancelled ? "Cancelled by administrator or owner" : "Research budget exhausted", completed_at: now, last_event_at: now, updated_at: now }).eq("id", job.id); await transitionRunStatus(admin, opts.runId, "running", cancelled ? "cancelled" : "failed", { failureCode: code, retryable: false, workerId }); await transitionTaskStatus(admin, opts.taskId, "running", cancelled ? "cancelled" : "failed", { workerId }); return; }
+    if (error instanceof DOMException && error.name === "AbortError") {
+      const { data: task } = await admin.from("tasks").select("cancel_requested_at,deadline_at,detail").eq("id", opts.taskId).maybeSingle();
+      const detail = task?.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
+      const pauseRequested = detail.pause_requested === true;
+      const cancelled = Boolean(task?.cancel_requested_at) && !pauseRequested;
+      const code = pauseRequested ? "paused" : cancelled ? "cancelled" : "timeout_budget_exhausted";
+      const now = new Date().toISOString();
+      if (pauseRequested) {
+        const remainingBudgetMs = task?.deadline_at ? Math.max(0, new Date(task.deadline_at).getTime() - Date.now()) : 0;
+        await admin.from("tasks").update({ status: "paused", cancel_requested_at: null, cancellation_reason: null, detail: { ...detail, pause_requested: false, remaining_budget_ms: remainingBudgetMs }, updated_at: now }).eq("id", opts.taskId);
+        await admin.from("task_runs").update({ status: "paused", cancel_requested_at: null, cancellation_reason: null, ended_at: now, updated_at: now }).eq("id", opts.runId);
+        await admin.from("aether_knowledge_acquisition_jobs").update({ status: "paused", paused_at: now, cancel_reason: null, last_event_at: now, updated_at: now }).eq("id", job.id);
+        await appendTaskEvent(admin, { taskId: opts.taskId, runId: opts.runId, eventType: "knowledge_acquisition.paused", fromStatus: "running", toStatus: "paused", message: "Knowledge acquisition paused with its remaining research budget preserved", data: { remaining_budget_ms: remainingBudgetMs }, workerId });
+        return;
+      }
+      await admin.from("aether_knowledge_acquisition_jobs").update({ status: cancelled ? "cancelled" : "failed", cancel_reason: cancelled ? "Cancelled by administrator or owner" : "Research budget exhausted", completed_at: now, last_event_at: now, updated_at: now }).eq("id", job.id);
+      await transitionRunStatus(admin, opts.runId, "running", cancelled ? "cancelled" : "failed", { failureCode: code, retryable: false, workerId });
+      await transitionTaskStatus(admin, opts.taskId, "running", cancelled ? "cancelled" : "failed", { workerId });
+      return;
+    }
     throw error;
   } finally { clearInterval(timer); }
 }
