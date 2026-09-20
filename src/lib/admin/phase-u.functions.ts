@@ -32,7 +32,24 @@ export const setPhaseUUserRole = createServerFn({ method: "POST" }).middleware([
   await audit(context.userId, "admin.user_role_changed", "user", data.userId, { role: data.role });
   return { ok: true };
 });
-export const setPhaseUUserBan = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { userId: string; banned: boolean }) => d).handler(async ({ context, data }) => { await admin(context); if (data.userId === context.userId && data.banned) throw new Response("You cannot ban your own administrator account", { status: 409 }); const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, { ban_duration: data.banned ? "876000h" : "none" }); if (error) throw new Response(error.message, { status: 500 }); await audit(context.userId, data.banned ? "admin.user_banned" : "admin.user_unbanned", "user", data.userId); return { ok: true }; });
+export const setPhaseUUserBan = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { userId: string; banned: boolean }) => d).handler(async ({ context, data }) => {
+  await admin(context);
+  if (data.userId === context.userId && data.banned) throw new Response("You cannot ban your own administrator account", { status: 409 });
+
+  if (data.banned && process.env["AETHER_ADMIN_EMAIL"]?.trim()) {
+    const { data: targetUser, error: targetError } = await supabaseAdmin.auth.admin.getUserById(data.userId);
+    if (targetError) throw new Response("Could not verify the target administrator identity", { status: 500 });
+    const targetEmail = targetUser.user?.email?.trim().toLowerCase();
+    if (targetEmail === process.env["AETHER_ADMIN_EMAIL"].trim().toLowerCase()) {
+      throw new Response("The bootstrap administrator cannot be banned", { status: 409 });
+    }
+  }
+
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, { ban_duration: data.banned ? "876000h" : "none" });
+  if (error) throw new Response(error.message, { status: 500 });
+  await audit(context.userId, data.banned ? "admin.user_banned" : "admin.user_unbanned", "user", data.userId);
+  return { ok: true };
+});
 export const updatePhaseUModel = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { roleKey: string; status?: string; provider?: string; providerModel?: string; sortOrder?: number }) => ({ roleKey: String(d.roleKey).trim().slice(0, 100), status: d.status?.trim().slice(0, 50), provider: d.provider?.trim().slice(0, 100), providerModel: d.providerModel?.trim().slice(0, 200), sortOrder: d.sortOrder === undefined ? undefined : Math.max(-10000, Math.min(10000, Math.floor(d.sortOrder))) })).handler(async ({ context, data }) => { await admin(context); const patch: Record<string, unknown> = {}; if (data.status !== undefined) patch.status = data.status; if (data.provider !== undefined) patch.provider = data.provider; if (data.providerModel !== undefined) patch.provider_model = data.providerModel; if (data.sortOrder !== undefined) patch.sort_order = data.sortOrder; if (!Object.keys(patch).length) throw new Response("No model changes supplied", { status: 400 }); const { data: row, error } = await supabaseAdmin.from("model_configs").update(patch).eq("role_key", data.roleKey).select("role_key,display_name,status,provider,provider_model,sort_order").maybeSingle(); if (error || !row) throw new Response(error?.message ?? "Model role not found", { status: 404 }); await audit(context.userId, "admin.model_updated", "model_config", data.roleKey, patch); return row; });
 export const updatePhaseUAgent = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { agentKey: string; status: "enabled" | "disabled" | "maintenance" }) => ({ agentKey: String(d.agentKey).trim().slice(0, 100), status: d.status })).handler(async ({ context, data }) => { await admin(context); const { data: row, error } = await supabaseAdmin.from("agents").update({ status: data.status, updated_at: new Date().toISOString() }).eq("agent_key", data.agentKey).select("id,agent_key,name,status").maybeSingle(); if (error || !row) throw new Response(error?.message ?? "Agent not found", { status: 404 }); await audit(context.userId, "admin.agent_status_changed", "agent", row.id, { agent_key: data.agentKey, status: data.status }); return row; });
 export const getPhaseUKnowledge = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async ({ context }) => { await admin(context); const { data, error } = await supabaseAdmin.from("knowledge_entries").select("id,title,stage,confidence,tags,owner_id,current_version,approved_by,approved_at,created_at,updated_at").order("updated_at", { ascending: false }).limit(250); if (error) throw new Response(error.message, { status: 500 }); return data ?? []; });
