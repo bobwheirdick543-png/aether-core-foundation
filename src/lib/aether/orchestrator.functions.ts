@@ -185,7 +185,6 @@ export const runAgentConversationTurn = createServerFn({ method: "POST" })
     const messages = [
       { role: "system" as const, content: system },
       ...(history ?? []).reverse().map((item: any) => ({ role: item.role as "user" | "assistant" | "system", content: String(item.content) })),
-      { role: "user" as const, content: data.content },
     ];
     const useWeb = conversation.agent_key === "research" || conversation.agent_key === "knowledge-acquisition";
     const response = useWeb
