@@ -36,13 +36,16 @@ begin
         from public.agent_permissions ap where ap.agent_id=a.id
       ),'[]'::jsonb)
     ),
-    config_hash = md5((av.definition || jsonb_build_object(
-      'status','enabled',
-      'tools',to_jsonb(a.tools),
-      'permissions',coalesce((
-        select jsonb_agg(jsonb_build_object('permission',ap.permission,'allowed',ap.allowed,'requiresApproval',ap.requires_approval) order by ap.permission
-      ),'[]'::jsonb)
-    ))::text)
+    config_hash = md5((
+      av.definition || jsonb_build_object(
+        'status','enabled',
+        'tools',to_jsonb(a.tools),
+        'permissions',coalesce((
+          select jsonb_agg(jsonb_build_object('permission',ap.permission,'allowed',ap.allowed,'requiresApproval',ap.requires_approval) order by ap.permission)
+          from public.agent_permissions ap where ap.agent_id=a.id
+        ),'[]'::jsonb)
+      )
+    )::text)
     from public.agents a
     where av.id=v_version_id and a.id=av.agent_id;
 
