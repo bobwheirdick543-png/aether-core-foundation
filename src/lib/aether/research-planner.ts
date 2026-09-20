@@ -168,6 +168,7 @@ async function runQueriesBounded(queries: string[], signal?: AbortSignal, deadli
 
 export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId: string; projectId?: string | null; plan: ResearchPlan; taskId?: string | null; runId?: string | null; deadlineAt?: string | null; signal?: AbortSignal; searchAgent: { agentKey: import("./agents").AgentKey; actorId?: string | null; taskId?: string | null; runId?: string | null } }): Promise<{ sessionId: string; result: AetherWebResearchResult; plan: ResearchPlan; unmetRequirements: string[] }> {
   const githubUrl = input.plan.topic.match(/https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/i)?.[0] ?? (isGithubRepositoryUrl(input.plan.topic) ? input.plan.topic : null);
+  const directUrl = /^https?:\/\/[^\s]+$/i.test(input.plan.topic.trim()) && !githubUrl ? input.plan.topic.trim() : null;
   const queryList = input.plan.aspects?.length ? input.plan.aspects.map((aspect) => aspect.query) : input.plan.queries;
   const completedAspectIds: string[] = [];
   const results = await runQueriesBounded(queryList, input.signal, input.deadlineAt, input.searchAgent, async (index, query, queryResult, phase, budgetMs) => {
@@ -204,10 +205,49 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
   });
   if (input.signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
   const github = githubUrl ? await ingestGithubRepository(githubUrl, input.signal) : { sources: [] as AetherWebSource[], failedSources: [] as AetherWebResearchResult["failedSources"] };
-  const sources = [...new Map([...results.flatMap((result) => result.sources), ...github.sources].map((source) => [normalizeUrl(source.canonicalUrl || source.url), source])).values()].slice(0, 64);
+  let directSources: AetherWebSource[] = [];
+  let directFailures: AetherWebResearchResult["failedSources"] = [];
+  if (directUrl) {
+    try {
+      const page = await retrievePage(directUrl, { timeoutMs: 10_000, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30, signal: input.signal });
+      if (page.status >= 200 && page.status < 400 && !page.error) {
+        const quality = sourceQualityScore(page);
+        directSources = [{
+          url: page.finalUrl,
+          canonicalUrl: page.canonicalUrl || page.finalUrl,
+          title: page.title || directUrl,
+          domain: domainFromUrl(page.finalUrl || directUrl),
+          provider: "direct",
+          snippet: page.text.slice(0, 1200),
+          text: page.text.slice(0, 80_000),
+          status: page.status,
+          contentHash: page.contentHash,
+          retrievedAt: page.retrievedAt,
+          publishedAt: page.publishedAt,
+          updatedAt: page.updatedAt,
+          author: page.author,
+          headings: page.headings,
+          links: page.links,
+          contentType: page.contentType,
+          contentLength: page.contentLength,
+          redirectCount: page.redirectCount,
+          attempts: page.attempts,
+          stale: page.stale,
+          staleReason: page.stale ? "source_date_older_than_policy" : null,
+          qualityScore: quality.score,
+          qualityFactors: quality.factors,
+        }];
+      } else {
+        directFailures = [{ url: directUrl, provider: "direct", error: page.error ?? `Direct URL retrieval failed (${page.status})`, failureClass: page.failureClass }];
+      }
+    } catch (error) {
+      directFailures = [{ url: directUrl, provider: "direct", error: error instanceof Error ? error.message : String(error), failureClass: "direct_retrieval_failed" }];
+    }
+  }
+  const sources = [...new Map([...results.flatMap((result) => result.sources), ...github.sources, ...directSources].map((source) => [normalizeUrl(source.canonicalUrl || source.url), source])).values()].slice(0, 64);
   const domains = [...new Set(sources.map((source) => source.domain))];
   const unmetRequirements = unmetSourceRequirements(sources.length, domains.length, input.plan.sourceRequirements);
-  const merged: AetherWebResearchResult = { query: input.plan.topic, sources, failedSources: [...results.flatMap((result) => result.failedSources), ...github.failedSources], sourceDomains: domains, diversity: sources.length ? Math.min(1, domains.length / Math.min(5, sources.length)) : 0, completedAt: new Date().toISOString() };
+  const merged: AetherWebResearchResult = { query: input.plan.topic, sources, failedSources: [...results.flatMap((result) => result.failedSources), ...github.failedSources, ...directFailures], sourceDomains: domains, diversity: sources.length ? Math.min(1, domains.length / Math.min(5, sources.length)) : 0, completedAt: new Date().toISOString() };
   const sessionId = await persistAetherWebResearch(input.admin, { ownerId: input.ownerId, projectId: input.projectId, scope: "agent", query: input.plan.topic, result: merged, taskId: input.taskId, runId: input.runId });
   await persistResearchPlan(input.admin, input.ownerId, sessionId, input.plan, unmetRequirements, input.projectId);
   for (let i = 0; i < queryList.length; i++) {
