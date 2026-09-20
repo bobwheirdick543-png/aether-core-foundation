@@ -79,7 +79,7 @@ async function buildCandidate(ownerId: string, projectId: string | null, input: 
 
 export const listKnowledgeCandidates = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).inputValidator((data?: { projectId?: string; status?: string }) => ({ projectId: data?.projectId ?? null, status: data?.status ?? null })).handler(async ({ context, data }) => {
   const admin = await isAdmin(context.userId);
-  let query = db(context.supabase).from("aether_knowledge_candidates").select("id,owner_id,project_id,title,content,status,freshness_state,confidence,verification_status,verification_run_id,source_ids,claims,entities,relations,conflicts,provenance,metadata,reviewed_by,reviewed_at,published_entry_id,created_at,updated_at").order("updated_at", { ascending: false }).limit(200);
+  let query = (admin ? supabaseAdmin : db(context.supabase)).from("aether_knowledge_candidates").select("id,owner_id,project_id,title,content,status,freshness_state,confidence,verification_status,verification_run_id,source_ids,claims,entities,relations,conflicts,provenance,metadata,reviewed_by,reviewed_at,published_entry_id,created_at,updated_at").order("updated_at", { ascending: false }).limit(200);
   if (!admin) query = query.eq("owner_id", context.userId);
   if (data.projectId) query = query.eq("project_id", data.projectId);
   if (data.status && data.status !== "all") query = query.eq("status", data.status);
