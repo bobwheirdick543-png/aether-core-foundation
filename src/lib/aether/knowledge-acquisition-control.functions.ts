@@ -96,13 +96,21 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
       }
 
       const currentBudget = Number(job.time_budget_ms ?? 0);
-      const extensionMs = minutes * 60_000;
-      const nextBudget = Math.min(60 * 60_000, currentBudget + extensionMs);
-      if (nextBudget <= currentBudget) throw new Response("The maximum research budget has already been reached", { status: 409 });
-
+      const requestedExtensionMs = minutes * 60_000;
+      const remainingCapacityMs = Math.max(0, 60 * 60_000 - currentBudget);
+      const grantedExtensionMs = Math.min(requestedExtensionMs, remainingCapacityMs);
+      if (grantedExtensionMs < 60_000) throw new Response("The remaining research capacity is less than one minute", { status: 409 });
+      const grantedMinutes = Math.floor(grantedExtensionMs / 60_000);
       const previousDeadline = task.deadline_at ? new Date(task.deadline_at).getTime() : now;
-      const newDeadlineMs = Math.max(now, Number.isFinite(previousDeadline) ? previousDeadline : now) + extensionMs;
+      const pausedRemainingMs = Number((task.detail as any)?.remaining_budget_ms);
+      const currentRemainingMs = task.status === "paused" && Number.isFinite(pausedRemainingMs)
+        ? Math.max(0, pausedRemainingMs)
+        : Math.max(0, Number.isFinite(previousDeadline) ? previousDeadline - now : 0);
+      const newDeadlineMs = task.status === "paused"
+        ? now + currentRemainingMs + grantedExtensionMs
+        : Math.max(now, Number.isFinite(previousDeadline) ? previousDeadline : now) + grantedExtensionMs;
       const newDeadline = new Date(newDeadlineMs).toISOString();
+      const nextBudget = Math.min(60 * 60_000, currentBudget + grantedExtensionMs);
       const patch: Record<string, unknown> = {
         deadline_at: newDeadline,
         timeout_ms: nextBudget,
@@ -112,8 +120,10 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
       const detail = task.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
       patch.detail = {
         ...detail,
+        ...(task.status === "paused" ? { remaining_budget_ms: currentRemainingMs + grantedExtensionMs } : {}),
         time_extensions: [...(Array.isArray(detail.time_extensions) ? detail.time_extensions : []), {
-          minutes,
+          minutes: grantedMinutes,
+          requested_minutes: minutes,
           at: new Date().toISOString(),
           actor_id: context.userId,
         }].slice(-50),
@@ -159,7 +169,7 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
           last_event_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }).eq("id", job.id);
-        await appendTaskEvent(supabaseAdmin, { taskId: task.id, runId: nextRun.id, eventType: "knowledge_acquisition.more_time_granted", fromStatus: "waiting_approval", toStatus: "queued", message: `Granted ${minutes} more minute(s) and created continuation execution`, data: { minutes, new_deadline: newDeadline, continuation_aspect_id: data.aspectId ?? null, previous_run_id: previousRunId }, actorId: context.userId });
+        await appendTaskEvent(supabaseAdmin, { taskId: task.id, runId: nextRun.id, eventType: "knowledge_acquisition.more_time_granted", fromStatus: "waiting_approval", toStatus: "queued", message: `Granted ${grantedMinutes} more minute(s) and created continuation execution`, data: { minutes: grantedMinutes, requested_minutes: minutes, new_deadline: newDeadline, continuation_aspect_id: data.aspectId ?? null, previous_run_id: previousRunId }, actorId: context.userId });
         patch.detail = { ...(patch.detail as Record<string, unknown>), continuation_aspect_id: data.aspectId ?? null, continuation_message: data.message };
       } else {
         await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({
@@ -170,7 +180,7 @@ export const sendKnowledgeAcquisitionMessage = createServerFn({ method: "POST" }
         if (job.run_id) {
           await supabaseAdmin.from("task_runs").update({ deadline_at: newDeadline, timeout_ms: nextBudget, updated_at: new Date().toISOString() }).eq("id", job.run_id).in("status", ["queued", "running", "paused"]);
         }
-        await appendTaskEvent(supabaseAdmin, { taskId: task.id, runId: job.run_id, eventType: "knowledge_acquisition.more_time_granted", fromStatus: task.status, toStatus: task.status, message: `Granted ${minutes} more minute(s)`, data: { minutes, new_deadline: newDeadline }, actorId: context.userId });
+        await appendTaskEvent(supabaseAdmin, { taskId: task.id, runId: job.run_id, eventType: "knowledge_acquisition.more_time_granted", fromStatus: task.status, toStatus: task.status, message: `Granted ${grantedMinutes} more minute(s)`, data: { minutes: grantedMinutes, requested_minutes: minutes, new_deadline: newDeadline }, actorId: context.userId });
       }
 
       const { error: taskError } = await supabaseAdmin.from("tasks").update(patch).eq("id", task.id);
