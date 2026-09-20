@@ -204,10 +204,12 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
     if (phase === "completed" && aspect && queryResult?.sources.length) completedAspectIds.push(aspect.id);
   });
   if (input.signal?.aborted) throw new DOMException("Research cancelled", "AbortError");
+  if (input.deadlineAt && Date.parse(input.deadlineAt) <= Date.now()) throw new DOMException("Research deadline exhausted", "AbortError");
   const github = githubUrl ? await ingestGithubRepository(githubUrl, input.signal) : { sources: [] as AetherWebSource[], failedSources: [] as AetherWebResearchResult["failedSources"] };
   let directSources: AetherWebSource[] = [];
   let directFailures: AetherWebResearchResult["failedSources"] = [];
   if (directUrl) {
+    if (input.deadlineAt && Date.parse(input.deadlineAt) <= Date.now()) throw new DOMException("Research deadline exhausted", "AbortError");
     try {
       const page = await retrievePage(directUrl, { timeoutMs: 10_000, maxBytes: 2_000_000, maxRedirects: 5, maxRetries: 2, respectRobots: true, staleAfterDays: 30, signal: input.signal });
       if (page.status >= 200 && page.status < 400 && !page.error) {
@@ -244,6 +246,7 @@ export async function runPlannedResearch(input: { admin: SupabaseClient; ownerId
       directFailures = [{ url: directUrl, provider: "direct", error: error instanceof Error ? error.message : String(error), failureClass: "direct_retrieval_failed" }];
     }
   }
+  if (input.deadlineAt && Date.parse(input.deadlineAt) <= Date.now()) throw new DOMException("Research deadline exhausted", "AbortError");
   const sources = [...new Map([...results.flatMap((result) => result.sources), ...github.sources, ...directSources].map((source) => [normalizeUrl(source.canonicalUrl || source.url), source])).values()].slice(0, 64);
   const domains = [...new Set(sources.map((source) => source.domain))];
   const unmetRequirements = unmetSourceRequirements(sources.length, domains.length, input.plan.sourceRequirements);
