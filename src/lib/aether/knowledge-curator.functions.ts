@@ -329,7 +329,7 @@ export const publishKnowledgeCandidate = createServerFn({ method: "POST" }).midd
     const { data: collection } = await lookup.from("knowledge_collections").select("id").eq("id", collectionId).eq("owner_id", candidate.owner_id).maybeSingle();
     if (!collection) throw new Response("Knowledge collection not found or access denied", { status: 404 });
   } else {
-    const { data: collection } = await client.from("knowledge_collections").select("id").eq("owner_id", candidate.owner_id).eq("project_id", candidate.project_id).eq("stage", "production").order("created_at").limit(1).maybeSingle();
+    const { data: collection } = await lookup.from("knowledge_collections").select("id").eq("owner_id", candidate.owner_id).eq("project_id", candidate.project_id).eq("stage", "production").order("created_at").limit(1).maybeSingle();
     collectionId = collection?.id ?? null;
   }
   if (!collectionId) {
