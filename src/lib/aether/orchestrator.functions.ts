@@ -52,7 +52,7 @@ export const createOrchestration = createServerFn({ method: "POST" })
         title: draft.title,
         intent: draft.intent,
         capabilities: draft.capabilities,
-        context: { requestText: data.message, conversationId: data.conversationId },
+        context: { requestText: data.message, conversationId: data.conversationId, projectId: data.projectId },
         model_requirements: draft.modelRequirements,
         tools: draft.tools,
         agents: draft.agents,
