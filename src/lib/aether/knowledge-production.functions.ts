@@ -29,7 +29,7 @@ export const getProductionKnowledgeVersions = createServerFn({ method: "GET" }).
   const { data: entry } = await lookup.from("knowledge_entries").select("id,owner_id").eq("id", data.entryId).maybeSingle();
   if (entry && !isAdmin && entry.owner_id !== context.userId) throw new Response("Knowledge entry not found or access denied", { status: 404 });
   if (!entry) throw new Response("Knowledge entry not found or access denied", { status: 404 });
-  const { data: versions, error } = await client.from("aether_knowledge_versions").select("id,entry_id,version,title,body,stage,change_type,change_note,source_candidate_id,provenance,actor_id,created_at").eq("entry_id", entry.id).eq("owner_id", context.userId).order("version", { ascending: false });
+  const { data: versions, error } = await lookup.from("aether_knowledge_versions").select("id,entry_id,version,title,body,stage,change_type,change_note,source_candidate_id,provenance,actor_id,created_at").eq("entry_id", entry.id).eq("owner_id", entry.owner_id).order("version", { ascending: false });
   if (error) throw new Response(`Could not load knowledge versions: ${error.message}`, { status: 500 });
   return versions ?? [];
 });
