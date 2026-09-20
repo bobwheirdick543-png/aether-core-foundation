@@ -175,7 +175,7 @@ export const runAgentConversationTurn = createServerFn({ method: "POST" })
       `You are the ${agent.name} inside Aether AI Platform.`,
       `Mission: ${agent.purpose}`,
       `Responsibilities: ${agent.responsibilities.join("; ")}`,
-      `Prohibited actions: ${agent.prohibited_actions.join("; ")}`,
+      `Prohibited actions: ${agent.prohibited.join("; ")}`,
       intelligence ? `Operational focus: ${intelligence.focus.join("; ")}` : "",
       intelligence ? `Preserve: ${intelligence.mustPreserve.join("; ")}` : "",
       intelligence ? `Handoff rules: ${intelligence.handoff.join("; ")}` : "",
