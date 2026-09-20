@@ -143,16 +143,18 @@ export const adminEnqueueKnowledgeAcquisitionFromPrompt = createServerFn({ metho
       timeBudgetMs = normalizeResearchBudget(requestedDeadline - nowMs);
     }
     const result = await createKnowledgeAcquisitionTask(supabaseAdmin, { ownerId: context.userId, subject, title: `Acquisition: ${subject}`, sourceType: "prompt", targetType: "global", timeBudgetMs, priority: 50, trigger: "admin_workstation_prompt" });
-    const now = new Date().toISOString();
-    const { data: job, error: jobError } = await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("scope,task_id").eq("id", result.jobId).single();
-    if (jobError || !job) throw new Response(jobError?.message ?? "Could not load acquisition job", { status: 500 });
-    const { data: task, error: taskError } = await supabaseAdmin.from("tasks").select("detail,deadline_at").eq("id", result.taskId).single();
-    if (taskError || !task) throw new Response(taskError?.message ?? "Could not load acquisition task", { status: 500 });
-    const effectiveDeadline = task.deadline_at;
-    const detail = task.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
-    await supabaseAdmin.from("tasks").update({ detail: { ...detail, source: "workstation_prompt", prompt: data.prompt, subject, deadline: effectiveDeadline, submitted_by: context.userId, submitted_at: now }, updated_at: now }).eq("id", result.taskId);
-    const scope = job.scope && typeof job.scope === "object" ? job.scope as Record<string, unknown> : {};
-    await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ scope: { ...scope, prompt: data.prompt, deadline: effectiveDeadline, submitted_by: context.userId, submitted_at: now }, updated_at: now, last_event_at: now }).eq("id", result.jobId);
+    if (!result.deduplicated) {
+      const now = new Date().toISOString();
+      const { data: job, error: jobError } = await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("scope,task_id").eq("id", result.jobId).single();
+      if (jobError || !job) throw new Response(jobError?.message ?? "Could not load acquisition job", { status: 500 });
+      const { data: task, error: taskError } = await supabaseAdmin.from("tasks").select("detail,deadline_at").eq("id", result.taskId).single();
+      if (taskError || !task) throw new Response(taskError?.message ?? "Could not load acquisition task", { status: 500 });
+      const effectiveDeadline = task.deadline_at;
+      const detail = task.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
+      await supabaseAdmin.from("tasks").update({ detail: { ...detail, source: "workstation_prompt", prompt: data.prompt, subject, deadline: effectiveDeadline, submitted_by: context.userId, submitted_at: now }, updated_at: now }).eq("id", result.taskId);
+      const scope = job.scope && typeof job.scope === "object" ? job.scope as Record<string, unknown> : {};
+      await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ scope: { ...scope, prompt: data.prompt, deadline: effectiveDeadline, submitted_by: context.userId, submitted_at: now }, updated_at: now, last_event_at: now }).eq("id", result.jobId);
+    }
     await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.enqueued_from_prompt", target_type: "task", target_id: result.taskId, metadata: { job_id: result.jobId, subject, has_deadline: Boolean(data.deadlineISO), deduplicated: result.deduplicated } });
     return { ok: true, taskId: result.taskId, runId: result.runId, jobId: result.jobId, deduplicated: result.deduplicated };
   });
