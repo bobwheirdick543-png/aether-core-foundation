@@ -1,12 +1,12 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { executeAaxChat, executeAaxChatStream } from "./aax-gateway";
 import { executeAaxWebResearch } from "./aax-web-research";
-import { decryptZ2Secret, encryptZ2Secret } from "./phase-z2-api.crypto";
+import { decryptZ2Secret, encryptZ2Secret, makeZ2Secret, Z2_SECRET_LENGTH } from "./phase-z2-api.crypto";
+export { makeZ2Secret, Z2_SECRET_LENGTH } from "./phase-z2-api.crypto";
 
 export const Z2_API_VERSION = "z2" as const;
-export const Z2_SECRET_LENGTH = 64;
 export const Z2_FREE_MONTHLY_TOKENS = 200_000;
 export const Z2_FREE_ACTIVE_KEY_LIMIT = 5;
 export const Z2_DEFAULT_MAX_TOKENS_PER_REQUEST = 4096;
@@ -59,12 +59,6 @@ type KeyCreateInput = {
 const db = supabaseAdmin as SupabaseClient;
 
 export const hashZ2Secret = (secret: string) => createHash("sha256").update(secret).digest("hex");
-export function makeZ2Secret(modelGeneration: number, modelRevision: number): string {
-  const version = `${modelGeneration}.${modelRevision}`;
-  const secret = randomBytes(48).toString("base64url");
-  if (secret.length !== Z2_SECRET_LENGTH) throw new Error("Z2 secret generator produced an invalid length");
-  return `AAX-${version}-${secret}`;
-}
 
 async function isAdmin(userId: string): Promise<boolean> {
   const { data, error } = await db.rpc("has_role", { _user_id: userId, _role: "admin" });
