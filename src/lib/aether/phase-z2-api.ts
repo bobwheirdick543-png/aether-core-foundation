@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { executeAaxChat, executeAaxChatStream } from "./aax-gateway";
 import { executeAaxWebResearch } from "./aax-web-research";
-import { decryptZ2Secret, encryptZ2Secret, makeZ2Secret, Z2_SECRET_LENGTH } from "./phase-z2-api.crypto";
+import { decryptZ2Secret, encryptZ2Secret, makeZ2Secret } from "./phase-z2-api.crypto";
 export { makeZ2Secret, Z2_SECRET_LENGTH } from "./phase-z2-api.crypto";
 
 export const Z2_API_VERSION = "z2" as const;
