@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { executeAaxChat, executeAaxChatStream } from "./aax-gateway";
@@ -59,26 +59,66 @@ const db = supabaseAdmin as SupabaseClient;
 
 function encryptionKey(): Buffer {
   const raw = process.env.AETHER_API_KEY_ENCRYPTION_KEY?.trim();
-  if (!raw) throw new Error("Missing server configuration: AETHER_API_KEY_ENCRYPTION_KEY");
+  if (!raw) {
+    throw new Error("Missing server configuration: AETHER_API_KEY_ENCRYPTION_KEY");
+  }
+
+  // AAX key encryption always derives a stable 32-byte AES key from the configured
+  // server secret. Operators may use a strong passphrase, UUID, hex secret, etc.
+  const ikm = /^[0-9a-fA-F]+$/.test(raw) && raw.length % 2 === 0
+    ? Buffer.from(raw, "hex")
+    : Buffer.from(raw, "utf8");
+
+  if (ikm.length < 1) {
+    throw new Error("AETHER_API_KEY_ENCRYPTION_KEY is empty");
+  }
+
+  return Buffer.from(
+    hkdfSync("sha256", ikm, Buffer.alloc(0), Buffer.from("aether-aax-api-keys-v2"), 32),
+  );
+}
+
+function legacyEncryptionKey(): Buffer | null {
+  const raw = process.env.AETHER_API_KEY_ENCRYPTION_KEY?.trim();
+  if (!raw) return null;
   if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, "hex");
   const decoded = Buffer.from(raw, "base64url");
-  if (decoded.length !== 32) throw new Error("AETHER_API_KEY_ENCRYPTION_KEY must encode exactly 32 bytes");
-  return decoded;
+  return decoded.length === 32 ? decoded : null;
 }
 
 function encryptSecret(secret: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
   const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
-  return `1.${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${ciphertext.toString("base64url")}`;
+  return `2.${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${ciphertext.toString("base64url")}`;
 }
 
 function decryptSecret(value: string): string {
   const [version, ivText, tagText, ciphertextText] = value.split(".");
-  if (version !== "1" || !ivText || !tagText || !ciphertextText) throw new Error("Invalid encrypted API key secret");
-  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(ivText, "base64url"));
-  decipher.setAuthTag(Buffer.from(tagText, "base64url"));
-  return Buffer.concat([decipher.update(Buffer.from(ciphertextText, "base64url")), decipher.final()]).toString("utf8");
+  if (!ivText || !tagText || !ciphertextText || (version !== "1" && version !== "2")) {
+    throw new Error("Invalid encrypted API key secret");
+  }
+
+  const ciphertext = Buffer.from(ciphertextText, "base64url");
+  const iv = Buffer.from(ivText, "base64url");
+  const tag = Buffer.from(tagText, "base64url");
+
+  const decryptWith = (key: Buffer) => {
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  };
+
+  // New keys use the derived key. Existing v1 keys remain recoverable with the
+  // legacy raw 32-byte secret so changing the derivation does not break users.
+  try {
+    return decryptWith(encryptionKey());
+  } catch (derivedError) {
+    if (version !== "1") throw derivedError;
+    const legacy = legacyEncryptionKey();
+    if (!legacy) throw derivedError;
+    return decryptWith(legacy);
+  }
 }
 
 export const hashZ2Secret = (secret: string) => createHash("sha256").update(secret).digest("hex");
