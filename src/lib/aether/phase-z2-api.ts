@@ -127,6 +127,7 @@ export async function createZ2ApiKey(input: KeyCreateInput) {
     environment: input.environment,
     application_name: applicationName,
     encrypted_secret: encryptedSecret,
+    secret_version: 2,
     secret_recovery_available: true,
     status: "active",
     monthly_token_limit: monthlyTokenLimit,
