@@ -1,7 +1,6 @@
 import { createCipheriv, randomBytes } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { decryptZ2Secret, encryptZ2Secret } from "./phase-z2-api.crypto";
-import { makeZ2Secret } from "./phase-z2-api";
+import { decryptZ2Secret, encryptZ2Secret, makeZ2Secret } from "./phase-z2-api.crypto";
 
 describe("AAX API key generation", () => {
   beforeEach(() => {
