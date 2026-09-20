@@ -55,6 +55,7 @@ function Page() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [clockNow, setClockNow] = useState(() => Date.now());
+  const [serverClockOffsetMs, setServerClockOffsetMs] = useState(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
@@ -63,7 +64,7 @@ function Page() {
 
   function remainingLabel(deadline: string | null, status: string | null) {
     if (!deadline || ["completed", "failed", "cancelled"].includes(status ?? "")) return "—";
-    const remaining = Math.max(0, new Date(deadline).getTime() - clockNow);
+    const remaining = Math.max(0, new Date(deadline).getTime() - (clockNow + serverClockOffsetMs));
     if (!remaining) return "expired";
     const totalSeconds = Math.floor(remaining / 1000);
     const hours = Math.floor(totalSeconds / 3600);
@@ -71,6 +72,11 @@ function Page() {
     const seconds = totalSeconds % 60;
     return hours ? hours + "h " + String(minutes).padStart(2, "0") + "m " + String(seconds).padStart(2, "0") + "s" : String(minutes).padStart(2, "0") + "m " + String(seconds).padStart(2, "0") + "s";
   }
+
+  useEffect(() => {
+    const sample = jobs.find((job: any) => Number.isFinite(Number(job.server_now)));
+    if (sample) setServerClockOffsetMs(Number(sample.server_now) - Date.now());
+  }, [jobs]);
 
   const selected = useMemo(() => jobs.find((j) => j.id === selectedId) ?? null, [jobs, selectedId]);
 
