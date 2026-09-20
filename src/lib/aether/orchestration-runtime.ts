@@ -76,11 +76,16 @@ export async function completeAgentStep(admin: SupabaseClient, planId: string, s
   }
   await admin.from("orchestration_steps").update({ status: "completed", ended_at: new Date().toISOString(), output }).eq("id", stepId).eq("plan_id", planId);
   await traceOrchestrationEvent(admin, { planId, taskId: plan.task_id, runId: step.run_id, stepId, actorId, actorType: "agent", eventType: "step.completed", action: "complete_agent_step", reason: "Agent step completed", decision: "continue", data: { output_keys: Object.keys(output) } });
-  const { data: remaining } = await admin.from("orchestration_steps").select("id,status").eq("plan_id", planId).in("status", ["pending","ready","running","waiting_approval"]);
-  if (!(remaining ?? []).length) {
-    await admin.from("orchestration_plans").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", planId);
-    await admin.from("tasks").update({ status: "completed", progress: 100, completed_at: new Date().toISOString(), detail: { phase: "orchestration_complete", plan_id: planId } }).eq("id", plan.task_id);
+  const { data: failedSteps } = await admin.from("orchestration_steps").select("id,status,error").eq("plan_id", planId).eq("status", "failed");
+  if ((failedSteps ?? []).length) {
+    await admin.from("orchestration_plans").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", planId);
+    await admin.from("tasks").update({ status: "failed", completed_at: new Date().toISOString(), last_error_code: "agent_step_failed", last_error_message: String((failedSteps?.[0] as any)?.error?.message ?? "A specialized agent step failed"), detail: { phase: "orchestration_failed", plan_id: planId } }).eq("id", plan.task_id);
   } else {
+    const { data: remaining } = await admin.from("orchestration_steps").select("id,status").eq("plan_id", planId).in("status", ["pending","ready","running","waiting_approval"]);
+    if (!(remaining ?? []).length) {
+      await admin.from("orchestration_plans").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", planId);
+      await admin.from("tasks").update({ status: "completed", progress: 100, completed_at: new Date().toISOString(), detail: { phase: "orchestration_complete", plan_id: planId } }).eq("id", plan.task_id);
+    } else {
     await prepareNextOrchestrationSteps(admin, planId, actorId);
   }
 }
