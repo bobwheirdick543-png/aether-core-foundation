@@ -365,7 +365,15 @@ function Page() {
                         <Button size="sm" variant="ghost" disabled={adminBusyId === job.task_id} onClick={() => void adminAction(job.task_id, "priority", Number(adminPriorityValue))}>Set</Button>
                       </>
                     ) : null}
-                    <Button size="sm" variant="ghost" onClick={() => { setSelectedJobId(job.id); window.history.replaceState({}, "", `/knowledge?jobId=${job.id}`); }}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setSelectedJobId(job.id);
+                        const candidate = job.candidate_id ? candidates.find((item) => item.id === job.candidate_id) : null;
+                        if (candidate) void openCandidate(candidate);
+                      }}
+                    >
                       Activity
                     </Button>
                   </div>
