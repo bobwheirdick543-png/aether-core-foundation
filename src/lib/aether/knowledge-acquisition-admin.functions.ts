@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createKnowledgeAcquisitionTask, normalizeResearchBudget } from "./knowledge-acquisition-runtime";
 
 async function requireAdmin(context: { supabase: unknown; userId: string }) {
   const db = context.supabase as SupabaseClient;
@@ -15,41 +16,26 @@ export const adminStartKnowledgeAcquisitionNow = createServerFn({ method: "POST"
   .inputValidator((d: { taskId: string }) => ({ taskId: String(d?.taskId ?? "").trim() }))
   .handler(async ({ context, data }) => {
     await requireAdmin(context);
-    const { data: task, error } = await supabaseAdmin
-      .from("tasks")
-      .select("id,status,kind,priority")
-      .eq("id", data.taskId)
-      .maybeSingle();
+    const { data: task, error } = await supabaseAdmin.from("tasks").select("id,status,kind,priority,detail,deadline_at").eq("id", data.taskId).maybeSingle();
     if (error || !task) throw new Response("Task not found", { status: 404 });
-    if (task.kind !== "knowledge-acquisition")
-      throw new Response("Task is not a knowledge acquisition job", { status: 409 });
-    if (!["queued", "scheduled", "retrying", "paused"].includes(task.status))
-      throw new Response("Only queued, scheduled, retrying or paused acquisition can be started", {
-        status: 409,
-      });
-    const now = new Date().toISOString();
-    const { error: updateError } = await supabaseAdmin
-      .from("tasks")
-      .update({
-        status: "queued",
-        priority: 100,
-        next_attempt_at: null,
-        cancel_requested_at: null,
-        updated_at: now,
-      })
-      .eq("id", task.id);
+    if (task.kind !== "knowledge-acquisition") throw new Response("Task is not a knowledge acquisition job", { status: 409 });
+    if (!["queued", "scheduled", "retrying", "paused"].includes(task.status)) throw new Response("Only queued, scheduled, retrying or paused acquisition can be started", { status: 409 });
+    const now = new Date();
+    const detail = task.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
+    const remaining = Number(detail.remaining_budget_ms);
+    const patch: Record<string, unknown> = { status: "queued", priority: 100, next_attempt_at: null, cancel_requested_at: null, cancellation_reason: null, updated_at: now.toISOString(), detail: { ...detail, pause_requested: false } };
+    if (task.status === "paused") {
+      if (!Number.isFinite(remaining) || remaining <= 0) throw new Response("The paused acquisition has no remaining research budget; create a new mission instead", { status: 409 });
+      const deadline = new Date(now.getTime() + remaining).toISOString();
+      patch.deadline_at = deadline;
+      patch.detail = { ...detail, pause_requested: false, resumed_at: now.toISOString(), remaining_budget_ms: remaining };
+      const { data: job } = await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("run_id").eq("task_id", task.id).maybeSingle();
+      if (job?.run_id) await supabaseAdmin.from("task_runs").update({ status: "queued", cancel_requested_at: null, cancellation_reason: null, ended_at: null, deadline_at: deadline, updated_at: now.toISOString() }).eq("id", job.run_id).eq("status", "paused");
+    }
+    const { error: updateError } = await supabaseAdmin.from("tasks").update(patch).eq("id", task.id).eq("status", task.status);
     if (updateError) throw new Response(updateError.message, { status: 500 });
-    await supabaseAdmin
-      .from("aether_knowledge_acquisition_jobs")
-      .update({ status: "queued", paused_at: null, updated_at: now, last_event_at: now })
-      .eq("task_id", task.id);
-    await supabaseAdmin.from("audit_logs").insert({
-      actor_id: context.userId,
-      action: "knowledge_acquisition.start_now",
-      target_type: "task",
-      target_id: task.id,
-      metadata: { priority: 100 },
-    });
+    await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ status: "queued", paused_at: null, updated_at: now.toISOString(), last_event_at: now.toISOString() }).eq("task_id", task.id);
+    await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.start_now", target_type: "task", target_id: task.id, metadata: { priority: 100, resumed_from_pause: task.status === "paused", remaining_budget_ms: task.status === "paused" ? remaining : null } });
     return { ok: true };
   });
 
@@ -148,70 +134,25 @@ export const adminEnqueueKnowledgeAcquisitionFromPrompt = createServerFn({ metho
   .handler(async ({ context, data }) => {
     await requireAdmin(context);
     if (!data.prompt) throw new Response("Prompt is required", { status: 400 });
-
-    const now = new Date().toISOString();
+    const nowMs = Date.now();
     const subject = data.subject || data.prompt.slice(0, 80);
-    const title = `Acquisition: ${subject}`;
-
-    const { data: task, error: taskError } = await supabaseAdmin
-      .from("tasks")
-      .insert({
-        owner_id: context.userId,
-        title,
-        kind: "knowledge-acquisition",
-        status: "queued",
-        priority: 50,
-        detail: {
-          source: "workstation_prompt",
-          prompt: data.prompt,
-          subject,
-          deadline: data.deadlineISO,
-        },
-        updated_at: now,
-      })
-      .select("id")
-      .single();
-
-    if (taskError || !task) {
-      throw new Response(taskError?.message ?? "Could not create acquisition task", { status: 500 });
+    let timeBudgetMs: number | undefined;
+    if (data.deadlineISO) {
+      const requestedDeadline = new Date(data.deadlineISO).getTime();
+      if (!Number.isFinite(requestedDeadline) || requestedDeadline <= nowMs) throw new Response("The research deadline must be a valid future time", { status: 400 });
+      timeBudgetMs = normalizeResearchBudget(requestedDeadline - nowMs);
     }
-
-    const { data: job, error: jobError } = await supabaseAdmin
-      .from("aether_knowledge_acquisition_jobs")
-      .insert({
-        task_id: task.id,
-        title,
-        subject,
-        status: "queued",
-        coverage: 0,
-        confidence: 0,
-        source_count: 0,
-        domain_count: 0,
-        scope: {
-          prompt: data.prompt,
-          deadline: data.deadlineISO,
-          submitted_by: context.userId,
-          submitted_at: now,
-        },
-        approval_status: "pending",
-        last_event_at: now,
-        updated_at: now,
-      })
-      .select("id")
-      .single();
-
-    if (jobError || !job) {
-      // Best-effort: task remains for audit; job insert failure is reported
-      throw new Response(jobError?.message ?? "Could not create acquisition job", { status: 500 });
-    }
-
-    await supabaseAdmin.from("audit_logs").insert({
-      actor_id: context.userId,
-      action: "knowledge_acquisition.enqueued_from_prompt",
-      target_type: "task",
-      target_id: task.id,
-      metadata: { job_id: job.id, subject, has_deadline: Boolean(data.deadlineISO) },
-    });
-
-    return { ok: true, taskId: task.id, jobId: job.id };
+    const result = await createKnowledgeAcquisitionTask(supabaseAdmin, { ownerId: context.userId, subject, title: `Acquisition: ${subject}`, sourceType: "prompt", targetType: "global", timeBudgetMs, priority: 50, trigger: "admin_workstation_prompt" });
+    const now = new Date().toISOString();
+    const { data: job, error: jobError } = await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("scope,task_id").eq("id", result.jobId).single();
+    if (jobError || !job) throw new Response(jobError?.message ?? "Could not load acquisition job", { status: 500 });
+    const { data: task, error: taskError } = await supabaseAdmin.from("tasks").select("detail,deadline_at").eq("id", result.taskId).single();
+    if (taskError || !task) throw new Response(taskError?.message ?? "Could not load acquisition task", { status: 500 });
+    const effectiveDeadline = task.deadline_at;
+    const detail = task.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
+    await supabaseAdmin.from("tasks").update({ detail: { ...detail, source: "workstation_prompt", prompt: data.prompt, subject, deadline: effectiveDeadline, submitted_by: context.userId, submitted_at: now }, updated_at: now }).eq("id", result.taskId);
+    const scope = job.scope && typeof job.scope === "object" ? job.scope as Record<string, unknown> : {};
+    await supabaseAdmin.from("aether_knowledge_acquisition_jobs").update({ scope: { ...scope, prompt: data.prompt, deadline: effectiveDeadline, submitted_by: context.userId, submitted_at: now }, updated_at: now, last_event_at: now }).eq("id", result.jobId);
+    await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "knowledge_acquisition.enqueued_from_prompt", target_type: "task", target_id: result.taskId, metadata: { job_id: result.jobId, subject, has_deadline: Boolean(data.deadlineISO), deduplicated: result.deduplicated } });
+    return { ok: true, taskId: result.taskId, runId: result.runId, jobId: result.jobId, deduplicated: result.deduplicated };
   });
