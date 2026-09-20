@@ -76,7 +76,7 @@ export const createOrchestration = createServerFn({ method: "POST" })
         agentKey === "orchestrator"
           ? "Normalize intent, context, policy and execution requirements."
           : `Prepare authorized work for the ${agentKey} agent.`,
-      dependencies: [],
+      dependencies: index === 0 ? [] : [`${draft.agents[index - 1]}-${index}`],
       agent_key: agentKey,
       model_role: draft.capabilities.includes("code")
         ? "aether-code"
