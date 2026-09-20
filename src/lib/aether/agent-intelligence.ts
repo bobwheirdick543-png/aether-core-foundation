@@ -56,4 +56,9 @@ export const AGENT_INTELLIGENCE: Record<AgentKey, {
     mustPreserve: ["module identity", "dependencies", "test evidence"],
     handoff: ["never obtain unrestricted production execution authority"],
   },
+  recycling: {
+    focus: ["Safety Bin integrity", "restoration evidence", "deletion attribution", "retention controls"],
+    mustPreserve: ["chain of custody", "original owner", "deletion reason", "audit history"],
+    handoff: ["never permanently purge evidence", "never bypass restoration authorization"],
+  },
 };
