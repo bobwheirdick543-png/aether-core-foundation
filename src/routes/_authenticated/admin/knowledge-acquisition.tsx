@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Check, FileText, MessageSquare, Pause, Play, Rocket, ShieldCheck, XCircle } from "lucide-react";
+import { Check, Clock3, FileText, MessageSquare, Pause, Play, Rocket, ShieldCheck, XCircle } from "lucide-react";
 import { AdminShell } from "@/components/layout/AdminShell";
 import { PageHeader, Panel, PhaseNote, Tag } from "@/components/common/Primitives";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,23 @@ function Page() {
   const [candidate, setCandidate] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  function remainingLabel(deadline: string | null, status: string | null) {
+    if (!deadline || ["completed", "failed", "cancelled"].includes(status ?? "")) return "—";
+    const remaining = Math.max(0, new Date(deadline).getTime() - clockNow);
+    if (!remaining) return "expired";
+    const totalSeconds = Math.floor(remaining / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return hours ? hours + "h " + String(minutes).padStart(2, "0") + "m " + String(seconds).padStart(2, "0") + "s" : String(minutes).padStart(2, "0") + "m " + String(seconds).padStart(2, "0") + "s";
+  }
 
   const selected = useMemo(() => jobs.find((j) => j.id === selectedId) ?? null, [jobs, selectedId]);
 
@@ -203,6 +220,10 @@ function Page() {
                         <p className="truncate text-xs font-semibold">{job.title}</p>
                         <p className="mt-1 text-[10px] text-muted-foreground">
                           {job.subject} · {job.source_count} sources · {job.domain_count} domains
+                        </p>
+                        <p className="mt-1 inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
+                          <Clock3 className="h-3 w-3" />
+                          {remainingLabel(job.deadline_at ?? null, job.task_status ?? job.status)}
                         </p>
                       </div>
                       <Tag
