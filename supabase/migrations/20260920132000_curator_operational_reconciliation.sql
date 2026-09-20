@@ -1,5 +1,5 @@
 -- Keep the current Knowledge Curator contract active after the lifecycle audit fix.
--- The tested 1.1 contract is the current code-aligned version.
+-- The tested 1.1 contracts for curator and knowledge acquisition are current code-aligned versions.
 do $$
 declare
   v_admin uuid;
@@ -51,4 +51,38 @@ begin
 
     perform public.agent_lifecycle_transition(v_version_id,'active',v_admin,'Activate current Knowledge Curator contract');
   end if;
-end $$;
+
+
+  -- The acquisition agent also has a tested 1.1 contract; keep its stored contract
+  -- synchronized with the durable permission registry before activation.
+  select id into v_agent_id from public.agents where agent_key='knowledge-acquisition';
+  if v_agent_id is not null then
+    select id into v_version_id
+    from public.agent_versions
+    where agent_id=v_agent_id and lifecycle_state='active'
+    order by activated_at desc nulls last, created_at desc
+    limit 1;
+    if v_version_id is null then
+      select id into v_version_id
+      from public.agent_versions
+      where agent_id=v_agent_id and lifecycle_state='tested'
+      order by created_at desc
+      limit 1;
+    end if;
+    if v_version_id is not null then
+      update public.agent_versions av
+      set definition = av.definition || jsonb_build_object(
+        'status','enabled',
+        'tools',to_jsonb(a.tools),
+        'permissions',coalesce((select jsonb_agg(jsonb_build_object('permission',ap.permission,'allowed',ap.allowed,'requiresApproval',ap.requires_approval) order by ap.permission) from public.agent_permissions ap where ap.agent_id=a.id),'[]'::jsonb)
+      ),
+      config_hash = md5((av.definition || jsonb_build_object(
+        'status','enabled',
+        'tools',to_jsonb(a.tools),
+        'permissions',coalesce((select jsonb_agg(jsonb_build_object('permission',ap.permission,'allowed',ap.allowed,'requiresApproval',ap.requires_approval) order by ap.permission) from public.agent_permissions ap where ap.agent_id=a.id),'[]'::jsonb)
+      ))::text)
+      from public.agents a
+      where av.id=v_version_id and a.id=av.agent_id;
+    end if;
+  end if;
+end $;
