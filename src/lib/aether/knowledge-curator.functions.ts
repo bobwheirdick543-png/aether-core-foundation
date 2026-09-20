@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { canPublishCandidate, extractKnowledge, findConflicts, freshnessFromEvidence, mergeFreshness, normalizeKnowledgeText, type KnowledgeStatus, type FreshnessState } from "./knowledge-curator-engine";
+import { verifyClaims, type VerificationSource } from "./verification-engine";
+import { createTask, createRun, appendTaskEvent } from "./task-service";
 
 const db = (value: unknown) => value as SupabaseClient;
 const MAX_CONTENT = 200_000;
@@ -189,6 +191,128 @@ export const curateKnowledgeCandidate = createServerFn({ method: "POST" }).middl
   await supabaseAdmin.from("aether_knowledge_decisions").insert({ candidate_id: current.id, owner_id: current.owner_id, actor_id: context.userId, decision: data.decision, previous_status: current.status, new_status: nextStatus, reason: data.reason, metadata: { phase: "H" } });
   await audit(context.userId, `knowledge.candidate.${data.decision}`, "aether_knowledge_candidates", current.id, { previousStatus: current.status, newStatus: nextStatus });
   return { ok: true as const, candidate: updated };
+});
+
+export const verifyKnowledgeCandidate = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { candidateId: string }) => ({ candidateId: String(data?.candidateId ?? "").trim() })).handler(async ({ context, data }) => {
+  const client = db(context.supabase);
+  const { candidate } = await assertCandidate(client, context.userId, data.candidateId);
+  if (["published", "superseded"].includes(candidate.status)) throw new Response("Published or superseded knowledge cannot be reverified through candidate review", { status: 409 });
+  const rawClaims = Array.isArray(candidate.claims) ? candidate.claims : [];
+  const claims = rawClaims.map((claim: any) => String(claim?.text ?? claim?.claim ?? claim ?? "").trim()).filter(Boolean).slice(0, 50);
+  if (!claims.length) throw new Response("This candidate contains no claims to verify", { status: 409 });
+  const sourceIds = Array.isArray(candidate.source_ids) ? candidate.source_ids.filter(Boolean).slice(0, 100) : [];
+  if (!sourceIds.length) throw new Response("This candidate has no persisted research sources to verify against", { status: 409 });
+  const { data: sourceRows, error: sourceError } = await supabaseAdmin
+    .from("aether_research_sources")
+    .select("id,url,title,domain,content,snippet,published_at,updated_at_source,retrieved_at,quality_score,quality_factors,stale_at")
+    .in("id", sourceIds)
+    .eq("owner_id", candidate.owner_id);
+  if (sourceError) throw new Response(`Could not load research evidence: ${sourceError.message}`, { status: 500 });
+  const sources = (sourceRows ?? []) as VerificationSource[];
+  if (!sources.length) throw new Response("The persisted research sources are unavailable for verification", { status: 409 });
+
+  const task = await createTask(supabaseAdmin, {
+    owner_id: candidate.owner_id,
+    project_id: candidate.project_id ?? null,
+    title: `Verify knowledge candidate: ${candidate.title}`,
+    kind: "verification",
+    status: "queued",
+    timeout_ms: 300_000,
+    detail: { candidateId: candidate.id, claimCount: claims.length, sourceCount: sources.length, actorId: context.userId },
+    idempotency_key: `knowledge-verification:${candidate.id}:${candidate.content_hash}`,
+  });
+  const run = await createRun(supabaseAdmin, {
+    task_id: task.id,
+    owner_id: candidate.owner_id,
+    agent_key: "verification",
+    inputs: { candidate_id: candidate.id, claims },
+    timeout_ms: 300_000,
+    idempotency_key: `knowledge-verification-run:${candidate.id}:${candidate.content_hash}`,
+  });
+  const { data: existingRun } = await supabaseAdmin.from("verification_runs").select("id,status").eq("idempotency_key", `knowledge-verification:${candidate.id}:${candidate.content_hash}`).maybeSingle();
+  if (existingRun?.status === "completed" || existingRun?.status === "waiting_review") {
+    await supabaseAdmin.from("aether_knowledge_candidates").update({ verification_run_id: existingRun.id, verification_status: existingRun.status === "completed" ? "verified" : "needs_review" }).eq("id", candidate.id).eq("owner_id", candidate.owner_id);
+    return { ok: true as const, verificationRunId: existingRun.id, status: existingRun.status, reused: true };
+  }
+
+  const { data: verificationRun, error: runError } = await supabaseAdmin.from("verification_runs").insert({
+    owner_id: candidate.owner_id,
+    project_id: candidate.project_id ?? null,
+    research_session_id: null,
+    task_id: task.id,
+    run_id: run.id,
+    status: "running",
+    verifier_version: "g1.0.0",
+    idempotency_key: `knowledge-verification:${candidate.id}:${candidate.content_hash}`,
+    metrics: { claimCount: claims.length, sourceCount: sources.length, actorId: context.userId },
+  }).select("id").single();
+  if (runError || !verificationRun) throw new Response(`Could not create verification run: ${runError?.message ?? "unknown error"}`, { status: 500 });
+
+  await appendTaskEvent(supabaseAdmin, { taskId: task.id, runId: run.id, eventType: "knowledge.verification.started", message: "Verification agent started claim/evidence comparison", data: { candidateId: candidate.id, claimCount: claims.length, sourceCount: sources.length }, actorId: context.userId });
+  try {
+    const results = verifyClaims(claims, sources);
+    const states: Record<string, number> = {};
+    for (const result of results) {
+      states[result.verificationState] = (states[result.verificationState] ?? 0) + 1;
+      const { data: claimRow, error: claimError } = await supabaseAdmin.from("verification_claims").insert({
+        verification_run_id: verificationRun.id,
+        owner_id: candidate.owner_id,
+        claim: result.claim,
+        normalized_claim: result.normalizedClaim,
+        verification_state: result.verificationState,
+        confidence: result.confidence,
+        evidence_strength: result.evidenceStrength,
+        authority_score: result.authorityScore,
+        freshness_score: result.freshnessScore,
+        uncertainty: result.uncertainty,
+        contradiction_count: result.contradictionCount,
+        date_mismatch_count: result.dateMismatchCount,
+        missing_evidence: result.missingEvidence,
+        requires_review: result.requiresReview,
+        review_reason: result.reviewReason,
+        metadata: { candidateId: candidate.id },
+      }).select("id").single();
+      if (claimError || !claimRow) throw new Error(`Could not persist verification claim: ${claimError?.message ?? "unknown error"}`);
+      if (result.evidence.length) {
+        const evidenceRows = result.evidence.map((evidence) => ({
+          claim_id: claimRow.id,
+          owner_id: candidate.owner_id,
+          source_id: evidence.sourceId,
+          source_url: evidence.sourceUrl,
+          source_title: evidence.sourceTitle,
+          excerpt: evidence.excerpt,
+          supports_claim: evidence.supportsClaim,
+          evidence_strength: evidence.evidenceStrength,
+          authority_score: evidence.authorityScore,
+          freshness_score: evidence.freshnessScore,
+          published_at: evidence.publishedAt,
+          retrieved_at: evidence.retrievedAt,
+          metadata: { reasons: evidence.reasons },
+        }));
+        const { error: evidenceError } = await supabaseAdmin.from("verification_evidence").insert(evidenceRows);
+        if (evidenceError) throw new Error(`Could not persist verification evidence: ${evidenceError.message}`);
+      }
+    }
+    const needsReview = results.some((result) => result.requiresReview);
+    const hasBlocking = results.some((result) => ["conflicting", "unsupported", "outdated", "rejected"].includes(result.verificationState));
+    const finalStatus = needsReview || hasBlocking ? "waiting_review" : "completed";
+    const verificationStatus = hasBlocking ? (states.conflicting ? "conflicting" : states.outdated ? "outdated" : states.unsupported ? "unsupported" : "rejected") : finalStatus === "completed" ? "verified" : "needs_review";
+    const now = new Date().toISOString();
+    await supabaseAdmin.from("verification_runs").update({ status: finalStatus, summary: `${results.length} claims evaluated; ${Object.entries(states).map(([state, count]) => `${count} ${state}`).join(", ")}.`, metrics: { claimCount: results.length, sourceCount: sources.length, states }, completed_at: now, updated_at: now }).eq("id", verificationRun.id);
+    await supabaseAdmin.from("aether_knowledge_candidates").update({ verification_run_id: verificationRun.id, verification_status: verificationStatus, confidence: Math.min(0.95, Math.max(0.25, results.reduce((sum, result) => sum + result.confidence, 0) / Math.max(1, results.length))), status: candidate.conflicts?.length ? "conflicted" : "needs_review" }).eq("id", candidate.id).eq("owner_id", candidate.owner_id);
+    await supabaseAdmin.from("task_runs").update({ status: finalStatus === "completed" ? "completed" : "waiting_approval", ended_at: now, outputs: { verificationRunId: verificationRun.id, states } }).eq("id", run.id);
+    await supabaseAdmin.from("tasks").update({ status: finalStatus === "completed" ? "completed" : "waiting_approval", progress: 100, completed_at: now, detail: { candidateId: candidate.id, verificationRunId: verificationRun.id, states } }).eq("id", task.id);
+    await appendTaskEvent(supabaseAdmin, { taskId: task.id, runId: run.id, eventType: "knowledge.verification.completed", message: "Verification agent completed claim/evidence comparison", data: { candidateId: candidate.id, verificationRunId: verificationRun.id, states, verificationStatus }, actorId: context.userId });
+    await audit(context.userId, "knowledge.candidate.verified", "aether_knowledge_candidates", candidate.id, { verificationRunId: verificationRun.id, verificationStatus, states });
+    return { ok: true as const, verificationRunId: verificationRun.id, status: finalStatus, verificationStatus, states, reused: false };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const now = new Date().toISOString();
+    await supabaseAdmin.from("verification_runs").update({ status: "failed", error: message.slice(0, 2000), updated_at: now }).eq("id", verificationRun.id);
+    await supabaseAdmin.from("task_runs").update({ status: "failed", ended_at: now, error: message.slice(0, 2000), failure_code: "knowledge_verification_failed" }).eq("id", run.id);
+    await supabaseAdmin.from("tasks").update({ status: "failed", last_error_code: "knowledge_verification_failed", last_error_message: message.slice(0, 1000), completed_at: now }).eq("id", task.id);
+    throw new Response("Knowledge verification failed. The durable verification record has been marked failed.", { status: 500 });
+  }
 });
 
 export const publishKnowledgeCandidate = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { candidateId: string; collectionId?: string }) => ({ candidateId: String(data?.candidateId ?? "").trim(), collectionId: data.collectionId ?? null })).handler(async ({ context, data }) => {
