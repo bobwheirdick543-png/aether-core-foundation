@@ -27,7 +27,25 @@ export const listKnowledgeAcquisitionJobs = createServerFn({ method: "GET" }).mi
   if (!data.admin) query = query.eq("owner_id", context.userId);
   const { data: rows, error } = await query;
   if (error) throw new Response(`Could not load knowledge acquisition jobs: ${error.message}`, { status: 500 });
-  return rows ?? [];
+  const jobs = rows ?? [];
+  const taskIds = jobs.map((job: any) => job.task_id).filter(Boolean);
+  const { data: tasks, error: taskError } = taskIds.length
+    ? await supabaseAdmin.from("tasks").select("id,status,progress,deadline_at,started_at,updated_at,detail").in("id", taskIds)
+    : { data: [], error: null };
+  if (taskError) throw new Response(`Could not load acquisition runtime state: ${taskError.message}`, { status: 500 });
+  const taskMap = new Map((tasks ?? []).map((task: any) => [task.id, task]));
+  return jobs.map((job: any) => {
+    const task = taskMap.get(job.task_id);
+    return {
+      ...job,
+      task_status: task?.status ?? null,
+      task_progress: Number(task?.progress ?? 0),
+      deadline_at: task?.deadline_at ?? null,
+      task_started_at: task?.started_at ?? null,
+      task_updated_at: task?.updated_at ?? null,
+      task_detail: task?.detail ?? {},
+    };
+  });
 });
 
 export const getKnowledgeAcquisitionActivity = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).inputValidator((d: { taskId: string }) => ({ taskId: String(d?.taskId ?? "").trim() })).handler(async ({ context, data }) => {
