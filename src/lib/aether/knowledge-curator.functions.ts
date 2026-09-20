@@ -28,7 +28,8 @@ async function isAdmin(userId: string): Promise<boolean> {
 
 async function assertCandidate(client: SupabaseClient, actorId: string, candidateId: string) {
   const admin = await isAdmin(actorId);
-  const { data, error } = await client.from("aether_knowledge_candidates").select("*").eq("id", candidateId).maybeSingle();
+  const lookup = admin ? supabaseAdmin : client;
+  const { data, error } = await lookup.from("aether_knowledge_candidates").select("*").eq("id", candidateId).maybeSingle();
   if (error) throw new Response(`Could not load knowledge candidate: ${error.message}`, { status: 500 });
   if (!data || (!admin && data.owner_id !== actorId)) throw new Response("Knowledge candidate not found or access denied", { status: 404 });
   return { candidate: data as CandidateRow, admin };
@@ -88,12 +89,13 @@ export const listKnowledgeCandidates = createServerFn({ method: "GET" }).middlew
 });
 
 export const getKnowledgeCandidate = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).inputValidator((data: { candidateId: string }) => ({ candidateId: String(data?.candidateId ?? "").trim() })).handler(async ({ context, data }) => {
-  const { candidate } = await assertCandidate(db(context.supabase), context.userId, data.candidateId);
+  const { candidate, admin } = await assertCandidate(db(context.supabase), context.userId, data.candidateId);
+  const lookup = admin ? supabaseAdmin : db(context.supabase);
   const [entities, relations, decisions, provenance] = await Promise.all([
-    db(context.supabase).from("aether_knowledge_entities").select("*").eq("candidate_id", candidate.id).eq("owner_id", candidate.owner_id).order("created_at"),
-    db(context.supabase).from("aether_knowledge_relations").select("*").eq("candidate_id", candidate.id).eq("owner_id", candidate.owner_id).order("created_at"),
-    db(context.supabase).from("aether_knowledge_decisions").select("*").eq("candidate_id", candidate.id).eq("owner_id", candidate.owner_id).order("created_at", { ascending: false }),
-    db(context.supabase).from("aether_knowledge_provenance").select("*").eq("candidate_id", candidate.id).eq("owner_id", candidate.owner_id).order("created_at", { ascending: false }),
+    lookup.from("aether_knowledge_entities").select("*").eq("candidate_id", candidate.id).eq("owner_id", candidate.owner_id).order("created_at"),
+    lookup.from("aether_knowledge_relations").select("*").eq("candidate_id", candidate.id).eq("owner_id", candidate.owner_id).order("created_at"),
+    lookup.from("aether_knowledge_decisions").select("*").eq("candidate_id", candidate.id).eq("owner_id", candidate.owner_id).order("created_at", { ascending: false }),
+    lookup.from("aether_knowledge_provenance").select("*").eq("candidate_id", candidate.id).eq("owner_id", candidate.owner_id).order("created_at", { ascending: false }),
   ]);
   return { candidate, entities: entities.data ?? [], relations: relations.data ?? [], decisions: decisions.data ?? [], provenance: provenance.data ?? [] };
 });
@@ -167,7 +169,8 @@ export const curateKnowledgeCandidate = createServerFn({ method: "POST" }).middl
   return { ...data, candidateId: data.candidateId.trim(), reason: data.reason?.trim().slice(0, 2000) || null, title: data.title?.trim().slice(0, 300), content: data.content?.trim() };
 }).handler(async ({ context, data }) => {
   const client = db(context.supabase);
-  const { candidate: current } = await assertCandidate(client, context.userId, data.candidateId);
+  const { candidate: current, admin } = await assertCandidate(client, context.userId, data.candidateId);
+  const lookup = admin ? supabaseAdmin : client;
   if (["published", "superseded"].includes(current.status)) throw new Response("Published or superseded knowledge cannot be changed through candidate review", { status: 409 });
   let nextStatus: KnowledgeStatus = current.status;
   let patch: CandidateRow = { reviewed_by: context.userId, reviewed_at: new Date().toISOString() };
@@ -180,7 +183,7 @@ export const curateKnowledgeCandidate = createServerFn({ method: "POST" }).middl
   else if (data.decision === "edit") {
     if (!data.content) throw new Error("Edited content is required");
     const edited = await extractKnowledge(data.content);
-    const { data: existing } = await client.from("aether_knowledge_candidates").select("id,normalized_content,claims,status").eq("owner_id", current.owner_id).eq("project_id", current.project_id).neq("id", current.id);
+    const { data: existing } = await lookup.from("aether_knowledge_candidates").select("id,normalized_content,claims,status").eq("owner_id", current.owner_id).eq("project_id", current.project_id).neq("id", current.id);
     const conflicts = findConflicts({ normalizedContent: edited.normalizedContent, claims: edited.claims }, (existing ?? []) as any);
     patch = { ...patch, title: data.title || edited.title, content: data.content.slice(0, MAX_CONTENT), normalized_content: edited.normalizedContent, content_hash: edited.contentHash, claims: edited.claims, entities: edited.entities, relations: edited.relations, conflicts, status: conflicts.length ? "conflicted" : "needs_review", metadata: { ...(current.metadata ?? {}), editedByCurator: true, extractorVersion: "h1.0.0" } };
     nextStatus = conflicts.length ? "conflicted" : "needs_review";
@@ -317,12 +320,13 @@ export const verifyKnowledgeCandidate = createServerFn({ method: "POST" }).middl
 
 export const publishKnowledgeCandidate = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((data: { candidateId: string; collectionId?: string }) => ({ candidateId: String(data?.candidateId ?? "").trim(), collectionId: data.collectionId ?? null })).handler(async ({ context, data }) => {
   const client = db(context.supabase);
-  const { candidate } = await assertCandidate(client, context.userId, data.candidateId);
+  const { candidate, admin } = await assertCandidate(client, context.userId, data.candidateId);
+  const lookup = admin ? supabaseAdmin : client;
   const gate = canPublishCandidate({ status: candidate.status, verificationStatus: candidate.verification_status, conflicts: Array.isArray(candidate.conflicts) ? candidate.conflicts : [], freshness: candidate.freshness_state as FreshnessState });
   if (!gate.ok) throw new Response(gate.reason, { status: 409 });
   let collectionId = data.collectionId;
   if (collectionId) {
-    const { data: collection } = await client.from("knowledge_collections").select("id").eq("id", collectionId).eq("owner_id", candidate.owner_id).maybeSingle();
+    const { data: collection } = await lookup.from("knowledge_collections").select("id").eq("id", collectionId).eq("owner_id", candidate.owner_id).maybeSingle();
     if (!collection) throw new Response("Knowledge collection not found or access denied", { status: 404 });
   } else {
     const { data: collection } = await client.from("knowledge_collections").select("id").eq("owner_id", candidate.owner_id).eq("project_id", candidate.project_id).eq("stage", "production").order("created_at").limit(1).maybeSingle();
@@ -350,9 +354,10 @@ export const rollbackKnowledgeEntry = createServerFn({ method: "POST" }).middlew
   if (!Number.isInteger(data.version) || data.version < 1) throw new Error("A valid knowledge version is required");
   const client = db(context.supabase);
   const admin = await isAdmin(context.userId);
-  const { data: entry } = await client.from("knowledge_entries").select("*").eq("id", data.entryId).maybeSingle();
+  const lookup = admin ? supabaseAdmin : client;
+  const { data: entry } = await lookup.from("knowledge_entries").select("*").eq("id", data.entryId).maybeSingle();
   if (!entry || (!admin && entry.owner_id !== context.userId)) throw new Response("Knowledge entry not found or access denied", { status: 404 });
-  const { data: target } = await client.from("aether_knowledge_versions").select("*").eq("entry_id", entry.id).eq("owner_id", entry.owner_id).eq("version", data.version).maybeSingle();
+  const { data: target } = await lookup.from("aether_knowledge_versions").select("*").eq("entry_id", entry.id).eq("owner_id", entry.owner_id).eq("version", data.version).maybeSingle();
   if (!target) throw new Response("Knowledge version not found", { status: 404 });
   const nextVersion = Number(entry.current_version ?? 1) + 1;
   const now = new Date().toISOString();
