@@ -10,9 +10,14 @@ export interface AaxChatResponse { modelKey: string; modelId: string; provider: 
 
 type AvailableModel = { id: string; model_key: string; display_name: string; provider: string | null; provider_model: string | null; capabilities: string[]; context_window: number; output_limit: number | null; release_status: string; available_at: string | null; config: Record<string, unknown>; };
 function requiredEnv(name: string): string { const value = process.env[name]; if (!value) throw new Error(`Missing server configuration: ${name}`); return value; }
+function defaultProviderBaseUrl(provider: string): string | null {
+  if (provider === "xai") return "https://api.x.ai/v1";
+  if (provider === "openrouter") return "https://openrouter.ai/api/v1";
+  return null;
+}
 async function providerConfig(admin: SupabaseClient, provider: string, purpose: "aax_inference" | "knowledge_research") {
   const stored = await getActiveProviderCredential(admin, provider, purpose);
-  if (stored) return { baseUrl: stored.baseUrl || (provider === "xai" ? "https://api.x.ai/v1" : requiredEnv("AETHER_AAX_BASE_URL")).replace(/\/$/, ""), apiKey: stored.apiKey };
+  if (stored) return { baseUrl: stored.baseUrl || defaultProviderBaseUrl(provider) || requiredEnv("AETHER_AAX_BASE_URL").replace(/\/$/, ""), apiKey: stored.apiKey };
   if (provider === "xai") return { baseUrl: (process.env.AETHER_XAI_BASE_URL ?? "https://api.x.ai/v1").replace(/\/$/, ""), apiKey: requiredEnv("XAI_API_KEY") };
   if (provider === "openai-compatible") return { baseUrl: requiredEnv("AETHER_AAX_BASE_URL").replace(/\/$/, ""), apiKey: requiredEnv("AETHER_AAX_API_KEY") };
   throw new Error(`Unsupported AAX provider: ${provider}`);
