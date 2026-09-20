@@ -6,7 +6,7 @@ import { Activity, Bot, CheckCircle2, Clock3, Plus, Send, XCircle, Play, Pencil,
 import { AdminShell } from "@/components/layout/AdminShell";
 import { PageHeader, Panel, StatCard, Tag } from "@/components/common/Primitives";
 import { getAgentWorkspace } from "@/lib/admin/console.functions";
-import { appendAgentConversationMessage, createAgentConversation, createOrchestration, getAgentConversation, updateAgentConversationMessage, deleteAgentConversationMessage } from "@/lib/aether/orchestrator.functions";
+import { appendAgentConversationMessage, createAgentConversation, createOrchestration, getAgentConversation, runAgentConversationTurn, updateAgentConversationMessage, deleteAgentConversationMessage } from "@/lib/aether/orchestrator.functions";
 import { adminEnqueueKnowledgeAcquisitionFromPrompt } from "@/lib/aether/knowledge-acquisition-admin.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/team/$agentKey")({
@@ -90,6 +90,7 @@ function Page() {
   const saveMessage = useServerFn(appendAgentConversationMessage);
   const newConversation = useServerFn(createAgentConversation);
   const orchestrate = useServerFn(createOrchestration);
+  const runAgentTurn = useServerFn(runAgentConversationTurn);
   const updateMessage = useServerFn(updateAgentConversationMessage);
   const binMessage = useServerFn(deleteAgentConversationMessage);
   const enqueueKa = useServerFn(adminEnqueueKnowledgeAcquisitionFromPrompt);
@@ -175,14 +176,7 @@ function Page() {
           },
         });
       } else {
-        await saveMessage({
-          data: {
-            conversationId: activeId,
-            content: `Received. ${agent.name} will process this through the durable runtime when a worker is available. Check Run history for real execution events.`,
-            role: "assistant",
-            metadata: { acknowledged: true },
-          },
-        });
+        await runAgentTurn({ data: { conversationId: activeId, content } });
       }
       await queryClient.invalidateQueries({ queryKey: ["agent-conversation", activeId] });
       await queryClient.invalidateQueries({ queryKey: ["admin-agent-workspace", agentKey] });
