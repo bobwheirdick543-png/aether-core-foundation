@@ -16,9 +16,11 @@ function defaultProviderBaseUrl(provider: string): string | null {
   return null;
 }
 async function providerConfig(admin: SupabaseClient, provider: string, purpose: "aax_inference" | "knowledge_research") {
-  const stored = await getActiveProviderCredential(admin, provider, purpose);
+  const stored = await getActiveProviderCredential(admin, provider, purpose)
+    ?? (purpose === "knowledge_research" ? await getActiveProviderCredential(admin, provider, "aax_inference") : null);
   if (stored) return { baseUrl: stored.baseUrl || defaultProviderBaseUrl(provider) || requiredEnv("AETHER_AAX_BASE_URL").replace(/\/$/, ""), apiKey: stored.apiKey };
   if (provider === "xai") return { baseUrl: (process.env.AETHER_XAI_BASE_URL ?? "https://api.x.ai/v1").replace(/\/$/, ""), apiKey: requiredEnv("XAI_API_KEY") };
+  if (provider === "openrouter") return { baseUrl: "https://openrouter.ai/api/v1", apiKey: requiredEnv("OPENROUTER_API_KEY") };
   if (provider === "openai-compatible") return { baseUrl: requiredEnv("AETHER_AAX_BASE_URL").replace(/\/$/, ""), apiKey: requiredEnv("AETHER_AAX_API_KEY") };
   throw new Error(`Unsupported AAX provider: ${provider}`);
 }
