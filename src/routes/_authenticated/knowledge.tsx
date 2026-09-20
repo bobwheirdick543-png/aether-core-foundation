@@ -244,9 +244,10 @@ function Page() {
     refetchInterval: 5000,
   });
 
+  const serverClockOffset = acquisitionJobs[0]?.server_now ? Number(acquisitionJobs[0].server_now) - clockNow : 0;
   function remainingLabel(deadline: string | null, status: string | null) {
     if (!deadline || ["completed", "failed", "cancelled"].includes(status ?? "")) return "—";
-    const remaining = Math.max(0, new Date(deadline).getTime() - clockNow);
+    const remaining = Math.max(0, new Date(deadline).getTime() - (clockNow + serverClockOffset));
     if (!remaining) return "expired";
     const totalSeconds = Math.floor(remaining / 1000);
     const hours = Math.floor(totalSeconds / 3600);
