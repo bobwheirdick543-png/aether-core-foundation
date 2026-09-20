@@ -29,6 +29,7 @@ import {
   adminSetKnowledgeAcquisitionPriority,
   listKnowledgeAcquisitionJobs,
 } from "@/lib/aether/knowledge-acquisition.functions";
+import { sendKnowledgeAcquisitionMessage } from "@/lib/aether/knowledge-acquisition-control.functions";
 
 export const Route = createFileRoute("/_authenticated/knowledge")({
   head: () => ({
@@ -90,6 +91,7 @@ function Page() {
   const adminResume = useServerFn(adminResumeKnowledgeAcquisition);
   const adminCancel = useServerFn(adminCancelKnowledgeAcquisition);
   const adminPriority = useServerFn(adminSetKnowledgeAcquisitionPriority);
+  const extendAcquisition = useServerFn(sendKnowledgeAcquisitionMessage);
 
   const { data: candidates = [], isError: candidatesError } = useQuery({
     queryKey: ["phase-h-candidates"],
@@ -256,6 +258,16 @@ function Page() {
     return hours ? `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s` : `${minutes}m ${String(seconds).padStart(2, "0")}s`;
   }
 
+  async function extendTime(jobId: string, minutes: number) {
+    setAdminBusyId(jobId);
+    try {
+      await extendAcquisition({ data: { jobId, action: "extend_time", minutes, message: `Administrator granted ${minutes} additional research minute(s).` } });
+      await qc.invalidateQueries({ queryKey: ["knowledge-acquisition-admin", true] });
+    } finally {
+      setAdminBusyId(null);
+    }
+  }
+
   async function adminAction(taskId: string, action: "pause" | "resume" | "cancel" | "priority", priority?: number) {
     setAdminBusyId(taskId);
     try {
@@ -361,6 +373,8 @@ function Page() {
                     ) : null}
                     {!terminal ? (
                       <>
+                        <Button size="sm" variant="ghost" disabled={adminBusyId === job.id} onClick={() => void extendTime(job.id, 5)}>+5m</Button>
+                        <Button size="sm" variant="ghost" disabled={adminBusyId === job.id} onClick={() => void extendTime(job.id, 10)}>+10m</Button>
                         <span className="text-[10px] text-muted-foreground">Priority</span>
                         <input value={adminPriorityValue} onChange={(e) => setAdminPriorityValue(e.target.value)} className="h-8 w-16 rounded-md border bg-background px-2 text-xs" inputMode="numeric" />
                         <Button size="sm" variant="ghost" disabled={adminBusyId === job.task_id} onClick={() => void adminAction(job.task_id, "priority", Number(adminPriorityValue))}>Set</Button>
