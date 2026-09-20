@@ -33,19 +33,47 @@ function encryptionKey(): Buffer {
   );
 }
 
+function legacyEncryptionKey(): Buffer | null {
+  const raw =
+    process.env.AETHER_PROVIDER_CREDENTIAL_ENCRYPTION_KEY?.trim() ||
+    process.env.AETHER_API_KEY_ENCRYPTION_KEY?.trim();
+  if (!raw) return null;
+  if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, "hex");
+  const decoded = Buffer.from(raw, "base64url");
+  return decoded.length === 32 ? decoded : null;
+}
+
 function encryptSecret(secret: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
   const ciphertext = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
-  return `1.${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${ciphertext.toString("base64url")}`;
+  return `2.${iv.toString("base64url")}.${cipher.getAuthTag().toString("base64url")}.${ciphertext.toString("base64url")}`;
 }
 
 function decryptSecret(value: string): string {
-  const [version, iv, tag, ciphertext] = value.split(".");
-  if (version !== "1" || !iv || !tag || !ciphertext) throw new Error("Invalid encrypted provider credential");
-  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(iv, "base64url"));
-  decipher.setAuthTag(Buffer.from(tag, "base64url"));
-  return Buffer.concat([decipher.update(Buffer.from(ciphertext, "base64url")), decipher.final()]).toString("utf8");
+  const [version, ivText, tagText, ciphertextText] = value.split(".");
+  if (!ivText || !tagText || !ciphertextText || (version !== "1" && version !== "2")) {
+    throw new Error("Invalid encrypted provider credential");
+  }
+
+  const ciphertext = Buffer.from(ciphertextText, "base64url");
+  const iv = Buffer.from(ivText, "base64url");
+  const tag = Buffer.from(tagText, "base64url");
+
+  const decryptWith = (key: Buffer) => {
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  };
+
+  try {
+    return decryptWith(encryptionKey());
+  } catch (derivedError) {
+    if (version !== "1") throw derivedError;
+    const legacy = legacyEncryptionKey();
+    if (!legacy) throw derivedError;
+    return decryptWith(legacy);
+  }
 }
 
 export async function getActiveProviderCredential(admin: SupabaseClient, provider: string, purpose: ProviderCredentialPurpose) {
