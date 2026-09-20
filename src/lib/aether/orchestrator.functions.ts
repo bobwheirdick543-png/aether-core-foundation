@@ -3,6 +3,10 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { appendTaskEvent, createRun, createTask } from "./task-service";
 import { classifyIntent, validateOrchestrationPlan } from "./orchestrator";
 import { filterRunnableAgents, loadAgentStatusMap } from "./agent-status";
+import { AGENTS, type AgentKey } from "./agents";
+import { AGENT_INTELLIGENCE } from "./agent-intelligence";
+import { executeAaxChat } from "./aax-gateway";
+import { executeAaxWebResearch } from "./aax-web-research";
 
 async function isAdmin(supabase: any, userId: string) {
   const { data } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
@@ -134,6 +138,81 @@ export const createOrchestration = createServerFn({ method: "POST" })
       if (linkError) throw new Error(linkError.message);
     }
     return { taskId: task.id, planId: plan.id, runId, status: plan.status, draft };
+  });
+
+export const runAgentConversationTurn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: { conversationId: string; content: string }) => ({
+    conversationId: assertNonEmpty(data?.conversationId, "Conversation ID"),
+    content: assertNonEmpty(data?.content, "Message").slice(0, 20_000),
+  }))
+  .handler(async ({ context, data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    if (!(await isAdmin(supabaseAdmin, context.userId))) throw new Response("Administrator authorization required", { status: 403 });
+    const { data: conversation } = await supabaseAdmin.from("agent_conversations").select("id,owner_id,agent_key").eq("id", data.conversationId).maybeSingle();
+    if (!conversation || conversation.owner_id !== context.userId) throw new Response("Agent conversation not found or access denied", { status: 404 });
+    const agent = AGENTS.find((item) => item.key === conversation.agent_key);
+    if (!agent) throw new Response("Agent is not registered", { status: 404 });
+    const { data: models, error: modelError } = await supabaseAdmin
+      .from("aax_models")
+      .select("model_key")
+      .eq("release_status", "available")
+      .order("generation", { ascending: false })
+      .order("revision", { ascending: false })
+      .limit(1);
+    if (modelError || !models?.[0]?.model_key) throw new Response("No available AAX model is configured for agent execution", { status: 503 });
+    const modelKey = String(models[0].model_key);
+    const { data: history, error: historyError } = await supabaseAdmin
+      .from("agent_conversation_messages")
+      .select("role,content")
+      .eq("conversation_id", conversation.id)
+      .eq("owner_id", context.userId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (historyError) throw new Response(`Could not load agent conversation: ${historyError.message}`, { status: 500 });
+    const intelligence = AGENT_INTELLIGENCE[conversation.agent_key as AgentKey];
+    const system = [
+      `You are the ${agent.name} inside Aether AI Platform.`,
+      `Mission: ${agent.purpose}`,
+      `Responsibilities: ${agent.responsibilities.join("; ")}`,
+      `Prohibited actions: ${agent.prohibited_actions.join("; ")}`,
+      intelligence ? `Operational focus: ${intelligence.focus.join("; ")}` : "",
+      intelligence ? `Preserve: ${intelligence.mustPreserve.join("; ")}` : "",
+      intelligence ? `Handoff rules: ${intelligence.handoff.join("; ")}` : "",
+      "Never claim that an external action, search, delivery, publication, or execution happened unless Aether actually performed it and has persisted evidence.",
+      "Never invent telemetry, sources, permissions, or completion states.",
+    ].filter(Boolean).join("\n");
+    const messages = [
+      { role: "system" as const, content: system },
+      ...(history ?? []).reverse().map((item: any) => ({ role: item.role as "user" | "assistant" | "system", content: String(item.content) })),
+      { role: "user" as const, content: data.content },
+    ];
+    const useWeb = conversation.agent_key === "research" || conversation.agent_key === "knowledge-acquisition";
+    const response = useWeb
+      ? await executeAaxWebResearch(supabaseAdmin, { modelKey, messages, maxOutputTokens: 4096, telemetry: { userId: context.userId, kind: `aax.agent.${conversation.agent_key}` } })
+      : await executeAaxChat(supabaseAdmin, { modelKey, messages, maxOutputTokens: 4096, telemetry: { userId: context.userId, kind: `aax.agent.${conversation.agent_key}` } });
+    const { data: assistant, error: assistantError } = await supabaseAdmin.from("agent_conversation_messages").insert({
+      conversation_id: conversation.id,
+      owner_id: context.userId,
+      role: "assistant",
+      content: response.content,
+      metadata: {
+        modelKey: response.modelKey,
+        provider: response.provider,
+        providerModel: response.providerModel,
+        webResearch: useWeb,
+        sourceCount: "sources" in response ? response.sources.length : 0,
+        sources: "sources" in response ? response.sources : [],
+        tokensIn: response.tokensIn,
+        tokensOut: response.tokensOut,
+        latencyMs: response.latencyMs,
+        execution: "real-aax-agent-turn",
+      },
+    }).select("*").single();
+    if (assistantError || !assistant) throw new Response(`Could not persist agent response: ${assistantError?.message ?? "unknown error"}`, { status: 500 });
+    await supabaseAdmin.from("agent_conversations").update({ last_message_at: assistant.created_at, updated_at: assistant.created_at }).eq("id", conversation.id).eq("owner_id", context.userId);
+    await supabaseAdmin.from("audit_logs").insert({ actor_id: context.userId, action: "agent_conversation.turn.executed", target_type: "agent_conversation", target_id: conversation.id, metadata: { agent_key: conversation.agent_key, modelKey, provider: response.provider, providerModel: response.providerModel, webResearch: useWeb } });
+    return { message: assistant, modelKey, provider: response.provider, providerModel: response.providerModel, sources: "sources" in response ? response.sources : [] };
   });
 
 export const getOrchestrationPlan = createServerFn({ method: "GET" })
