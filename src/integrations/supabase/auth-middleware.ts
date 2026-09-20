@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { Database } from './types'
 import { getRequest } from '@tanstack/react-start/server'
 import { readAdminSessionCookies, writeAdminSessionCookies } from '@/lib/auth/admin.session.server'
+import { supabaseAdmin } from '@/integrations/supabase/client.server'
 
 function isNewSupabaseApiKey(value: string): boolean {
   return value.startsWith('sb_publishable_') || value.startsWith('sb_secret_');
@@ -104,6 +105,23 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
     const userId = data.claims.sub;
     if (!userId) {
       throw new Error('Unauthorized: No user ID found in token');
+    }
+
+    // Bootstrap administration is granted only after a successful Supabase Auth
+    // login whose email exactly matches the server-only bootstrap identity.
+    // This never demotes existing administrators and never trusts client claims
+    // without first validating the access token above.
+    const bootstrapEmail = process.env['AETHER_ADMIN_EMAIL']?.trim().toLowerCase();
+    const authenticatedEmail = typeof data.claims.email === 'string' ? data.claims.email.trim().toLowerCase() : '';
+    if (bootstrapEmail && authenticatedEmail && authenticatedEmail === bootstrapEmail) {
+      const { error: bootstrapRoleError } = await supabaseAdmin
+        .from('user_roles')
+        .insert({ user_id: userId, role: 'admin' })
+        .select('id')
+        .maybeSingle();
+      if (bootstrapRoleError && !/duplicate|unique/i.test(bootstrapRoleError.message)) {
+        throw new Error('Bootstrap administrator provisioning failed');
+      }
     }
 
     return next({
