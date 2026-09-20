@@ -86,7 +86,8 @@ export async function completeAgentStep(admin: SupabaseClient, planId: string, s
       await admin.from("orchestration_plans").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", planId);
       await admin.from("tasks").update({ status: "completed", progress: 100, completed_at: new Date().toISOString(), detail: { phase: "orchestration_complete", plan_id: planId } }).eq("id", plan.task_id);
     } else {
-    await prepareNextOrchestrationSteps(admin, planId, actorId);
+      await prepareNextOrchestrationSteps(admin, planId, actorId);
+    }
   }
 }
 
