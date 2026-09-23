@@ -115,7 +115,8 @@ function Page() {
   const [kaDeadline, setKaDeadline] = useState("");
   const [kaBusy, setKaBusy] = useState(false);
   const [kaMsg, setKaMsg] = useState("");
-  const conversationId = selectedConversation ?? data?.conversations?.[0]?.id ?? null;
+  const conversations = Array.isArray(data?.conversations) ? data.conversations : Array.isArray((data as any)?.data?.conversations) ? (data as any).data.conversations : [];
+  const conversationId = selectedConversation ?? conversations[0]?.id ?? null;
   const { data: conversationData } = useQuery({
     queryKey: ["agent-conversation", conversationId],
     queryFn: () => fetchConversation({ data: { conversationId: conversationId! } }),
@@ -170,7 +171,7 @@ function Page() {
         const summary =
           result.status === "awaiting_approval"
             ? `I understood this as “${result.draft.intent}”. I created plan ${result.planId}, but this action requires approval before execution.`
-            : `I understood this as “${result.draft.intent}”. I created plan ${result.planId} with ${result.draft.agents.length} orchestration participant(s) and routed it through the universal runtime.`;
+            : `I understood this as “${result.draft.intent}”. I created plan ${result.planId} with ${Array.isArray(result.draft.agents) ? result.draft.agents.length : 0} orchestration participant(s) and routed it through the universal runtime.`;
         await saveMessage({
           data: {
             conversationId: activeId,
@@ -371,7 +372,7 @@ function Page() {
                   </span>
                 </button>
               ))}
-              {(data.conversations ?? []).length === 0 && (
+              {conversations.length === 0 && (
                 <p className="text-xs text-muted-foreground">No chats yet. Type below to start one.</p>
               )}
             </div>
