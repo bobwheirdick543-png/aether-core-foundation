@@ -57,7 +57,7 @@ function Page() {
           <div className="grid gap-4 lg:grid-cols-3">
             <LogPanel
               title="Audit"
-              rows={(safe.audit ?? []).map((x: any) => ({
+              rows={(Array.isArray(safe.audit) ? safe.audit : []).map((x: any) => ({
                 id: x.id,
                 time: x.created_at,
                 title: x.action,
@@ -67,7 +67,7 @@ function Page() {
             />
             <LogPanel
               title="Runtime"
-              rows={(safe.runtime ?? []).map((x: any) => ({
+              rows={(Array.isArray(safe.runtime) ? safe.runtime : []).map((x: any) => ({
                 id: x.id,
                 time: x.created_at,
                 title: x.event_type,
@@ -77,7 +77,7 @@ function Page() {
             />
             <LogPanel
               title="API"
-              rows={(safe.api ?? []).map((x: any) => ({
+              rows={(Array.isArray(safe.api) ? safe.api : []).map((x: any) => ({
                 id: x.id,
                 time: x.created_at,
                 title: `${x.method} ${x.path}`,
