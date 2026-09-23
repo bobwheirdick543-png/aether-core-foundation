@@ -4,10 +4,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { Clock3, Globe2, Play, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/common/Primitives";
-import { startKnowledgeAcquisition } from "@/lib/aether/knowledge-acquisition.functions";
+import { kickKnowledgeAcquisition, startKnowledgeAcquisition } from "@/lib/aether/knowledge-acquisition.functions";
 
 export function KnowledgeAcquisitionLauncher() {
   const start = useServerFn(startKnowledgeAcquisition);
+  const kick = useServerFn(kickKnowledgeAcquisition);
   const qc = useQueryClient();
   const [subject, setSubject] = useState("");
   const [budget, setBudget] = useState("15");
@@ -19,8 +20,7 @@ export function KnowledgeAcquisitionLauncher() {
     setBusy(true); setMessage("");
     try {
       const result = await start({ data: { subject, sourceType, targetType: "global", timeBudgetMs: Number(budget) * 60_000 } });
-      setMessage(result.deduplicated ? "An equivalent mission is already active or waiting." : "Mission queued. Research will run within the bounded worker pool.");
-      if (!result.deduplicated) setSubject("");
+      if (!result.deduplicated) { setMessage("Mission started. The knowledge-acquisition agent is beginning real web research now."); void kick({ data: { taskId: result.taskId } }).catch((error) => setMessage(error instanceof Error ? `Mission created, but immediate dispatch failed: ${error.message}. The durable worker will retry automatically.` : "Mission created; durable worker dispatch is pending.")); setSubject(""); } else { setMessage("An equivalent mission is already active or waiting."); }
       await qc.invalidateQueries({ queryKey: ["aether-live-task-activity"] });
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not start acquisition."); }
     finally { setBusy(false); }

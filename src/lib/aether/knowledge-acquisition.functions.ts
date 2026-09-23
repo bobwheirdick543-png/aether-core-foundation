@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createKnowledgeAcquisitionTask, normalizeResearchBudget } from "./knowledge-acquisition-runtime";
+import { runSpecificRuntimeWork } from "./runtime-worker";
 
 async function requireAdmin(context: { supabase: unknown; userId: string }) {
   const db = context.supabase as SupabaseClient;
@@ -18,6 +19,17 @@ export const startKnowledgeAcquisition = createServerFn({ method: "POST" }).midd
 }).handler(async ({ context, data }) => {
   const result = await createKnowledgeAcquisitionTask(supabaseAdmin, { ownerId: context.userId, ...data, trigger: data.sourceType === "background" ? "background_knowledge_gap" : "manual_acquisition" });
   return result;
+});
+
+export const kickKnowledgeAcquisition = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((d: { taskId: string }) => ({ taskId: String(d?.taskId ?? "").trim() })).handler(async ({ context, data }) => {
+  const { data: job, error } = await supabaseAdmin.from("aether_knowledge_acquisition_jobs").select("id,task_id,owner_id,status").eq("task_id", data.taskId).maybeSingle();
+  if (error || !job) throw new Response("Knowledge acquisition mission not found", { status: 404 });
+  const { data: isAdmin, error: roleError } = await supabaseAdmin.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+  if (roleError) throw new Response(roleError.message, { status: 500 });
+  if (job.owner_id !== context.userId && !isAdmin) throw new Response("Forbidden", { status: 403 });
+  if (!["queued", "running"].includes(job.status)) return { claimed: false, status: job.status };
+  const result = await runSpecificRuntimeWork(supabaseAdmin, { taskId: job.task_id, actorId: context.userId, workerId: `interactive-${crypto.randomUUID()}`, leaseSeconds: 55, recoveryLimit: 0 });
+  return { ...result, status: "running" };
 });
 
 export const listKnowledgeAcquisitionJobs = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).inputValidator((d?: { limit?: number; admin?: boolean }) => ({ limit: Math.min(200, Math.max(1, Math.floor(d?.limit ?? 50))), admin: Boolean(d?.admin) })).handler(async ({ context, data }) => {
