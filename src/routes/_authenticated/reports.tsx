@@ -93,7 +93,8 @@ function Page() {
   const open = async (id: string) => {
     setBusy(true);
     try {
-      setDetail(await getReport({ data: { reportId: id } }));
+      const result = await getReport({ data: { reportId: id } });
+      setDetail({ ...result, versions: Array.isArray(result.versions) ? result.versions : [] });
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
