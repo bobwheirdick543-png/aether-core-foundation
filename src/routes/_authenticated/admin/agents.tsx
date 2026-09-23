@@ -84,10 +84,16 @@ function Page() {
     },
   });
 
-  const agents = data?.agents ?? [];
-  const versions = data?.versions ?? [];
-  const permissions = data?.permissions ?? [];
-  const runtime = data?.runtime ?? { workers: [], runs: [], handoffs: [], messages: [] };
+  const agents = Array.isArray(data?.agents) ? data.agents : Array.isArray((data as any)?.data?.agents) ? (data as any).data.agents : [];
+  const versions = Array.isArray(data?.versions) ? data.versions : Array.isArray((data as any)?.data?.versions) ? (data as any).data.versions : [];
+  const permissions = Array.isArray(data?.permissions) ? data.permissions : Array.isArray((data as any)?.data?.permissions) ? (data as any).data.permissions : [];
+  const runtimeRaw = data?.runtime ?? (data as any)?.data?.runtime;
+  const runtime = {
+    workers: Array.isArray(runtimeRaw?.workers) ? runtimeRaw.workers : [],
+    runs: Array.isArray(runtimeRaw?.runs) ? runtimeRaw.runs : [],
+    handoffs: Array.isArray(runtimeRaw?.handoffs) ? runtimeRaw.handoffs : [],
+    messages: Array.isArray(runtimeRaw?.messages) ? runtimeRaw.messages : [],
+  };
   const activeAgents = agents.filter((agent: any) => agent.status === "enabled").length;
   const healthyWorkers = runtime.workers.filter(
     (worker: any) =>
