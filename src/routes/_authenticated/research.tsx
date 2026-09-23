@@ -163,7 +163,7 @@ function Page() {
           />
         ) : (
           <div className="space-y-3">
-            {data!.map((r) => (
+            {(Array.isArray(data) ? data : []).map((r) => (
               <Panel key={r.id} className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div>
