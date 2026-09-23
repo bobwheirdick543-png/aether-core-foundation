@@ -212,7 +212,7 @@ function Page() {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_430px]">
             <Panel className="space-y-2 p-2">
               {jobs.length ? (
-                jobs.map((job) => (
+                (Array.isArray(jobs) ? jobs : []).map((job) => (
                   <button
                     key={job.id}
                     type="button"
