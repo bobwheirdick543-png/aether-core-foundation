@@ -55,6 +55,8 @@ function Page() {
     retry: 1,
   });
 
+  const researchRuns = Array.isArray(data) ? data : Array.isArray((data as any)?.research) ? (data as any).research : Array.isArray((data as any)?.data) ? (data as any).data : [];
+
   const [topic, setTopic] = useState("");
   const [depth, setDepth] = useState("basic");
   const [seedUrl, setSeedUrl] = useState("");
@@ -155,7 +157,7 @@ function Page() {
           <Panel>
             <p className="text-sm text-muted-foreground">Loading research runs…</p>
           </Panel>
-        ) : (data?.length ?? 0) === 0 ? (
+        ) : researchRuns.length === 0 ? (
           <EmptyState
             title="No research runs yet"
             description="Queue a topic above. Source counts rise only after real retrieval."
@@ -163,7 +165,7 @@ function Page() {
           />
         ) : (
           <div className="space-y-3">
-            {(Array.isArray(data) ? data : []).map((r) => (
+            {researchRuns.map((r) => (
               <Panel key={r.id} className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div>
