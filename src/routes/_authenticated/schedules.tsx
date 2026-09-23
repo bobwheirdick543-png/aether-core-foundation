@@ -39,6 +39,8 @@ function Page() {
     retry: 1,
   });
 
+  const schedules = Array.isArray(data) ? data : Array.isArray((data as any)?.schedules) ? (data as any).schedules : Array.isArray((data as any)?.data) ? (data as any).data : [];
+
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"cron" | "interval" | "once">("cron");
   const [expression, setExpression] = useState("0 9 * * *");
@@ -181,7 +183,7 @@ function Page() {
           <Panel>
             <p className="text-sm text-muted-foreground">Loading schedules…</p>
           </Panel>
-        ) : (data?.length ?? 0) === 0 ? (
+        ) : schedules.length === 0 ? (
           <EmptyState
             title="No schedules yet"
             description="Create one above. Definitions and runs are stored durably on the server."
@@ -189,7 +191,7 @@ function Page() {
           />
         ) : (
           <div className="space-y-2">
-            {(Array.isArray(data) ? data : []).map((s: any) => (
+            {schedules.map((s: any) => (
               <Panel key={s.id} className="space-y-3">
                 <div className="flex items-start justify-between gap-4">
                   <div>
