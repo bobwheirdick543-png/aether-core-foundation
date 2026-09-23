@@ -64,7 +64,7 @@ function Page() {
             {data.length === 0 ? (
               <p className="px-5 py-5 text-sm text-muted-foreground">No research sessions recorded.</p>
             ) : (
-              data.map((r: any, i: number) => (
+              (Array.isArray(data) ? data : []).map((r: any, i: number) => (
                 <div
                   key={r.id}
                   className={`px-5 py-4 ${i < data.length - 1 ? "border-b border-border/50" : ""}`}
