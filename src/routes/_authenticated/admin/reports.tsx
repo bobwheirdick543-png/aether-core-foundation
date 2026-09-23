@@ -151,7 +151,7 @@ function Page() {
             />
           ) : (
             <div className="mt-4 divide-y divide-border">
-              {rows.map((r) => (
+              {(Array.isArray(rows) ? rows : []).map((r) => (
                 <div
                   key={r.id}
                   className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between"
@@ -203,7 +203,7 @@ function Page() {
               </Button>
             </div>
             <div className="mt-4 space-y-2">
-              {detail.versions.map((v) => (
+              {(Array.isArray(detail?.versions) ? detail.versions : []).map((v) => (
                 <div
                   key={v.id}
                   className="flex flex-col gap-2 rounded-md border p-3 md:flex-row md:items-center md:justify-between"
