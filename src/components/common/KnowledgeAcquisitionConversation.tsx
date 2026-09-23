@@ -53,7 +53,7 @@ export function KnowledgeAcquisitionConversation({ jobId }: Props) {
 
       <div className="mt-4 max-h-72 space-y-2 overflow-auto rounded-md border p-3">
         {(data?.messages ?? []).length ? (
-          data!.messages.map((m: any) => (
+          (Array.isArray(data?.messages) ? data.messages : []).map((m: any) => (
             <div key={m.id} className={m.sender_type === "user" ? "ml-8 rounded-md bg-muted p-2 text-xs" : "mr-8 rounded-md border p-2 text-xs"}>
               <div className="mb-1 flex items-center gap-2">
                 <Tag>{m.sender_type}</Tag>
