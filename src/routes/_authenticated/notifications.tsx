@@ -47,6 +47,8 @@ function Page() {
     queryFn: () => load({}),
   });
 
+  const notifications = Array.isArray(data) ? data : Array.isArray((data as any)?.notifications) ? (data as any).notifications : Array.isArray((data as any)?.data) ? (data as any).data : [];
+
   async function onMarkRead(id: string) {
     const result = await markRead({ data: { id } });
     if (result.ok) {
@@ -68,7 +70,7 @@ function Page() {
           <Panel>
             <p className="text-sm text-muted-foreground">Loading notifications…</p>
           </Panel>
-        ) : (data?.length ?? 0) === 0 ? (
+        ) : notifications.length === 0 ? (
           <EmptyState
             title="No notifications"
             description="When tasks or research runs produce real events for you, they will appear here."
@@ -76,7 +78,7 @@ function Page() {
           />
         ) : (
           <div className="space-y-2">
-            {(Array.isArray(data) ? data : []).map((n) => (
+            {notifications.map((n) => (
               <Panel key={n.id} className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <Link
