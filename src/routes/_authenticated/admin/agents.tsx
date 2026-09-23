@@ -228,7 +228,7 @@ function Page() {
                   handoff.from_agent === agent.agent_key || handoff.to_agent === agent.agent_key,
               );
               const workerIds = new Set(
-                agentRuns.filter((run: any) => run.worker_id).map((run: any) => run.worker_id),
+                (Array.isArray(agentRuns) ? agentRuns : []).filter((run: any) => run.worker_id).map((run: any) => run.worker_id),
               );
               const hasHealthyWorker = runtime.workers.some(
                 (worker: any) =>
