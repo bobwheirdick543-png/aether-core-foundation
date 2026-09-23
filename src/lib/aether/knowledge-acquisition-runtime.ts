@@ -76,6 +76,20 @@ export async function executeKnowledgeAcquisitionStep(admin: SupabaseClient, opt
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       const { data: task } = await admin.from("tasks").select("cancel_requested_at,deadline_at,detail").eq("id", opts.taskId).maybeSingle();
+      if (Date.now() < Date.parse(task?.deadline_at ?? deadline) && !task?.cancel_requested_at) {
+        const detail = task?.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
+        const completedAspects = Array.isArray(detail.completed_aspects) ? detail.completed_aspects.filter((v): v is string => typeof v === "string") : [];
+        const nextAspectId = typeof opts.continuationAspectId === "string" ? opts.continuationAspectId : (allAspects.find((aspect) => !completedAspects.includes(aspect.id))?.id ?? null);
+        const { data: currentRun } = await admin.from("task_runs").select("attempt,inputs,agent_key,max_retries,timeout_ms").eq("id", opts.runId).maybeSingle();
+        if (!currentRun) throw new Error("Current knowledge acquisition run not found");
+        const nextRun = await createRun(admin, { task_id: opts.taskId, owner_id: opts.ownerId, agent_key: currentRun.agent_key ?? "knowledge-acquisition", inputs: { ...(currentRun.inputs ?? {}), continuation_aspect_id: nextAspectId }, attempt: Number(currentRun.attempt ?? 0) + 1, retry_of: opts.runId, timeout_ms: Number(currentRun.timeout_ms ?? job.time_budget_ms), max_retries: Number(currentRun.max_retries ?? 3), deadline_at: task?.deadline_at ?? deadline, idempotency_key: `ka:${opts.taskId}:retry-slice:${nextAspectId ?? "final"}:${Number(currentRun.attempt ?? 0) + 1}` });
+        const now = new Date().toISOString();
+        await admin.from("aether_knowledge_acquisition_jobs").update({ run_id: nextRun.id, status: "running", last_event_at: now, updated_at: now }).eq("id", job.id);
+        await transitionRunStatus(admin, opts.runId, "running", "completed", { outputs: { slice_yielded: true, next_run_id: nextRun.id, next_aspect_id: nextAspectId }, workerId });
+        await admin.from("tasks").update({ status: "running", worker_id: null, lease_expires_at: null, heartbeat_at: null, updated_at: now, detail: { ...detail, continuation_aspect_id: nextAspectId } }).eq("id", opts.taskId);
+        await appendTaskEvent(admin, { taskId: opts.taskId, runId: nextRun.id, eventType: "knowledge.aspect.timed_out", message: "Worker slice ended; durable continuation queued without ending the mission", data: { next_run_id: nextRun.id, next_aspect_id: nextAspectId }, workerId });
+        return;
+      }
       const detail = task?.detail && typeof task.detail === "object" ? task.detail as Record<string, unknown> : {};
       const pauseRequested = detail.pause_requested === true;
       const cancelled = Boolean(task?.cancel_requested_at) && !pauseRequested;
