@@ -15,7 +15,6 @@ jobs:
           import pathlib,re
           roots=[pathlib.Path("src"),pathlib.Path("routes"),pathlib.Path("lib"),pathlib.Path("components"),pathlib.Path("integrations")]
           simple=re.compile(r'\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\.map\s*\(')
-          query=re.compile(r'useQuery\\s*\\(')
           for root in roots:
             if not root.exists(): continue
             for p in root.rglob("*"):
