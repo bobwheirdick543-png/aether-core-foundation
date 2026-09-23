@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Check, Database, GitBranch, History, Pause, Play, RefreshCw, ShieldCheck, Timer, X } from "lucide-react";
@@ -27,6 +27,7 @@ import {
   adminPauseKnowledgeAcquisition,
   adminResumeKnowledgeAcquisition,
   adminSetKnowledgeAcquisitionPriority,
+  kickKnowledgeAcquisition,
   listKnowledgeAcquisitionJobs,
 } from "@/lib/aether/knowledge-acquisition.functions";
 import { sendKnowledgeAcquisitionMessage } from "@/lib/aether/knowledge-acquisition-control.functions";
@@ -91,6 +92,8 @@ function Page() {
   const adminResume = useServerFn(adminResumeKnowledgeAcquisition);
   const adminCancel = useServerFn(adminCancelKnowledgeAcquisition);
   const adminPriority = useServerFn(adminSetKnowledgeAcquisitionPriority);
+  const kickAcquisition = useServerFn(kickKnowledgeAcquisition);
+  const kickInFlight = useRef(new Set<string>());
   const extendAcquisition = useServerFn(sendKnowledgeAcquisitionMessage);
 
   const { data: candidates = [], isError: candidatesError } = useQuery({
@@ -245,6 +248,18 @@ function Page() {
     queryFn: () => listAcquisitionJobs({ data: { admin: true, limit: 100 } }),
     refetchInterval: 5000,
   });
+
+  useEffect(() => {
+    if (!roles?.isAdmin) return;
+    for (const job of acquisitionJobs as any[]) {
+      const status = job.task_status ?? job.status;
+      if (!["queued", "running"].includes(status) || !job.task_id || kickInFlight.current.has(job.task_id)) continue;
+      kickInFlight.current.add(job.task_id);
+      void kickAcquisition({ data: { taskId: job.task_id } })
+        .catch(() => undefined)
+        .finally(() => kickInFlight.current.delete(job.task_id));
+    }
+  }, [acquisitionJobs, kickAcquisition, roles?.isAdmin]);
 
   const serverClockOffset = acquisitionJobs[0]?.server_now ? Number(acquisitionJobs[0].server_now) - clockNow : 0;
   function remainingLabel(deadline: string | null, status: string | null) {
