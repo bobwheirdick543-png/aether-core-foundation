@@ -54,7 +54,7 @@ function Page() {
               No AAX generations are currently released. An administrator must release and configure a model before it can be used.
             </div>
           ) : (
-            models.map((m) => (
+            (Array.isArray(models) ? models : []).map((m) => (
               <div key={m.model_key} className="panel group flex flex-col p-5 transition-all duration-200 hover:border-primary/35">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -67,7 +67,7 @@ function Page() {
                 </div>
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{m.description}</p>
                 <div className="mt-4 flex flex-wrap gap-1.5">
-                  {(m.capabilities ?? []).map((cap) => (
+                  {(Array.isArray(m.capabilities) ? m.capabilities : []).map((cap) => (
                     <span key={cap} className="rounded-md border border-border/60 bg-elevated/50 px-2 py-0.5 text-[10px] text-muted-foreground">
                       {cap}
                     </span>
