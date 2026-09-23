@@ -16,7 +16,7 @@ export const Route = createFileRoute("/_authenticated/admin/research")({
 });
 
 function Page() {
-  const safeResearch = Array.isArray(data) ? data : Array.isArray((data as any)?.research) ? (data as any).research : Array.isArray((data as any)?.data) ? (data as any).data : [];  const load = useServerFn(getPhaseUResearch);
+  const load = useServerFn(getPhaseUResearch);
   const { data: researchData, isLoading, isError } = useQuery({
     queryKey: ["phase-u-research"],
     queryFn: async () => {
@@ -30,7 +30,8 @@ function Page() {
     refetchInterval: 15000,
     retry: 1,
   });
-  const data = Array.isArray(researchData) ? researchData : [];
+  const data = researchData;
+  const safeResearch = Array.isArray(data) ? data : Array.isArray((data as any)?.research) ? (data as any).research : Array.isArray((data as any)?.data) ? (data as any).data : [];
 
   return (
     <AdminShell>
