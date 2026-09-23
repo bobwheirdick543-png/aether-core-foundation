@@ -236,7 +236,7 @@ function Page() {
               className="rounded-md border border-border bg-background px-3 py-2 text-xs"
             >
               <option value="">Global memory</option>
-              {projects.map((p) => (
+              {(Array.isArray(projects) ? projects : []).map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
@@ -306,7 +306,7 @@ function Page() {
             </div>
           </Panel>
           {memories.length ? (
-            memories.map((m) => (
+            (Array.isArray(memories) ? memories : []).map((m) => (
               <Panel key={m.id}>
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-primary">
@@ -422,7 +422,7 @@ function Page() {
             </div>
             {candidates.length ? (
               <div className="mt-4 space-y-3">
-                {candidates.map((c) => (
+                {(Array.isArray(candidates) ? candidates : []).map((c) => (
                   <div key={c.id} className="rounded-lg border border-border p-3">
                     <div className="flex items-center gap-1.5">
                       <Tag>{c.memory_type}</Tag>
