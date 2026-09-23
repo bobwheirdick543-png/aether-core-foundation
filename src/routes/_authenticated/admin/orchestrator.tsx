@@ -31,12 +31,15 @@ function Page() {
     queryFn: () => fetchPlans({}),
   });
 
+  const configList = Array.isArray(configs) ? configs : Array.isArray((configs as any)?.configs) ? (configs as any).configs : Array.isArray((configs as any)?.data) ? (configs as any).data : [];
+  const planList = Array.isArray(plans) ? plans : Array.isArray((plans as any)?.plans) ? (plans as any).plans : Array.isArray((plans as any)?.data) ? (plans as any).data : [];
+
   const activateMutation = useMutation({
     mutationFn: (configId: string) => activate({ data: { configId } }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-orchestrator-configs"] }),
   });
 
-  const activeConfig = (configs as any[]).find((c) => c.status === "active") ?? null;
+  const activeConfig = configList.find((c) => c.status === "active") ?? null;
 
   return (
     <AdminShell>
@@ -86,10 +89,10 @@ function Page() {
             </p>
           </div>
           <div className="mt-4 space-y-2">
-            {plans.length === 0 ? (
+            {planList.length === 0 ? (
               <p className="text-xs text-muted-foreground">No orchestration plans recorded yet.</p>
             ) : (
-              (Array.isArray(plans) ? plans : []).map((plan) => (
+              planList.map((plan) => (
                 <div key={plan.id} className="rounded-md border border-border/60 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -130,10 +133,10 @@ function Page() {
           <div className="mt-4 space-y-2">
             {isLoading ? (
               <p className="text-xs text-muted-foreground">Loading…</p>
-            ) : (configs as any[]).length === 0 ? (
+            ) : configList.length === 0 ? (
               <p className="text-xs text-muted-foreground">No config versions recorded yet.</p>
             ) : (
-              (Array.isArray(configs) ? configs : []).map((config) => (
+              configList.map((config) => (
                 <div key={config.id} className="rounded-md border border-border/60 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
