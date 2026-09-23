@@ -44,11 +44,13 @@ function Page() {
   const publish = useServerFn(publishKnowledgeCandidate);
   const reportUrl = useServerFn(getReportDownloadUrl);
 
-  const { data: jobs = [], isLoading } = useQuery({
+  const { data: jobsData, isLoading } = useQuery({
     queryKey: ["knowledge-acquisition-admin"],
     queryFn: () => load({ data: { admin: true, limit: 100 } }) as Promise<any[]>,
     refetchInterval: 2000,
   });
+
+  const jobs = Array.isArray(jobsData) ? jobsData : Array.isArray((jobsData as any)?.jobs) ? (jobsData as any).jobs : Array.isArray((jobsData as any)?.data) ? (jobsData as any).data : [];
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [candidate, setCandidate] = useState<any>(null);
