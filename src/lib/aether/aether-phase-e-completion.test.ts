@@ -17,7 +17,7 @@ describe("Phase E completion gate", () => {
   it("exposes authenticated memory export and a user-facing export control", () => {
     const route = read("src/routes/api/aax/memory/export.ts");
     const page = read("src/routes/_authenticated/memory/export.tsx");
-    expect(route).toContain("middleware: [requireSupabaseAuth]");
+    expect(route).toContain("middleware: [requireSupabaseAuthRequest]");
     expect(route).toContain("aether_memories");
     expect(route).toContain("aether_memory_events");
     expect(route).toContain("content-disposition");
