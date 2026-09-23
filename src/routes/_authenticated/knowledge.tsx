@@ -85,6 +85,16 @@ function collection<T>(value: unknown): T[] {
   return [];
 }
 
+function normalizeCandidate(candidate: Candidate): Candidate {
+  return {
+    ...candidate,
+    conflicts: collection(candidate.conflicts),
+    claims: collection(candidate.claims),
+    entities: collection(candidate.entities),
+    relations: collection(candidate.relations),
+  };
+}
+
 function Page() {
   const qc = useQueryClient();
   const { data: roles } = useRoles();
