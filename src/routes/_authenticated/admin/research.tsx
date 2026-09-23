@@ -16,7 +16,7 @@ export const Route = createFileRoute("/_authenticated/admin/research")({
 });
 
 function Page() {
-  const load = useServerFn(getPhaseUResearch);
+  const safeResearch = Array.isArray(data) ? data : Array.isArray((data as any)?.research) ? (data as any).research : Array.isArray((data as any)?.data) ? (data as any).data : [];  const load = useServerFn(getPhaseUResearch);
   const { data: researchData, isLoading, isError } = useQuery({
     queryKey: ["phase-u-research"],
     queryFn: async () => {
@@ -61,13 +61,13 @@ function Page() {
           </Panel>
         ) : (
           <Panel className="space-y-0 p-0">
-            {data.length === 0 ? (
+            {safeResearch.length === 0 ? (
               <p className="px-5 py-5 text-sm text-muted-foreground">No research sessions recorded.</p>
             ) : (
-              (Array.isArray(data) ? data : []).map((r: any, i: number) => (
+              safeResearch.map((r: any, i: number) => (
                 <div
                   key={r.id}
-                  className={`px-5 py-4 ${i < data.length - 1 ? "border-b border-border/50" : ""}`}
+                  className={`px-5 py-4 ${i < safeResearch.length - 1 ? "border-b border-border/50" : ""}`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
