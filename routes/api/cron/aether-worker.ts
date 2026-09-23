@@ -6,7 +6,7 @@ export const Route = createFileRoute("/api/cron/aether-worker")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const expected = process.env.VERCEL_CRON_SECRET?.trim();
+        const expected = process.env.CRON_SECRET?.trim();
         const supplied = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
         if (!expected || supplied !== expected) return new Response("Unauthorized", { status: 401 });
         const workerId = "vercel-cron-" + crypto.randomUUID();
