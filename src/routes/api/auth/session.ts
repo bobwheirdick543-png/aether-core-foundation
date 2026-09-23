@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { clearAuthSessionCookies, writeAuthSessionCookies } from "@/lib/auth/admin.session.server";
+import {
+  clearAdminSessionCookies,
+  clearAuthSessionCookies,
+  writeAuthSessionCookies,
+} from "@/lib/auth/admin.session.server";
 
 function supabaseServerClient(accessToken?: string) {
   const url = process.env["SUPABASE_URL"];
@@ -55,7 +59,10 @@ export const Route = createFileRoute("/api/auth/session")({
         }
       },
       DELETE: async () => {
+        // Clear both the canonical session and legacy admin session so signing
+        // out can never leave an older authenticated cookie behind.
         clearAuthSessionCookies();
+        clearAdminSessionCookies();
         return Response.json({ ok: true });
       },
     },
