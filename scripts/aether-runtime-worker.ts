@@ -1,6 +1,6 @@
 /** Aether durable runtime worker entrypoint. Supabase is the queue/source of truth. */
-import { supabaseAdmin } from "../integrations/supabase/client.server";
-import { runNextRuntimeWork } from "../lib/aether/runtime-worker";
+import { supabaseAdmin } from "../src/integrations/supabase/client.server";
+import { runNextRuntimeWork } from "../src/lib/aether/runtime-worker";
 
 const workerId = process.env.AETHER_WORKER_ID?.trim() || `aether-worker-${process.pid}`;
 const leaseSeconds = Math.max(10, Number(process.env.AETHER_WORKER_LEASE_SECONDS ?? 60));
