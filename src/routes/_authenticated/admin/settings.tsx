@@ -18,7 +18,7 @@ function Page() {
   const [key, setKey] = useState("");
   const [value, setValue] = useState("{}");
   const { data: settingsData, isLoading } = useQuery({ queryKey: ["phase-u-settings"], queryFn: () => load({}) });
-  const data = Array.isArray(settingsData) ? settingsData : [];
+  const data = Array.isArray(settingsData) ? settingsData : Array.isArray((settingsData as any)?.settings) ? (settingsData as any).settings : Array.isArray((settingsData as any)?.data) ? (settingsData as any).data : [];
 
   const submit = async () => {
     if (!key.trim()) return;
