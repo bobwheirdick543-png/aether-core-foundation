@@ -116,7 +116,9 @@ export function LiveTaskActivity({ admin = false, className }: { admin?: boolean
     staleTime: 0,
     retry: 0,
   });
-  const data = Array.isArray(liveData) ? liveData : [];
+  const data = Array.isArray(liveData)
+    ? liveData.map((item) => ({ ...item, events: Array.isArray(item.events) ? item.events : [] }))
+    : [];
   const [open, setOpen] = useState(true);
   const [position, setPosition] = useState(() => ({ x: Math.max(8, window.innerWidth - Math.min(430, window.innerWidth - 32) - 16), y: Math.max(8, window.innerHeight - 180) }));
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
