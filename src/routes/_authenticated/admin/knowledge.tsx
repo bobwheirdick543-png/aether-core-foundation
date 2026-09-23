@@ -76,7 +76,7 @@ function Page() {
               </p>
             </Panel>
           ) : (
-            data.map((e: any) => (
+            (Array.isArray(data) ? data : []).map((e: any) => (
               <Panel key={e.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -99,7 +99,7 @@ function Page() {
                   </Tag>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {(e.tags ?? []).map((x: string) => (
+                  {(Array.isArray(e.tags) ? e.tags : []).map((x: string) => (
                     <Tag key={x}>{x}</Tag>
                   ))}
                 </div>
