@@ -89,7 +89,7 @@ function Page() {
             {plans.length === 0 ? (
               <p className="text-xs text-muted-foreground">No orchestration plans recorded yet.</p>
             ) : (
-              (plans as any[]).map((plan) => (
+              (Array.isArray(plans) ? plans : []).map((plan) => (
                 <div key={plan.id} className="rounded-md border border-border/60 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -133,7 +133,7 @@ function Page() {
             ) : (configs as any[]).length === 0 ? (
               <p className="text-xs text-muted-foreground">No config versions recorded yet.</p>
             ) : (
-              (configs as any[]).map((config) => (
+              (Array.isArray(configs) ? configs : []).map((config) => (
                 <div key={config.id} className="rounded-md border border-border/60 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
