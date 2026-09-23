@@ -53,7 +53,7 @@ function Page() {
     };
   }, [queryClient]);
 
-  const ops = data ?? [];
+  const ops = Array.isArray(data) ? data : Array.isArray((data as any)?.operations) ? (data as any).operations : Array.isArray((data as any)?.data) ? (data as any).data : [];
 
   return (
     <AdminShell>
