@@ -269,6 +269,12 @@ function Page() {
     refetchInterval: 5000,
   });
 
+  // Server functions normally return arrays, but production boundaries can return a serialized envelope.
+  // Normalize every collection before any render/effect can call .map(), .length, or indexed access.
+  const candidates = collection<Candidate>(candidatesData).map(normalizeCandidate);
+  const entries = collection<Entry>(entriesData);
+  const acquisitionJobs = collection<any>(acquisitionJobsData);
+
   useEffect(() => {
     if (!roles?.isAdmin) return;
     for (const job of acquisitionJobs as any[]) {
