@@ -72,7 +72,7 @@ function Page() {
                   {(data?.modelMetrics ?? []).length === 0 ? (
                     <p className="text-xs text-muted-foreground">No model telemetry recorded.</p>
                   ) : (
-                    data!.modelMetrics.slice(0, 30).map((m: any, i: number) => (
+                    (Array.isArray(data?.modelMetrics) ? data.modelMetrics : []).slice(0, 30).map((m: any, i: number) => (
                       <div
                         key={`${m.model_role ?? m.model_key ?? i}-${i}`}
                         className="flex items-center justify-between rounded border px-3 py-2 text-xs"
@@ -94,7 +94,7 @@ function Page() {
                   {(data?.agentMetrics ?? []).length === 0 ? (
                     <p className="text-xs text-muted-foreground">No agent telemetry recorded.</p>
                   ) : (
-                    data!.agentMetrics.slice(0, 30).map((m: any, i: number) => (
+                    (Array.isArray(data?.agentMetrics) ? data.agentMetrics : []).slice(0, 30).map((m: any, i: number) => (
                       <div
                         key={`${m.agent_key}-${i}`}
                         className="flex items-center justify-between rounded border px-3 py-2 text-xs"
