@@ -103,7 +103,7 @@ function Page() {
           />
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            {team.map((agent: any) => (
+            {(Array.isArray(team) ? team : []).map((agent: any) => (
               <Panel key={agent.id} className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -129,7 +129,7 @@ function Page() {
                     {agent.permissions.length === 0 ? (
                       <span className="text-xs text-muted-foreground">No permissions granted.</span>
                     ) : (
-                      agent.permissions.map((p: any) => (
+                      (Array.isArray(agent.permissions) ? agent.permissions : []).map((p: any) => (
                         <Tag
                           key={p.permission}
                           tone={p.allowed ? (p.requires_approval ? "warning" : "primary") : "neutral"}
