@@ -15,13 +15,13 @@ function RetrievalWorkspace() {
   async function search() {
     if (!query.trim()) return;
     setLoading(true); setMessage("");
-    try { const response = await retrievePhaseI({ data: { query, mode, topK: 10 } }); setResults(response.results); setMessage(`${response.results.length} authorized result${response.results.length === 1 ? "" : "s"} returned.`); }
+    try { const response = await retrievePhaseI({ data: { query, mode, topK: 10 } }); const safeResults = Array.isArray(response?.results) ? response.results : []; setResults(safeResults); setMessage(`${safeResults.length} authorized result${safeResults.length === 1 ? "" : "s"} returned.`); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Retrieval failed."); }
     finally { setLoading(false); }
   }
 
   async function refreshJobs() {
-    try { setJobs(await listPhaseIIndexJobs({ data: {} })); setMessage("Index status refreshed."); } catch { setMessage("Could not load index status."); }
+    try { const result = await listPhaseIIndexJobs({ data: {} }); setJobs(Array.isArray(result) ? result : []); setMessage("Index status refreshed."); } catch { setMessage("Could not load index status."); }
   }
 
   return <main className="mx-auto max-w-6xl space-y-6 p-6">
