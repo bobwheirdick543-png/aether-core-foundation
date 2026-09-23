@@ -207,7 +207,7 @@ function Page() {
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            {agents.map((agent: any) => {
+            {(Array.isArray(agents) ? agents : []).map((agent: any) => {
               const agentVersions = versions.filter((version: any) => version.agent_id === agent.id);
               const latest =
                 agentVersions.find((version: any) => version.lifecycle_state === "active") ??
@@ -301,7 +301,7 @@ function Page() {
                     <div>
                       <p className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Tools</p>
                       <div className="flex flex-wrap gap-1.5">
-                        {(agent.tools ?? []).map((tool: string) => (
+                        {(Array.isArray(agent.tools) ? agent.tools : []).map((tool: string) => (
                           <span
                             key={tool}
                             className="rounded-md border bg-elevated/50 px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
@@ -419,7 +419,7 @@ function Page() {
                             Version history
                           </p>
                           <div className="mt-2 space-y-1.5">
-                            {agentVersions.slice(0, 5).map((version: any) => (
+                            {(Array.isArray(agentVersions) ? agentVersions : []).slice(0, 5).map((version: any) => (
                               <div key={version.id} className="flex flex-wrap items-center justify-between gap-2 text-[10px]">
                                 <span>
                                   v{version.version} · {version.lifecycle_state}
