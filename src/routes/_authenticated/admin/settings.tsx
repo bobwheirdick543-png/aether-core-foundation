@@ -17,7 +17,8 @@ function Page() {
   const save = useServerFn(setPhaseUSafeSetting);
   const [key, setKey] = useState("");
   const [value, setValue] = useState("{}");
-  const { data = [], isLoading } = useQuery({ queryKey: ["phase-u-settings"], queryFn: () => load({}) });
+  const { data: settingsData, isLoading } = useQuery({ queryKey: ["phase-u-settings"], queryFn: () => load({}) });
+  const data = Array.isArray(settingsData) ? settingsData : [];
 
   const submit = async () => {
     if (!key.trim()) return;
