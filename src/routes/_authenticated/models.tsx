@@ -24,10 +24,11 @@ function formatTokens(value: number | null | undefined) {
 
 function Page() {
   const getModels = useServerFn(listPublicAaxModels);
-  const { data: models = [], isLoading, isError } = useQuery({
+  const { data: modelsData, isLoading, isError } = useQuery({
     queryKey: ["public-aax-models"],
     queryFn: () => getModels(),
   });
+  const models = Array.isArray(modelsData) ? modelsData : [];
 
   return (
     <AppShell>
