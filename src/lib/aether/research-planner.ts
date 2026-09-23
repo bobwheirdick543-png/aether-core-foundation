@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { domainFromUrl, normalizeUrl, sourceQualityScore, type RetrievedPage } from "./research-engine";
+import { domainFromUrl, normalizeUrl, retrievePage, sourceQualityScore, type RetrievedPage } from "./research-engine";
 import { runAetherWebResearch, persistAetherWebResearch, persistResearchDiscoveryEvent, type AetherWebResearchResult, type AetherWebSource } from "./aax-web-intelligence";
 import { unmetSourceRequirements } from "./research-policy";
 import { type ResearchAspect } from "./knowledge-research-plan";
