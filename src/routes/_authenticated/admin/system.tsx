@@ -30,6 +30,10 @@ function Page() {
     refetchInterval: 10000,
     retry: 1,
   });
+  const workers = Array.isArray(data?.workers) ? data.workers : [];
+  const models = Array.isArray(data?.models) ? data.models : [];
+  const agents = Array.isArray(data?.agents) ? data.agents : [];
+  const quotas = Array.isArray(data?.quotas) ? data.quotas : [];
 
   return (
     <AdminShell>
@@ -59,12 +63,12 @@ function Page() {
             <Panel>
               <h2 className="text-sm font-semibold">Workers</h2>
               <div className="mt-3 space-y-2">
-                {(data?.workers ?? []).length === 0 ? (
+                {workers.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
                     No worker heartbeats are currently registered. Task execution waits until a worker is online.
                   </p>
                 ) : (
-                  data!.workers.map((w: any) => (
+                  workers.map((w: any) => (
                     <div
                       key={w.worker_id}
                       className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-xs"
@@ -94,10 +98,10 @@ function Page() {
               <Panel>
                 <h2 className="text-sm font-semibold">AAX model availability</h2>
                 <div className="mt-3 space-y-2">
-                  {(data?.models ?? []).length === 0 ? (
+                  {models.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No models registered in the control plane.</p>
                   ) : (
-                    data!.models.map((m: any) => (
+                    models.map((m: any) => (
                       <div
                         key={m.model_key ?? m.role_key}
                         className="flex items-center justify-between rounded border px-3 py-2 text-xs"
@@ -126,10 +130,10 @@ function Page() {
               <Panel>
                 <h2 className="text-sm font-semibold">Agent status</h2>
                 <div className="mt-3 space-y-2">
-                  {(data?.agents ?? []).length === 0 ? (
+                  {agents.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No agents registered.</p>
                   ) : (
-                    data!.agents.map((a: any) => (
+                    agents.map((a: any) => (
                       <div
                         key={a.agent_key}
                         className="flex items-center justify-between rounded border px-3 py-2 text-xs"
@@ -155,10 +159,10 @@ function Page() {
             <Panel>
               <h2 className="text-sm font-semibold">Runtime quotas</h2>
               <div className="mt-3 space-y-2">
-                {(data?.quotas ?? []).length === 0 ? (
+                {quotas.length === 0 ? (
                   <p className="text-xs text-muted-foreground">No quotas configured.</p>
                 ) : (
-                  data!.quotas.map((q: any) => (
+                  quotas.map((q: any) => (
                     <div
                       key={`${q.scope_type}-${q.scope_id ?? "platform"}`}
                       className="grid gap-2 rounded border px-3 py-2 text-xs sm:grid-cols-4"
