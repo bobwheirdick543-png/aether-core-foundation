@@ -132,7 +132,7 @@ function Page() {
           />
         ) : (
           <div className="space-y-3">
-            {data!.map((t) => (
+            {(Array.isArray(data) ? data : []).map((t) => (
               <Panel key={t.id} className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -158,7 +158,7 @@ function Page() {
                   {t.runs.length === 0 ? (
                     <p>No run records yet.</p>
                   ) : (
-                    t.runs.map((r) => (
+                    (Array.isArray(t.runs) ? t.runs : []).map((r) => (
                       <div key={r.id} className="flex items-center justify-between gap-3 rounded-md border border-border/50 px-2.5 py-1.5">
                         <span>Attempt {r.attempt}</span>
                         <span className="font-mono">{r.error ?? r.status}</span>
