@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { decryptZ2Secret, encryptZ2Secret, makeZ2Secret } from "../phase-z2-api.crypto";
+import { decryptZ2Secret, encryptZ2Secret, makeZ2Secret } from "../../../src/lib/aether/phase-z2-api.crypto";
 
 describe("AAX secret crypto", () => {
   const original = process.env.AETHER_API_KEY_ENCRYPTION_KEY;
