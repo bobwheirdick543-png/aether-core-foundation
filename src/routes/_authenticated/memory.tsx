@@ -69,7 +69,7 @@ function Page() {
   const reject = useServerFn(rejectAetherMemoryCandidate);
   const setPreference = useServerFn(setAetherMemoryPreference);
 
-  const { data: projects = [], isError: projectsError } = useQuery({
+  const { data: projectsData, isError: projectsError } = useQuery({
     queryKey: ["aether-projects-memory"],
     queryFn: async () => {
       try {
@@ -83,7 +83,7 @@ function Page() {
 
   const [projectId, setProjectId] = useState<string | null>(null);
 
-  const { data: memories = [], isError: memoriesError } = useQuery({
+  const { data: memoriesData, isError: memoriesError } = useQuery({
     queryKey: ["aether-memories", projectId],
     queryFn: async () => {
       try {
@@ -95,7 +95,7 @@ function Page() {
     retry: 1,
   });
 
-  const { data: candidates = [], isError: candidatesError } = useQuery({
+  const { data: candidatesData, isError: candidatesError } = useQuery({
     queryKey: ["aether-memory-candidates", projectId],
     queryFn: async () => {
       try {
@@ -106,6 +106,10 @@ function Page() {
     },
     retry: 1,
   });
+
+  const projects = Array.isArray(projectsData) ? projectsData : [];
+  const memories = Array.isArray(memoriesData) ? memoriesData : [];
+  const candidates = Array.isArray(candidatesData) ? candidatesData : [];
 
   const { data: persistedEnabled = true } = useQuery({
     queryKey: ["aether-memory-preference"],
