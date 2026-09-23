@@ -48,7 +48,7 @@ function Page() {
     queryFn: () => fetchTeam({}),
     retry: 1,
   });
-  const team = data?.team ?? [];
+  const team = Array.isArray(data?.team) ? data.team : Array.isArray((data as any)?.data?.team) ? (data as any).data.team : [];
   const active = team.filter((a: any) => a.status === "enabled").length;
 
   return (
