@@ -31,6 +31,9 @@ function Page() {
     retry: 1,
   });
 
+  const modelMetrics = Array.isArray(data?.modelMetrics) ? data.modelMetrics : Array.isArray((data as any)?.data?.modelMetrics) ? (data as any).data.modelMetrics : [];
+  const agentMetrics = Array.isArray(data?.agentMetrics) ? data.agentMetrics : Array.isArray((data as any)?.data?.agentMetrics) ? (data as any).data.agentMetrics : [];
+
   return (
     <AdminShell>
       <div className="space-y-6">
@@ -69,10 +72,10 @@ function Page() {
               <Panel>
                 <h2 className="text-sm font-semibold">AAX model telemetry</h2>
                 <div className="mt-3 space-y-2">
-                  {(data?.modelMetrics ?? []).length === 0 ? (
+                  {modelMetrics.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No model telemetry recorded.</p>
                   ) : (
-                    (Array.isArray(data?.modelMetrics) ? data.modelMetrics : []).slice(0, 30).map((m: any, i: number) => (
+                    modelMetrics.slice(0, 30).map((m: any, i: number) => (
                       <div
                         key={`${m.model_role ?? m.model_key ?? i}-${i}`}
                         className="flex items-center justify-between rounded border px-3 py-2 text-xs"
@@ -91,10 +94,10 @@ function Page() {
               <Panel>
                 <h2 className="text-sm font-semibold">Agent telemetry</h2>
                 <div className="mt-3 space-y-2">
-                  {(data?.agentMetrics ?? []).length === 0 ? (
+                  {agentMetrics.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No agent telemetry recorded.</p>
                   ) : (
-                    (Array.isArray(data?.agentMetrics) ? data.agentMetrics : []).slice(0, 30).map((m: any, i: number) => (
+                    agentMetrics.slice(0, 30).map((m: any, i: number) => (
                       <div
                         key={`${m.agent_key}-${i}`}
                         className="flex items-center justify-between rounded border px-3 py-2 text-xs"
