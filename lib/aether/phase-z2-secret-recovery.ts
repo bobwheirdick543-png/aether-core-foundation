@@ -1,0 +1,18 @@
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { decryptZ2Secret } from "./phase-z2-api.crypto";
+
+export async function recoverZ2ApiKeySecret(ownerId: string, keyId: string, actorId = ownerId) {
+  const { data: key, error } = await supabaseAdmin.from("aether_api_keys").select("id,owner_id,name,encrypted_secret,secret_recovery_available,api_kind,status").eq("id", keyId).eq("owner_id", ownerId).eq("api_kind", "aax").maybeSingle();
+  if (error || !key) throw new Response("API key not found", { status: 404 });
+  if (!key.secret_recovery_available || !key.encrypted_secret) throw new Response("This legacy API key cannot be recovered. Rotate it to create a recoverable AAX key.", { status: 409 });
+  const secret = decryptZ2Secret(key.encrypted_secret);
+  const { error: auditError } = await supabaseAdmin.from("aether_api_key_events").insert({ api_key_id: key.id, owner_id: ownerId, actor_id: actorId, event_type: "viewed", action_source: actorId === ownerId ? "user" : "admin", metadata: { purpose: "secret_recovery", statusAtRecovery: key.status } });
+  if (auditError) throw new Error("API key secret access could not be audited");
+  return { id: key.id, name: key.name, key: secret };
+}
+
+export async function recoverAnyZ2ApiKeySecret(actorId: string, keyId: string) {
+  const { data: key, error } = await supabaseAdmin.from("aether_api_keys").select("owner_id").eq("id", keyId).eq("api_kind", "aax").maybeSingle();
+  if (error || !key) throw new Response("API key not found", { status: 404 });
+  return recoverZ2ApiKeySecret(key.owner_id, keyId, actorId);
+}
