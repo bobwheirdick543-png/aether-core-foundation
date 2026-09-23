@@ -356,7 +356,7 @@ function Page() {
               Each chat is isolated. Edit or bin messages from the thread.
             </p>
             <div className="space-y-1">
-              {(data.conversations ?? []).map((chat: any) => (
+              {(Array.isArray(data?.conversations) ? data.conversations : []).map((chat: any) => (
                 <button
                   key={chat.id}
                   type="button"
@@ -385,7 +385,7 @@ function Page() {
               </p>
             </div>
             <div className="flex-1 space-y-3 overflow-auto py-4">
-              {(conversationData?.messages ?? []).map((m: any) => (
+              {(Array.isArray(conversationData?.messages) ? conversationData.messages : []).map((m: any) => (
                 <div
                   key={m.id}
                   className={`group max-w-[90%] rounded-lg border border-border/60 p-3 text-xs ${
@@ -499,7 +499,7 @@ function Page() {
             <div>
               <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Tools</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {(agent.tools ?? []).map((tool: string) => (
+                {(Array.isArray(agent.tools) ? agent.tools : []).map((tool: string) => (
                   <Tag key={tool} tone="primary">
                     {tool}
                   </Tag>
@@ -509,7 +509,7 @@ function Page() {
             <div>
               <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Permissions</p>
               <div className="mt-2 space-y-1.5">
-                {permissions.map((permission: any) => (
+                {(Array.isArray(permissions) ? permissions : []).map((permission: any) => (
                   <div
                     key={permission.permission}
                     className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-xs"
@@ -566,7 +566,7 @@ function Page() {
             {tasks.length === 0 ? (
               <p className="text-xs text-muted-foreground">No tasks have been recorded for this agent.</p>
             ) : (
-              tasks.map((task: any) => (
+              (Array.isArray(tasks) ? tasks : []).map((task: any) => (
                 <div key={task.id} className="rounded-md border border-border/60 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -595,7 +595,7 @@ function Page() {
                 No execution data recorded yet. This workstation will populate from real runs.
               </p>
             ) : (
-              runs.map((run: any) => (
+              (Array.isArray(runs) ? runs : []).map((run: any) => (
                 <div key={run.id} className="rounded-md border border-border/60 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-xs font-medium">
