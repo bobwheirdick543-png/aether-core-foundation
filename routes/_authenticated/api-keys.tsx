@@ -9,6 +9,28 @@ import { Button } from "@/components/ui/button";
 import { createMyZ2ApiKey, getMyZ2ApiKeySecret, listMyZ2ApiKeys, listMyZ2Models, listMyZ2RequestRecords, revokeMyZ2ApiKey, rotateMyZ2ApiKey, suspendMyZ2ApiKey, updateMyZ2ApiKeyPolicyFn } from "@/lib/aether/phase-z2-api.functions";
 export const Route = createFileRoute("/_authenticated/api-keys")({ head: () => ({ meta: [{ title: "AAX API Keys — Aether" }, { name: "description", content: "Create and manage Aether Ascension Intelligence API keys." }] }), component: Page });
 const environments = ["development", "test", "production"] as const;
+async function copyExactSecret(value: string): Promise<"copied"|"failed"> {
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return "copied";
+    }
+    const area = document.createElement("textarea");
+    area.value = value;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    area.setSelectionRange(0, area.value.length);
+    const copied = document.execCommand("copy");
+    area.remove();
+    return copied ? "copied" : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
 function friendlyApiKeyError(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : "";
   if (/AETHER_API_KEY_ENCRYPTION_KEY|encrypted API key secret|Provider credential encryption key/i.test(message)) {
