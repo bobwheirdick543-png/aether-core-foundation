@@ -1,0 +1,22 @@
+name: temporary-map-audit
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan all tracked source maps
+        run: |
+          set -euo pipefail
+          echo "=== MAP CALL COUNT ==="
+          git grep -nE '\\.map[[:space:]]*\\(' -- '*.ts' '*.tsx' '*.js' '*.jsx' | wc -l
+          echo "=== ALL MAP CALLS ==="
+          git grep -nE '\\.map[[:space:]]*\\(' -- '*.ts' '*.tsx' '*.js' '*.jsx' || true
+          echo "=== OPTIONAL/UNSAFE COLLECTION PATTERNS ==="
+          git grep -nE '(data|rows|items|results|jobs|tasks|events|messages|entries|candidates|models|projects|versions)[A-Za-z0-9_?.]*\.map[[:space:]]*\\(' -- '*.ts' '*.tsx' '*.js' '*.jsx' || true
+          echo "=== QUERY DATA DEFAULTS ==="
+          git grep -nE 'data:|data[[:space:]]*=' -- '*.ts' '*.tsx' '*.js' '*.jsx' | grep -E 'useQuery|useServerFn|queryFn|data:' | head -n 500 || true
