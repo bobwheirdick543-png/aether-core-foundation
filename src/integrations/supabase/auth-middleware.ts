@@ -3,7 +3,11 @@ import { createMiddleware } from '@tanstack/react-start'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './types'
 import { getRequest } from '@tanstack/react-start/server'
-import { readAdminSessionCookies, writeAdminSessionCookies } from '@/lib/auth/admin.session.server'
+import {
+  readAuthSessionCookies,
+  writeAuthSessionCookies,
+  writeAdminSessionCookies,
+} from '@/lib/auth/admin.session.server'
 import { supabaseAdmin } from '@/integrations/supabase/client.server'
 
 function isNewSupabaseApiKey(value: string): boolean {
@@ -50,7 +54,7 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
 
     const request = getRequest();
     const requestHeader = request?.headers.get('authorization');
-    const cookieSession = readAdminSessionCookies();
+    const cookieSession = readAuthSessionCookies();
 
     let token = requestHeader?.startsWith('Bearer ')
       ? requestHeader.slice('Bearer '.length).trim()
@@ -93,7 +97,8 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
 
       token = refreshedSession.access_token;
       refreshToken = refreshedSession.refresh_token;
-      writeAdminSessionCookies(token, refreshToken);
+      writeAuthSessionCookies(token, refreshToken);
+      if (cookieSession.source === 'admin') writeAdminSessionCookies(token, refreshToken);
       supabase = makeClient(token);
       ({ data, error } = await supabase.auth.getClaims(token));
     }
@@ -138,31 +143,57 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
 /** Request middleware variant for createFileRoute({ server: { middleware } }). */
 export const requireSupabaseAuthRequest = createMiddleware({ type: 'request' }).server(
   async ({ next }) => {
-    const SUPABASE_URL = process.env['SUPABASE_URL'];
-    const SUPABASE_PUBLISHABLE_KEY = process.env['SUPABASE_PUBLISHABLE_KEY'];
-    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) throw missingEnvError();
-    const request = getRequest();
-    const requestHeader = request?.headers.get('authorization');
-    const cookieSession = readAdminSessionCookies();
-    let token = requestHeader?.startsWith('Bearer ') ? requestHeader.slice('Bearer '.length).trim() : cookieSession.accessToken;
-    let refreshToken = cookieSession.refreshToken;
-    if (!token) throw new Error('Unauthorized: No authenticated session');
-    const makeClient = (accessToken?: string) => createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-      global: { fetch: createSupabaseFetch(SUPABASE_PUBLISHABLE_KEY), ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}) },
-      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-    });
-    let supabase = makeClient(token);
-    let { data, error } = await supabase.auth.getClaims(token);
-    if ((error || !data?.claims?.sub) && refreshToken) {
-      const refreshed = await makeClient().auth.refreshSession({ refresh_token: refreshToken });
-      if (refreshed.error || !refreshed.data.session) throw new Error('Unauthorized: Session expired');
-      token = refreshed.data.session.access_token;
-      refreshToken = refreshed.data.session.refresh_token;
-      writeAdminSessionCookies(token, refreshToken);
-      supabase = makeClient(token);
-      ({ data, error } = await supabase.auth.getClaims(token));
+    const jsonError = (status: number, message: string) =>
+      new Response(JSON.stringify({ error: message, code: 'AUTHENTICATION_REQUIRED' }), {
+        status,
+        headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+
+    try {
+      const SUPABASE_URL = process.env['SUPABASE_URL'];
+      const SUPABASE_PUBLISHABLE_KEY = process.env['SUPABASE_PUBLISHABLE_KEY'];
+      if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+        return jsonError(503, 'Authentication service is not configured.');
+      }
+
+      const request = getRequest();
+      const requestHeader = request?.headers.get('authorization');
+      const cookieSession = readAuthSessionCookies();
+      let token = requestHeader?.startsWith('Bearer ')
+        ? requestHeader.slice('Bearer '.length).trim()
+        : cookieSession.accessToken;
+      let refreshToken = cookieSession.refreshToken;
+
+      if (!token) return jsonError(401, 'Authentication required. Please sign in again.');
+
+      const makeClient = (accessToken?: string) => createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+        global: {
+          fetch: createSupabaseFetch(SUPABASE_PUBLISHABLE_KEY),
+          ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
+        },
+        auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+      });
+
+      let supabase = makeClient(token);
+      let { data, error } = await supabase.auth.getClaims(token);
+      if ((error || !data?.claims?.sub) && refreshToken) {
+        const refreshed = await makeClient().auth.refreshSession({ refresh_token: refreshToken });
+        if (refreshed.error || !refreshed.data.session) {
+          return jsonError(401, 'Your session has expired. Please sign in again.');
+        }
+        token = refreshed.data.session.access_token;
+        refreshToken = refreshed.data.session.refresh_token;
+        writeAuthSessionCookies(token, refreshToken);
+        if (cookieSession.source === 'admin') writeAdminSessionCookies(token, refreshToken);
+        supabase = makeClient(token);
+        ({ data, error } = await supabase.auth.getClaims(token));
+      }
+      if (error || !data?.claims?.sub) return jsonError(401, 'Your session is no longer valid. Please sign in again.');
+
+      return next({ context: { supabase, userId: data.claims.sub, claims: data.claims } });
+    } catch (error) {
+      console.error('[Aether auth] request authentication failed', error);
+      return jsonError(401, 'Authentication could not be verified. Please sign in again.');
     }
-    if (error || !data?.claims?.sub) throw new Error('Unauthorized: Invalid token');
-    return next({ context: { supabase, userId: data.claims.sub, claims: data.claims } });
   },
 );
