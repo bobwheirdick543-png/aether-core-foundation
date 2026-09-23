@@ -170,12 +170,70 @@ function RootComponent() {
       return;
     }
 
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+    let disposed = false;
+
+    async function syncServerSession() {
+      const { data, error } = await supabase.auth.getSession();
+      if (disposed) return;
+      if (error) {
+        console.warn("[Aether] Could not read the browser session for server synchronization.", error);
+        return;
+      }
+
+      if (!data.session) {
+        await fetch("/api/auth/session", { method: "DELETE", credentials: "same-origin" }).catch(() => undefined);
+        return;
+      }
+
+      const response = await fetch("/api/auth/session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+        body: JSON.stringify({ refreshToken: data.session.refresh_token }),
+      });
+
+      if (!response.ok && !disposed) {
+        console.warn("[Aether] Server session synchronization failed.", await response.text().catch(() => ""));
+      }
+    }
+
+    void syncServerSession();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (
+        event !== "SIGNED_IN" &&
+        event !== "SIGNED_OUT" &&
+        event !== "USER_UPDATED" &&
+        event !== "TOKEN_REFRESHED"
+      ) {
+        return;
+      }
+
+      if (event === "SIGNED_OUT" || !nextSession) {
+        void fetch("/api/auth/session", { method: "DELETE", credentials: "same-origin" }).catch(() => undefined);
+      } else {
+        void fetch("/api/auth/session", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${nextSession.access_token}`,
+          },
+          body: JSON.stringify({ refreshToken: nextSession.refresh_token }),
+        }).catch(() => undefined);
+      }
+
       router.invalidate();
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
     });
-    return () => sub.subscription.unsubscribe();
+
+    return () => {
+      disposed = true;
+      sub.subscription.unsubscribe();
+    };
   }, [router, queryClient]);
 
   return (
