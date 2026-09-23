@@ -52,7 +52,7 @@ function Page() {
           <p className="text-[11px] text-muted-foreground">Only explicit JSON values are accepted. Secret-like setting keys are rejected server-side; secrets must remain in server-side secret storage.</p>
         </Panel>
         <Panel className="space-y-0 p-0">
-          {isLoading ? <p className="px-5 py-5 text-sm text-muted-foreground">Loading settings…</p> : data.length === 0 ? <p className="px-5 py-5 text-sm text-muted-foreground">No platform settings have been configured.</p> : data.map((s: any, i: number) => (
+          {isLoading ? <p className="px-5 py-5 text-sm text-muted-foreground">Loading settings…</p> : (Array.isArray(data) ? data : []).length === 0 ? <p className="px-5 py-5 text-sm text-muted-foreground">No platform settings have been configured.</p> : (Array.isArray(data) ? data : []).map((s: any, i: number) => (
             <div key={s.key} className={`px-5 py-4 ${i < data.length - 1 ? "border-b border-border/50" : ""}`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><p className="font-mono text-sm">{s.key}</p><p className="mt-1 text-xs text-muted-foreground">Updated {new Date(s.updated_at).toLocaleString()}</p></div>
