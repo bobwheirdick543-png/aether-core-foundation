@@ -10,7 +10,6 @@ import { createAdminZ2ApiKey, getAdminZ2ApiKeySecret, getAdminZ2SecurityAlerts, 
 
 export const Route = createFileRoute("/_authenticated/admin/api-keys")({ head: () => ({ meta: [{ title: "AAX API Keys — Admin" }, { name: "robots", content: "noindex" }] }), component: Page });
 const envs = ["development", "test", "production"] as const;
-
 function friendlyApiKeyError(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : "";
   if (/AETHER_API_KEY_ENCRYPTION_KEY|encrypted API key secret|Provider credential encryption key/i.test(message)) {
