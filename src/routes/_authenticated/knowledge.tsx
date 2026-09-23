@@ -233,7 +233,7 @@ function Page() {
   async function loadVersions(entry: Entry) {
     setSelectedEntry(entry);
     try {
-      setVersions((await listVersions({ data: { entryId: entry.id } })) as Version[]);
+      setVersions(collection<Version>(await listVersions({ data: { entryId: entry.id } })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load versions.");
     }
