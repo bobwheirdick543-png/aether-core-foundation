@@ -40,6 +40,8 @@ function Page() {
   const stopTask = useServerFn(requestTaskCancellation);
   const { data, isLoading } = useQuery({ queryKey: ["my-tasks"], queryFn: () => fetchTasks({}) });
 
+  const tasks = Array.isArray(data) ? data : Array.isArray((data as any)?.tasks) ? (data as any).tasks : Array.isArray((data as any)?.data) ? (data as any).data : [];
+
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState("general");
   const [busy, setBusy] = useState(false);
@@ -124,7 +126,7 @@ function Page() {
           <Panel>
             <p className="text-sm text-muted-foreground">Loading your tasks…</p>
           </Panel>
-        ) : (data?.length ?? 0) === 0 ? (
+        ) : tasks.length === 0 ? (
           <EmptyState
             title="No tasks yet"
             description="Create a task above. It will appear here with run history once queued."
@@ -132,7 +134,7 @@ function Page() {
           />
         ) : (
           <div className="space-y-3">
-            {(Array.isArray(data) ? data : []).map((t) => (
+            {tasks.map((t) => (
               <Panel key={t.id} className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
