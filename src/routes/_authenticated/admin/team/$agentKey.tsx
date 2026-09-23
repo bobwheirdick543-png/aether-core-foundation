@@ -145,7 +145,11 @@ function Page() {
       </AdminShell>
     );
 
-  const { agent, permissions, tasks, runs, telemetry } = data;
+  const { agent, permissions: permissionsData, tasks: tasksData, runs: runsData, telemetry: telemetryData } = data;
+  const permissions = Array.isArray(permissionsData) ? permissionsData : [];
+  const tasks = Array.isArray(tasksData) ? tasksData : [];
+  const runs = Array.isArray(runsData) ? runsData : [];
+  const telemetry = Array.isArray(telemetryData) ? telemetryData : [];
 
   async function sendMessage() {
     const content = message.trim();
