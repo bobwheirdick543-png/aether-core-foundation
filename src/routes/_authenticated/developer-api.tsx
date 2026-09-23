@@ -82,9 +82,12 @@ function Page() {
     retry: 1,
   });
 
-  const k = keysQuery.data ?? [];
-  const l = logsQuery.data ?? [];
-  const w = hooksQuery.data ?? [];
+  const kData = keysQuery.data;
+  const lData = logsQuery.data;
+  const wData = hooksQuery.data;
+  const k = Array.isArray(kData) ? kData : Array.isArray((kData as any)?.keys) ? (kData as any).keys : Array.isArray((kData as any)?.data) ? (kData as any).data : [];
+  const l = Array.isArray(lData) ? lData : Array.isArray((lData as any)?.logs) ? (lData as any).logs : Array.isArray((lData as any)?.data) ? (lData as any).data : [];
+  const w = Array.isArray(wData) ? wData : Array.isArray((wData as any)?.webhooks) ? (wData as any).webhooks : Array.isArray((wData as any)?.data) ? (wData as any).data : [];
 
   const active = k.filter((x: any) => !x.revoked_at).length;
   const errors = l.filter((x: any) => Number(x.status_code) >= 400).length;
