@@ -68,7 +68,7 @@ function Page() {
                     No worker heartbeats are currently registered. Task execution waits until a worker is online.
                   </p>
                 ) : (
-                  workers.map((w: any) => (
+                  (Array.isArray(workers) ? workers : []).map((w: any) => (
                     <div
                       key={w.worker_id}
                       className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-xs"
@@ -101,7 +101,7 @@ function Page() {
                   {models.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No models registered in the control plane.</p>
                   ) : (
-                    models.map((m: any) => (
+                    (Array.isArray(models) ? models : []).map((m: any) => (
                       <div
                         key={m.model_key ?? m.role_key}
                         className="flex items-center justify-between rounded border px-3 py-2 text-xs"
@@ -133,7 +133,7 @@ function Page() {
                   {agents.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No agents registered.</p>
                   ) : (
-                    agents.map((a: any) => (
+                    (Array.isArray(agents) ? agents : []).map((a: any) => (
                       <div
                         key={a.agent_key}
                         className="flex items-center justify-between rounded border px-3 py-2 text-xs"
@@ -162,7 +162,7 @@ function Page() {
                 {quotas.length === 0 ? (
                   <p className="text-xs text-muted-foreground">No quotas configured.</p>
                 ) : (
-                  quotas.map((q: any) => (
+                  (Array.isArray(quotas) ? quotas : []).map((q: any) => (
                     <div
                       key={`${q.scope_type}-${q.scope_id ?? "platform"}`}
                       className="grid gap-2 rounded border px-3 py-2 text-xs sm:grid-cols-4"
