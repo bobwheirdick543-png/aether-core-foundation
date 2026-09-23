@@ -32,6 +32,8 @@ function Page() {
     retry: 1,
   });
 
+  const entries = Array.isArray(data) ? data : Array.isArray((data as any)?.entries) ? (data as any).entries : Array.isArray((data as any)?.data) ? (data as any).data : [];
+
   const act = async (id: string, decision: "approve" | "reject") => {
     try {
       await decide({ data: { entryId: id, decision } });
@@ -69,14 +71,14 @@ function Page() {
             <Panel>
               <p className="text-sm text-muted-foreground">Loading knowledge…</p>
             </Panel>
-          ) : data.length === 0 ? (
+          ) : entries.length === 0 ? (
             <Panel>
               <p className="text-sm text-muted-foreground">
                 No knowledge entries require administrative review.
               </p>
             </Panel>
           ) : (
-            (Array.isArray(data) ? data : []).map((e: any) => (
+            entries.map((e: any) => (
               <Panel key={e.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
