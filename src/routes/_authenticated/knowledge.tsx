@@ -75,6 +75,16 @@ type Version = {
   created_at: string;
 };
 
+function collection<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  for (const key of ["data", "result", "rows", "items"]) {
+    if (Array.isArray(record[key])) return record[key] as T[];
+  }
+  return [];
+}
+
 function Page() {
   const qc = useQueryClient();
   const { data: roles } = useRoles();
