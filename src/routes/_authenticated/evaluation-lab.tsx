@@ -39,9 +39,9 @@ function EvaluationLab() {
         getEvaluationRuns({ data: { limit: 200 } }),
         getEvaluationTestCases({}),
       ]);
-      setOverview(o);
-      setRuns(r);
-      setCases(c);
+      setOverview((o as any)?.overview ?? (o as any)?.data ?? o);
+      setRuns(Array.isArray(r) ? r : Array.isArray((r as any)?.runs) ? (r as any).runs : Array.isArray((r as any)?.data) ? (r as any).data : []);
+      setCases(Array.isArray(c) ? c : Array.isArray((c as any)?.cases) ? (c as any).cases : Array.isArray((c as any)?.data) ? (c as any).data : []);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "Could not load Evaluation Lab");
     } finally {
