@@ -176,7 +176,7 @@ function Page() {
           </Panel>
           <Panel>
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Domains</p>
-            <p className="mt-2 font-mono text-xl">{new Set(sources.map((s: any) => s.domain)).size}</p>
+            <p className="mt-2 font-mono text-xl">{new Set((Array.isArray(sources) ? sources : []).map((s: any) => s.domain)).size}</p>
           </Panel>
           <Panel>
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Last event</p>
@@ -200,7 +200,7 @@ function Page() {
           </h2>
           <div className="mt-4 space-y-3">
             {plans.length ? (
-              plans.map((plan: any) => (
+              (Array.isArray(plans) ? plans : []).map((plan: any) => (
                 <div key={plan.id} className="rounded-md border border-border/60 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-xs font-medium">{plan.strategy}</span>
@@ -225,7 +225,7 @@ function Page() {
           </h2>
           <div className="mt-4 space-y-3">
             {sources.length ? (
-              sources.map((source: any) => (
+              (Array.isArray(sources) ? sources : []).map((source: any) => (
                 <div key={source.id} className="rounded-md border border-border/60 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
@@ -261,7 +261,7 @@ function Page() {
           </h2>
           <div className="mt-4 space-y-3">
             {comparisons.length ? (
-              comparisons.map((comparison: any) => (
+              (Array.isArray(comparisons) ? comparisons : []).map((comparison: any) => (
                 <div key={comparison.id} className="rounded-md border border-border/60 p-3">
                   <p className="text-sm font-medium">{comparison.subject}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
