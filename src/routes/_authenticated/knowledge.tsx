@@ -96,7 +96,7 @@ function Page() {
   const kickInFlight = useRef(new Set<string>());
   const extendAcquisition = useServerFn(sendKnowledgeAcquisitionMessage);
 
-  const { data: candidates = [], isError: candidatesError } = useQuery({
+  const { data: candidatesData, isError: candidatesError } = useQuery({
     queryKey: ["phase-h-candidates"],
     queryFn: async () => {
       try {
@@ -109,7 +109,7 @@ function Page() {
     retry: 1,
   });
 
-  const { data: entries = [], isError: entriesError } = useQuery({
+  const { data: entriesData, isError: entriesError } = useQuery({
     queryKey: ["phase-h-production"],
     queryFn: async () => {
       try {
@@ -242,7 +242,7 @@ function Page() {
 
 
 
-  const { data: acquisitionJobs = [], isLoading: acquisitionLoading } = useQuery({
+  const { data: acquisitionJobsData, isLoading: acquisitionLoading } = useQuery({
     queryKey: ["knowledge-acquisition-admin", Boolean(roles?.isAdmin)],
     enabled: Boolean(roles?.isAdmin),
     queryFn: () => listAcquisitionJobs({ data: { admin: true, limit: 100 } }),
