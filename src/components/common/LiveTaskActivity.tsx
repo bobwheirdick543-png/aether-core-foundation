@@ -103,7 +103,7 @@ function currentStageFrom(events: EventRow[], taskStatus: string): string {
 
 export function LiveTaskActivity({ admin = false, className }: { admin?: boolean; className?: string }) {
   const load = useServerFn(getLiveTaskActivity);
-  const { data = [], isFetching } = useQuery({
+  const { data: liveData, isFetching } = useQuery({
     queryKey: ["aether-live-task-activity", admin],
     queryFn: async () => {
       try {
@@ -116,6 +116,7 @@ export function LiveTaskActivity({ admin = false, className }: { admin?: boolean
     staleTime: 0,
     retry: 0,
   });
+  const data = Array.isArray(liveData) ? liveData : [];
   const [open, setOpen] = useState(true);
   const [position, setPosition] = useState(() => ({ x: Math.max(8, window.innerWidth - Math.min(430, window.innerWidth - 32) - 16), y: Math.max(8, window.innerHeight - 180) }));
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
