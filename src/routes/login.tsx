@@ -50,6 +50,29 @@ function LoginPage() {
       toast.error(error.message);
       return;
     }
+
+    // Establish the secure HttpOnly server session before navigating into
+    // authenticated routes. The root auth bridge also keeps existing sessions
+    // synchronized and handles future token refreshes globally.
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData.session) {
+      const syncResponse = await fetch("/api/auth/session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({ refreshToken: sessionData.session.refresh_token }),
+      });
+
+      if (!syncResponse.ok) {
+        toast.error("Signed in, but the secure server session could not be established. Please try again.");
+        await supabase.auth.signOut();
+        return;
+      }
+    }
+
     navigate({ to: safeInternalPath(search.redirect) });
   }
 
