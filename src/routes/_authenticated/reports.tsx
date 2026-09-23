@@ -55,7 +55,8 @@ function Page() {
   const refresh = async () => {
     try {
       setLoadError("");
-      setRows((await listReports({ data: { search, includeArchived: true } })) as Row[]);
+      const result = await listReports({ data: { search, includeArchived: true } });
+      setRows(Array.isArray(result) ? (result as Row[]) : []);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
       setRows([]);
